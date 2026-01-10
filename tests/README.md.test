@@ -1,0 +1,10 @@
+/**
+ * Tests for README
+ */
+
+describe('README', () => {
+  it('placeholder test', () => {
+    // TODO: Implement actual tests
+    expect(true).toBe(true);
+  });
+});

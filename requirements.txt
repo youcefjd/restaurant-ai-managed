@@ -1,8 +1,8 @@
 /**
  * Auto-generated backend code
  *
- * Purpose: Project documentation and setup instructions
- * File: README.md
+ * Purpose: Python dependencies specification
+ * File: requirements.txt
  */
 
 // TODO: Implement functionality based on requirements

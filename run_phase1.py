@@ -8,14 +8,23 @@ import sys
 import os
 from pathlib import Path
 
+print("DEBUG: Starting script...")
+
 # Add autonomous_engineer to path
 sys.path.insert(0, '/tmp/autonomous_engineer')
+print("DEBUG: Added autonomous_engineer to path")
 
 # Set environment variable to disable emergency stop signals for this script
 os.environ["DISABLE_EMERGENCY_STOP_SIGNALS"] = "1"
+print("DEBUG: Set DISABLE_EMERGENCY_STOP_SIGNALS")
 
+print("DEBUG: Importing OrchestratorAgent...")
 from autonomous_engineer.orchestrator_agent import OrchestratorAgent
+print("DEBUG: OrchestratorAgent imported successfully")
+
+print("DEBUG: Importing create_llm_provider...")
 from llm_provider import create_llm_provider
+print("DEBUG: create_llm_provider imported successfully")
 
 def main():
     print("=" * 80)
@@ -116,7 +125,8 @@ DELIVERABLES:
     print("=" * 80)
     print()
 
-    input("Press ENTER to start autonomous engineering... ")
+    # Auto-start (non-interactive mode)
+    print("🚀 Starting autonomous engineering (non-interactive mode)...")
     print()
 
     # Execute autonomous engineering

@@ -45,9 +45,7 @@ class VoiceService:
         )
 
         gather.say(
-            f"Thank you for calling {restaurant_name}! "
-            "I'm your AI assistant. How can I help you today? "
-            "You can ask about our menu, place an order, or make a reservation.",
+            f"Hey, thanks for calling {restaurant_name}. How may I help you?",
             voice='alice',
             language='en-US'
         )

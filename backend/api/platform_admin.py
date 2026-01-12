@@ -82,6 +82,15 @@ class SubscriptionUpdate(BaseModel):
         from_attributes = True
 
 
+class CommissionSettings(BaseModel):
+    """Update commission settings for a restaurant."""
+    platform_commission_rate: float = Field(..., ge=0, le=100, description="Commission rate percentage (0-100)")
+    commission_enabled: Optional[bool] = Field(default=True, description="Enable or disable commission collection")
+
+    class Config:
+        from_attributes = True
+
+
 # Endpoints
 
 @router.get("/stats", response_model=PlatformStats)
@@ -367,6 +376,73 @@ async def update_subscription(
     total_orders = len(orders)
     total_revenue = sum(order.total for order in orders)
     commission = int(total_revenue * (account.platform_commission_rate / 100))
+
+    return RestaurantAccountSummary(
+        id=account.id,
+        business_name=account.business_name,
+        owner_name=account.owner_name,
+        owner_email=account.owner_email,
+        subscription_tier=account.subscription_tier,
+        subscription_status=account.subscription_status,
+        is_active=account.is_active,
+        trial_ends_at=account.trial_ends_at,
+        total_orders=total_orders,
+        total_revenue_cents=total_revenue,
+        commission_owed_cents=commission,
+        created_at=account.created_at
+    )
+
+
+@router.put("/restaurants/{account_id}/commission", response_model=RestaurantAccountSummary)
+async def update_commission_settings(
+    account_id: int,
+    commission_data: CommissionSettings,
+    db: Session = Depends(get_db)
+):
+    """
+    Update a restaurant's commission settings.
+
+    Allows platform admin to:
+    - Change commission rate (0-100%)
+    - Enable/disable commission collection entirely
+
+    Args:
+        account_id: Restaurant account ID
+        commission_data: New commission settings
+
+    Returns:
+        Updated restaurant account summary with commission details
+    """
+    account = db.query(RestaurantAccount).filter(RestaurantAccount.id == account_id).first()
+    if not account:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Restaurant account not found"
+        )
+
+    # Update commission settings
+    account.platform_commission_rate = commission_data.platform_commission_rate
+    if commission_data.commission_enabled is not None:
+        account.commission_enabled = commission_data.commission_enabled
+
+    db.commit()
+    db.refresh(account)
+
+    # Get stats for response
+    restaurant_ids = [r.id for r in account.locations]
+    orders = db.query(Order).filter(Order.restaurant_id.in_(restaurant_ids)).all()
+    total_orders = len(orders)
+    total_revenue = sum(order.total for order in orders)
+
+    # Calculate commission only if enabled
+    commission = 0
+    if account.commission_enabled:
+        commission = int(total_revenue * (account.platform_commission_rate / 100))
+
+    logger.info(
+        f"Updated commission settings for restaurant {account_id}: "
+        f"rate={account.platform_commission_rate}%, enabled={account.commission_enabled}"
+    )
 
     return RestaurantAccountSummary(
         id=account.id,

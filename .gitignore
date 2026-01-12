@@ -53,3 +53,5 @@ frontend-new/dist/
 frontend-new/build/
 frontend/dist/
 frontend/build/
+frontend-new/.vite/
+frontend/.vite/

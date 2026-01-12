@@ -98,6 +98,7 @@ class RestaurantAccount(Base):
 
     # Platform settings
     platform_commission_rate = Column(Numeric(5, 2), nullable=False, default=10.0)  # 10%
+    commission_enabled = Column(Boolean, nullable=False, default=True)  # Enable/disable commission
     onboarding_completed = Column(Boolean, nullable=False, default=False)
     is_active = Column(Boolean, nullable=False, default=True)
 

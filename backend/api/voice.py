@@ -1,0 +1,174 @@
+"""
+Voice call webhook endpoints for Twilio Voice API.
+
+Handles incoming calls, processes speech-to-text, and manages
+the conversation flow for making reservations.
+"""
+
+import logging
+from typing import Dict, Any, Optional
+from datetime import datetime, date, time, timedelta
+from fastapi import APIRouter, Depends, Request, Form
+from fastapi.responses import Response
+from sqlalchemy.orm import Session
+
+from backend.database import get_db
+from backend.models import Restaurant, Table, Customer, Booking, BookingStatus
+from backend.services.voice_service import voice_service
+from backend.services.sms_service import sms_service
+from backend.services.conversation_handler import conversation_handler
+
+router = APIRouter()
+logger = logging.getLogger(__name__)
+
+# Store conversation state (in production, use Redis or similar)
+conversation_state: Dict[str, Dict[str, Any]] = {}
+
+
+@router.post("/welcome")
+async def voice_welcome():
+    """
+    Initial webhook when call is received.
+    Returns TwiML with welcome message.
+    """
+    logger.info("Voice call received - sending welcome message")
+    response = voice_service.create_welcome_response()
+    return Response(content=str(response), media_type="application/xml")
+
+
+@router.post("/process")
+async def process_speech(
+    request: Request,
+    SpeechResult: Optional[str] = Form(None),
+    CallSid: Optional[str] = Form(None),
+    From: Optional[str] = Form(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Process speech input from customer.
+
+    Args:
+        SpeechResult: Transcribed speech from Twilio
+        CallSid: Unique call identifier
+        From: Caller's phone number
+        db: Database session
+
+    Returns:
+        TwiML response
+    """
+    logger.info(f"Processing speech from {From}: {SpeechResult}")
+
+    # Handle missing speech
+    if not SpeechResult:
+        response = voice_service.create_error_response(
+            "I didn't catch that. Could you please repeat?"
+        )
+        return Response(content=str(response), media_type="application/xml")
+
+    # Get or create conversation state
+    if CallSid not in conversation_state:
+        conversation_state[CallSid] = {
+            "phone": From,
+            "context": {},
+            "step": "initial"
+        }
+
+    state = conversation_state[CallSid]
+
+    try:
+        # Process the speech with AI conversation handler
+        result = await conversation_handler.process_message(
+            message=SpeechResult,
+            phone=From,
+            context=state["context"],
+            db=db
+        )
+
+        # Update state
+        state["context"] = result.get("context", {})
+        state["step"] = result.get("next_step", "initial")
+
+        # Handle different response types
+        response_type = result.get("type")
+
+        if response_type == "confirmation":
+            # Booking was made successfully
+            booking_data = result.get("booking")
+            response = voice_service.create_confirmation_response(
+                restaurant_name=booking_data["restaurant_name"],
+                booking_date=booking_data["booking_date"],
+                booking_time=booking_data["booking_time"],
+                party_size=booking_data["party_size"],
+                customer_name=booking_data["customer_name"],
+                confirmation_id=booking_data["confirmation_id"]
+            )
+
+        elif response_type == "availability":
+            # Show available time slots
+            response = voice_service.create_availability_response(
+                available_times=result.get("available_times", []),
+                requested_date=result.get("requested_date"),
+                party_size=result.get("party_size")
+            )
+
+        elif response_type == "gather":
+            # Need more information from customer
+            response = voice_service.create_gather_response(
+                prompt=result.get("message", "How can I help you?")
+            )
+
+        elif response_type == "goodbye":
+            # End conversation
+            response = voice_service.create_goodbye_response()
+            # Clean up state
+            if CallSid in conversation_state:
+                del conversation_state[CallSid]
+
+        else:
+            # Default: gather more input
+            message = result.get("message", "I'm not sure I understand. Could you rephrase that?")
+            response = voice_service.create_gather_response(prompt=message)
+
+        return Response(content=str(response), media_type="application/xml")
+
+    except Exception as e:
+        logger.error(f"Error processing speech: {str(e)}", exc_info=True)
+        response = voice_service.create_error_response(
+            "I'm sorry, I encountered an error. Let me transfer you to our main menu."
+        )
+        return Response(content=str(response), media_type="application/xml")
+
+
+@router.post("/status")
+async def call_status(
+    request: Request,
+    CallSid: Optional[str] = Form(None),
+    CallStatus: Optional[str] = Form(None)
+):
+    """
+    Handle call status callbacks.
+
+    Args:
+        CallSid: Unique call identifier
+        CallStatus: Status of the call (completed, busy, failed, etc.)
+
+    Returns:
+        Success response
+    """
+    logger.info(f"Call {CallSid} status: {CallStatus}")
+
+    # Clean up conversation state when call ends
+    if CallStatus in ["completed", "failed", "busy", "no-answer"] and CallSid in conversation_state:
+        del conversation_state[CallSid]
+
+    return {"status": "ok"}
+
+
+@router.get("/health")
+async def voice_health():
+    """Health check for voice service."""
+    return {
+        "service": "voice",
+        "enabled": voice_service.enabled,
+        "status": "healthy" if voice_service.enabled else "disabled"
+    }

@@ -1,0 +1,177 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Restaurant Management Admin Dashboard - Manage restaurants, tables, bookings, and customers efficiently" />
+    <meta name="theme-color" content="#3b82f6" />
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    
+    <!-- Preconnect to API server for faster requests -->
+    <link rel="preconnect" href="http://localhost:8000" />
+    
+    <!-- Title -->
+    <title>Restaurant Admin Dashboard</title>
+    
+    <!-- Accessibility: Skip to main content link styles -->
+    <style>
+      /* Critical CSS for initial render */
+      .skip-link {
+        position: absolute;
+        top: -40px;
+        left: 0;
+        background: #3b82f6;
+        color: white;
+        padding: 8px 16px;
+        z-index: 100;
+        text-decoration: none;
+        font-weight: 600;
+        border-radius: 0 0 4px 0;
+        transition: top 0.3s ease;
+      }
+      
+      .skip-link:focus {
+        top: 0;
+        outline: 2px solid #1d4ed8;
+        outline-offset: 2px;
+      }
+      
+      /* Loading spinner for initial app load */
+      .initial-loader {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      }
+      
+      .initial-loader .spinner {
+        width: 48px;
+        height: 48px;
+        border: 4px solid #e2e8f0;
+        border-top-color: #3b82f6;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+      
+      .initial-loader .text {
+        margin-top: 16px;
+        color: #64748b;
+        font-size: 14px;
+        font-weight: 500;
+      }
+      
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      
+      /* Hide loader when React mounts */
+      #root:not(:empty) + .initial-loader,
+      #root:not(:empty) ~ .initial-loader {
+        display: none;
+      }
+      
+      /* Ensure root takes full height */
+      html, body, #root {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+      }
+      
+      /* Smooth scrolling for accessibility */
+      @media (prefers-reduced-motion: no-preference) {
+        html {
+          scroll-behavior: smooth;
+        }
+      }
+      
+      /* Respect user's motion preferences */
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
+      
+      /* Focus visible styles for better accessibility */
+      :focus-visible {
+        outline: 2px solid #3b82f6;
+        outline-offset: 2px;
+      }
+      
+      /* Remove default focus for mouse users */
+      :focus:not(:focus-visible) {
+        outline: none;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Skip to main content link for keyboard/screen reader users -->
+    <a href="#main-content" class="skip-link">
+      Skip to main content
+    </a>
+    
+    <!-- Noscript fallback for users with JavaScript disabled -->
+    <noscript>
+      <div style="
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        padding: 24px;
+        text-align: center;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+      ">
+        <svg 
+          xmlns="http://www.w3.org/2000/svg" 
+          width="64" 
+          height="64" 
+          viewBox="0 0 24 24" 
+          fill="none" 
+          stroke="#ef4444" 
+          stroke-width="2" 
+          stroke-linecap="round" 
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="12"></line>
+          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+        <h1 style="margin: 16px 0 8px; font-size: 24px; color: #1e293b;">
+          JavaScript Required
+        </h1>
+        <p style="margin: 0; color: #64748b; max-width: 400px; line-height: 1.6;">
+          This application requires JavaScript to run. Please enable JavaScript in your browser settings and reload the page.
+        </p>
+      </div>
+    </noscript>
+    
+    <!-- React application root -->
+    <div id="root" role="application" aria-label="Restaurant Admin Dashboard"></div>
+    
+    <!-- Initial loading state (shown before React hydrates) -->
+    <div class="initial-loader" aria-live="polite" aria-busy="true">
+      <div class="spinner" role="status" aria-label="Loading application">
+        <span class="sr-only" style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;">
+          Loading...
+        </span>
+      </div>
+      <p class="text">Loading Restaurant Dashboard...</p>
+    </div>
+    
+    <!-- Main application script (Vite will inject the correct path) -->
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -41,7 +41,7 @@ class RestaurantBase(BaseModel):
     """Base schema for restaurant data."""
     name: constr(min_length=1, max_length=100) = Field(..., description="Restaurant name")
     address: constr(min_length=1, max_length=200) = Field(..., description="Restaurant address")
-    phone: constr(regex=r'^\+?1?\d{9,15}$') = Field(..., description="Phone number")
+    phone: constr(pattern=r'^\+?1?\d{9,15}$') = Field(..., description="Phone number")
     email: EmailStr = Field(..., description="Contact email")
     opening_time: time = Field(..., description="Daily opening time")
     closing_time: time = Field(..., description="Daily closing time")
@@ -65,7 +65,7 @@ class RestaurantUpdate(BaseModel):
     """Schema for updating a restaurant."""
     name: Optional[constr(min_length=1, max_length=100)] = None
     address: Optional[constr(min_length=1, max_length=200)] = None
-    phone: Optional[constr(regex=r'^\+?1?\d{9,15}$')] = None
+    phone: Optional[constr(pattern=r'^\+?1?\d{9,15}$')] = None
     email: Optional[EmailStr] = None
     opening_time: Optional[time] = None
     closing_time: Optional[time] = None
@@ -96,7 +96,7 @@ class TableBase(BaseModel):
     restaurant_id: int = Field(..., description="Restaurant ID")
     table_number: constr(min_length=1, max_length=10) = Field(..., description="Table identifier")
     capacity: int = Field(..., ge=1, le=20, description="Maximum seats")
-    location: TableLocation = Field(default=TableLocation.MAIN, description="Table location")
+    location: Optional[str] = Field(None, description="Optional table location description")
     is_active: bool = Field(default=True, description="Whether table is available for booking")
 
 
@@ -109,7 +109,7 @@ class TableUpdate(BaseModel):
     """Schema for updating a table."""
     table_number: Optional[constr(min_length=1, max_length=10)] = None
     capacity: Optional[int] = Field(None, ge=1, le=20)
-    location: Optional[TableLocation] = None
+    location: Optional[str] = None
     is_active: Optional[bool] = None
 
 
@@ -126,7 +126,7 @@ class Table(TableBase):
 # Customer schemas
 class CustomerBase(BaseModel):
     """Base schema for customer data."""
-    phone: constr(regex=r'^\+?1?\d{9,15}$') = Field(..., description="Primary phone number")
+    phone: constr(pattern=r'^\+?1?\d{9,15}$') = Field(..., description="Primary phone number")
     name: constr(min_length=1, max_length=100) = Field(..., description="Customer name")
     email: Optional[EmailStr] = Field(None, description="Customer email")
     notes: Optional[constr(max_length=500)] = Field(None, description="Special notes")
@@ -174,7 +174,7 @@ class BookingBase(BaseModel):
 
 class BookingCreate(BookingBase):
     """Schema for creating a booking."""
-    customer_phone: constr(regex=r'^\+?1?\d{9,15}$') = Field(..., description="Customer phone number")
+    customer_phone: constr(pattern=r'^\+?1?\d{9,15}$') = Field(..., description="Customer phone number")
     customer_name: Optional[constr(min_length=1, max_length=100)] = Field(None, description="Customer name (for new customers)")
     customer_email: Optional[EmailStr] = Field(None, description="Customer email (for new customers)")
     duration_minutes: Optional[int] = Field(None, ge=30, le=300, description="Custom duration")
@@ -217,12 +217,12 @@ class Booking(BookingBase, TimestampMixin):
 class AvailabilityQuery(BaseModel):
     """Schema for availability check query."""
     restaurant_id: int = Field(..., description="Restaurant ID")
-    date: date = Field(..., description="Desired date")
-    time: time = Field(..., description="Desired time")
+    requested_date: date = Field(..., description="Desired date")
+    requested_time: time = Field(..., description="Desired time")
     party_size: int = Field(..., ge=1, description="Number of guests")
     duration_minutes: Optional[int] = Field(None, ge=30, le=300, description="Custom duration")
 
-    @validator('date')
+    @validator('requested_date')
     def validate_future_date(cls, v):
         """Ensure date is not in the past."""
         if v < date.today():

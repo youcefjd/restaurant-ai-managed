@@ -1,446 +1,265 @@
 # Architecture Plan
 
 **Feature:** 
-Build a complete Restaurant Reservation System backend API with the following requirements:
+# Phase 2: Restaurant Admin Dashboard
 
-DETAILED SPECIFICATION:
-# Phase 1: Core Reservation System - Detailed Specification
+Build a modern React admin dashboard for restaurant owners using Vite, React Router, and TailwindCSS.
 
-## Overview
-Build a complete backend API for restaurant reservation management with SQLite database.
-
-## Database Schema
-
-### Table: restaurants
-```sql
-- id: INTEGER PRIMARY KEY
-- name: VARCHAR(255) NOT NULL
-- address: TEXT
-- phone: VARCHAR(20)
-- email: VARCHAR(255)
-- opening_time: TIME (default: 11:00)
-- closing_time: TIME (default: 22:00)
-- booking_duration_minutes: INTEGER (default: 90)
-- max_party_size: INTEGER (default: 8)
-- created_at: TIMESTAMP
-- updated_at: TIMESTAMP
+## Project Structure
 ```
-
-### Table: tables
-```sql
-- id: INTEGER PRIMARY KEY
-- restaurant_id: INTEGER FOREIGN KEY -> restaurants.id
-- table_number: VARCHAR(20) NOT NULL
-- capacity: INTEGER NOT NULL (min: 1, max: 20)
-- location: VARCHAR(100) (e.g., "window", "patio", "indoor")
-- is_active: BOOLEAN (default: TRUE)
-- created_at: TIMESTAMP
-```
-
-### Table: customers
-```sql
-- id: INTEGER PRIMARY KEY
-- phone: VARCHAR(20) UNIQUE NOT NULL (primary identifier)
-- name: VARCHAR(255)
-- email: VARCHAR(255)
-- notes: TEXT (allergies, preferences, etc.)
-- total_bookings: INTEGER (default: 0)
-- no_shows: INTEGER (default: 0)
-- created_at: TIMESTAMP
-- updated_at: TIMESTAMP
-```
-
-### Table: bookings
-```sql
-- id: INTEGER PRIMARY KEY
-- restaurant_id: INTEGER FOREIGN KEY -> restaurants.id
-- table_id: INTEGER FOREIGN KEY -> tables.id (nullable initially)
-- customer_id: INTEGER FOREIGN KEY -> customers.id
-- booking_date: DATE NOT NULL
-- booking_time: TIME NOT NULL
-- party_size: INTEGER NOT NULL
-- duration_minutes: INTEGER (default: 90)
-- status: ENUM('pending', 'confirmed', 'seated', 'completed', 'cancelled', 'no_show')
-- special_requests: TEXT
-- created_at: TIMESTAMP
-- updated_at: TIMESTAMP
-```
-
-## API Endpoints
-
-### Restaurants
-```
-POST   /api/restaurants
-  Body: {name, address, phone, email, opening_time?, closing_time?}
-  Returns: Restaurant object with id
-
-GET    /api/restaurants/{id}
-  Returns: Restaurant details
-
-PUT    /api/restaurants/{id}
-  Body: {name?, address?, phone?, opening_time?, closing_time?}
-  Returns: Updated restaurant
-
-GET    /api/restaurants
-  Returns: List of all restaurants
-```
-
-### Tables
-```
-POST   /api/tables
-  Body: {restaurant_id, table_number, capacity, location?}
-  Returns: Table object with id
-
-GET    /api/restaurants/{restaurant_id}/tables
-  Returns: List of tables for restaurant
-
-PUT    /api/tables/{id}
-  Body: {table_number?, capacity?, location?, is_active?}
-  Returns: Updated table
-
-DELETE /api/tables/{id}
-  Returns: Success message
-```
-
-### Customers
-```
-POST   /api/customers
-  Body: {phone, name?, email?, notes?}
-  Returns: Customer object with id
-
-GET    /api/customers/by-phone/{phone}
-  Returns: Customer details or 404
-
-PUT    /api/customers/{id}
-  Body: {name?, email?, notes?}
-  Returns: Updated customer
-```
-
-### Bookings
-```
-POST   /api/bookings
-  Body: {
-    restaurant_id,
-    customer_phone,  # Will create customer if doesn't exist
-    customer_name?,
-    booking_date,    # Format: YYYY-MM-DD
-    booking_time,    # Format: HH:MM
-    party_size,
-    special_requests?
-  }
-  Logic:
-    1. Find or create customer by phone
-    2. Check availability (no conflicts)
-    3. Auto-assign suitable table (capacity >= party_size)
-    4. Create booking with status='pending'
-  Returns: Booking object with assigned table
-
-GET    /api/bookings/{id}
-  Returns: Booking details with restaurant, table, customer
-
-PUT    /api/bookings/{id}
-  Body: {booking_date?, booking_time?, party_size?, status?, special_requests?}
-  Logic: Re-check availability if date/time/party_size changed
-  Returns: Updated booking
-
-DELETE /api/bookings/{id}
-  Logic: Set status='cancelled', free up table
-  Returns: Success message
-
-GET    /api/restaurants/{restaurant_id}/bookings
-  Query params: ?date=YYYY-MM-DD&status=pending
-  Returns: List of bookings
-```
-
-### Availability
-```
-GET    /api/availability
-  Query params:
-    - restaurant_id (required)
-    - date (required, format: YYYY-MM-DD)
-    - time (required, format: HH:MM)
-    - party_size (required)
-    - duration_minutes? (optional, default: 90)
-
-  Logic:
-    1. Find tables with capacity >= party_size
-    2. Check each table for conflicts:
-       - Existing bookings that overlap with requested time slot
-       - Overlap = (start_time < requested_end) AND (end_time > requested_start)
-    3. Return list of available tables
-
-  Returns: {
-    available: boolean,
-    available_tables: [
-      {id, table_number, capacity, location}
-    ],
-    alternative_times: [  # If not available
-      {time: "18:00", available_tables: 3},
-      {time: "21:00", available_tables: 5}
-    ]
-  }
-```
-
-## Business Logic
-
-### Availability Checking Algorithm
-```python
-def check_availability(restaurant_id, date, time, party_size, duration_minutes=90):
-    # 1. Parse datetime
-    requested_start = datetime.combine(date, time)
-    requested_end = requested_start + timedelta(minutes=duration_minutes)
-
-    # 2. Find suitable tables (capacity >= party_size, is_active=True)
-    suitable_tables = get_tables(restaurant_id, min_capacity=party_size)
-
-    # 3. For each table, check for conflicts
-    available_tables = []
-    for table in suitable_tables:
-        # Get all bookings for this table on this date
-        existing_bookings = get_bookings(
-            table_id=table.id,
-            date=date,
-            status__not_in=['cancelled', 'no_show']
-        )
-
-        # Check for time conflicts
-        has_conflict = False
-        for booking in existing_bookings:
-            booking_start = datetime.combine(booking.date, booking.time)
-            booking_end = booking_start + timedelta(minutes=booking.duration_minutes)
-
-            # Check overlap
-            if (booking_start < requested_end) and (booking_end > requested_start):
-                has_conflict = True
-                break
-
-        if not has_conflict:
-            available_tables.append(table)
-
-    return available_tables
-```
-
-### Auto Table Assignment
-```python
-def assign_table(restaurant_id, party_size, date, time):
-    # Get available tables
-    available = check_availability(restaurant_id, date, time, party_size)
-
-    if not available:
-        return None
-
-    # Assign smallest suitable table (optimize capacity utilization)
-    available.sort(key=lambda t: t.capacity)
-    return available[0]
-```
-
-## Testing Requirements
-
-### Unit Tests
-- ✅ Create restaurant and retrieve it
-- ✅ Create tables for restaurant
-- ✅ Create customer with phone number
-- ✅ Find customer by phone
-- ✅ Create booking successfully
-- ✅ Detect booking conflicts (same table, overlapping time)
-- ✅ Auto-assign appropriate table based on party size
-- ✅ Check availability correctly
-- ✅ Handle invalid party size (0, negative, exceeds max)
-- ✅ Validate date/time formats
-- ✅ Update booking status
-- ✅ Cancel booking
-
-### Integration Tests
-- ✅ Full booking flow: create customer → check availability → create booking
-- ✅ Double booking prevention
-- ✅ Multiple bookings for different tables at same time (should work)
-- ✅ Edge case: booking exactly at boundary (12:00-13:30 and 13:30-15:00)
-
-## File Structure
-```
-restaurant-assistant/
-├── backend/
-│   ├── main.py                 # FastAPI app entry point
-│   ├── database.py             # SQLAlchemy setup
-│   ├── models.py               # SQLAlchemy models
-│   ├── schemas.py              # Pydantic schemas
-│   ├── crud.py                 # Database operations
+frontend/
+├── package.json
+├── vite.config.js
+├── tailwind.config.js
+├── index.html
+├── src/
+│   ├── main.jsx
+│   ├── App.jsx
 │   ├── api/
-│   │   ├── __init__.py
-│   │   ├── restaurants.py      # Restaurant endpoints
-│   │   ├── tables.py           # Table endpoints
-│   │   ├── customers.py        # Customer endpoints
-│   │   ├── bookings.py         # Booking endpoints
-│   │   └── availability.py     # Availability checking
-│   ├── services/
-│   │   ├── __init__.py
-│   │   └── booking_service.py  # Availability logic
-│   └── tests/
-│       ├── __init__.py
-│       ├── test_restaurants.py
-│       ├── test_tables.py
-│       ├── test_customers.py
-│       ├── test_bookings.py
-│       └── test_availability.py
-├── requirements.txt
-├── .env.example
-└── README.md
+│   │   └── client.js          # API client for backend
+│   ├── components/
+│   │   ├── Layout.jsx         # Main layout with sidebar
+│   │   ├── Sidebar.jsx        # Navigation sidebar
+│   │   ├── Header.jsx         # Top header bar
+│   │   └── shared/            # Reusable components
+│   │       ├── Button.jsx
+│   │       ├── Card.jsx
+│   │       ├── Table.jsx
+│   │       ├── Modal.jsx
+│   │       ├── Badge.jsx
+│   │       └── Input.jsx
+│   ├── pages/
+│   │   ├── Dashboard.jsx      # Dashboard with stats
+│   │   ├── Restaurants.jsx    # Restaurant CRUD
+│   │   ├── Tables.jsx         # Table management
+│   │   ├── Bookings.jsx       # Booking management
+│   │   └── Customers.jsx      # Customer list
+│   ├── hooks/
+│   │   └── useApi.js          # Custom hook for API calls
+│   └── utils/
+│       └── helpers.js         # Utility functions
 ```
 
-## Requirements.txt
+## Technical Requirements
+
+### 1. Setup & Configuration
+- Use Vite as the build tool
+- React 18+ with hooks
+- React Router v6 for routing
+- TailwindCSS for styling
+- Axios for API requests
+
+### 2. API Integration
+Backend API is running at http://localhost:8000
+
+Endpoints to integrate:
+- GET /api/ - List restaurants
+- POST /api/ - Create restaurant
+- PUT /api/{id} - Update restaurant
+- DELETE /api/{id} - Delete restaurant
+- GET /api/{restaurant_id}/tables - List tables
+- POST /api/{restaurant_id}/tables - Create table
+- GET /api/bookings/ - List bookings
+- POST /api/bookings/ - Create booking
+- DELETE /api/bookings/{id} - Cancel booking
+- GET /api/customers/ - List customers
+- POST /api/availability/check - Check availability
+
+### 3. Pages & Features
+
+#### Dashboard Page
+- Show 4 stat cards: Total Restaurants, Total Bookings, Total Customers, Active Tables
+- Recent bookings table (last 10)
+- Today's bookings count
+- Weekly booking trend chart (bonus)
+
+#### Restaurants Page
+- Table view of all restaurants
+- "Add Restaurant" button with modal form
+- Edit/Delete actions for each restaurant
+- Form fields: name, address, phone, email, opening_time, closing_time, booking_duration_minutes, max_party_size
+- Client-side validation
+
+#### Tables Page
+- Restaurant selector dropdown
+- Table list for selected restaurant
+- Add/Edit/Delete table functionality
+- Fields: table_number, capacity, location, is_active
+- Visual table layout view (bonus)
+
+#### Bookings Page
+- Filterable booking list (by date, status, restaurant)
+- Create booking button with modal
+- Cancel booking action
+- Status badges (pending, confirmed, cancelled, completed, no_show)
+- Calendar view (bonus)
+
+#### Customers Page
+- Customer list table
+- Show: name, phone, email, total_bookings, no_shows
+- Search by phone number
+
+### 4. UI/UX Requirements
+- Clean, modern design
+- Responsive layout (desktop-first)
+- Loading states for API calls
+- Error handling with toast notifications
+- Form validation
+- Confirmation dialogs for destructive actions
+- Color scheme: Blue primary (#2563eb), success green, warning yellow, danger red
+
+### 5. Component Requirements
+
+All components should be modular and reusable.
+
+**Button.jsx** - Primary, secondary, danger variants with loading state
+**Card.jsx** - Container with optional header and footer
+**Table.jsx** - Data table with sortable columns
+**Modal.jsx** - Reusable modal with header, body, footer
+**Badge.jsx** - Status badges with color variants
+**Input.jsx** - Form inputs with label and error message
+
+### 6. Dependencies (package.json)
+```json
+{
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.20.0",
+    "axios": "^1.6.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.2.0",
+    "vite": "^5.0.0",
+    "tailwindcss": "^3.4.0",
+    "autoprefixer": "^10.4.16",
+    "postcss": "^8.4.32"
+  }
+}
 ```
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-sqlalchemy==2.0.23
-pydantic==2.5.0
-python-dotenv==1.0.0
-pytest==7.4.3
-pytest-asyncio==0.21.1
-httpx==0.25.1
-```
+
+### 7. Implementation Notes
+- Use React hooks (useState, useEffect, useContext)
+- Create custom useApi hook for data fetching
+- Handle CORS properly (backend already configured)
+- Use TailwindCSS utility classes for styling
+- Implement proper error boundaries
+- Add loading spinners for async operations
 
 ## Success Criteria
+1. All pages load without errors
+2. Can create, read, update, delete restaurants
+3. Can view and manage bookings
+4. Clean, professional UI
+5. Proper error handling
+6. Responsive design
 
-Phase 1 is complete when:
-1. ✅ All API endpoints work as specified
-2. ✅ Database schema is created correctly
-3. ✅ Availability checking prevents double bookings
-4. ✅ Table auto-assignment works
-5. ✅ All tests pass (90%+ coverage)
-6. ✅ API can be tested via Swagger UI at /docs
-7. ✅ Can run: `uvicorn backend.main:app --reload`
-8. ✅ Can run: `pytest backend/tests/ -v`
+Build this as a production-ready admin dashboard that restaurant owners would actually want to use.
 
-## Notes
-- Use SQLite for now (file: `restaurant.db`)
-- Add proper error handling (404s, validation errors)
-- Return helpful error messages
-- Use HTTP status codes correctly (200, 201, 400, 404, 422)
-- Add docstrings to all functions
-- Type hints everywhere
-- Follow REST conventions
-
-
-CORE REQUIREMENTS:
-1. FastAPI backend with SQLite database
-2. Database models: Restaurant, Table, Customer, Booking
-3. Full CRUD API endpoints for all models
-4. Availability checking endpoint with conflict detection
-5. Auto table assignment based on party size
-6. Comprehensive test suite (pytest)
-7. All tests must pass
-
-IMPORTANT:
-- Use SQLite (file: restaurant.db)
-- Follow the exact database schema in the specification
-- Implement the availability checking algorithm as specified
-- Add proper error handling and validation
-- Type hints and docstrings everywhere
-- 90%+ test coverage
-
-DELIVERABLES:
-- backend/ directory with FastAPI application
-- requirements.txt with all dependencies
-- Passing test suite
-- Working API accessible at http://localhost:8000/docs
-
-**Date:** 2026-01-10 17:22:43
-**Complexity:** high
+**Date:** 2026-01-10 21:16:41
+**Complexity:** medium
 
 ## Summary
 
-Build a complete Restaurant Reservation System backend API using FastAPI with SQLite database. The system will handle restaurants, tables, customers, and bookings with advanced availability checking and auto-table assignment. Architecture follows clean separation of concerns with models, schemas, CRUD operations, API routes, and business logic services.
+Build a complete React admin dashboard for restaurant management using Vite, React Router v6, and TailwindCSS. The frontend will integrate with the existing FastAPI backend API endpoints for restaurants, tables, bookings, and customers. The dashboard includes 5 main pages (Dashboard, Restaurants, Tables, Bookings, Customers), reusable UI components, and a custom API hook for data fetching with proper loading states and error handling.
 
 ## Database Changes
 
-- **restaurants**: create - N/A
-- **tables**: create - N/A
-- **customers**: create - N/A
-- **bookings**: create - N/A
+No database changes required.
 
 ## Backend Files
 
-- **backend/main.py** (create): FastAPI application entry point with CORS, middleware, and route registration
-- **backend/database.py** (create): SQLAlchemy database setup with SQLite configuration and session management
-- **backend/models.py** (create): SQLAlchemy ORM models for Restaurant, Table, Customer, and Booking entities
-- **backend/schemas.py** (create): Pydantic schemas for request/response validation and serialization
-- **backend/crud.py** (create): Database CRUD operations with error handling and business logic
-- **backend/api/__init__.py** (create): API module initialization
-- **backend/api/restaurants.py** (create): Restaurant CRUD endpoints with validation
-- **backend/api/tables.py** (create): Table management endpoints with restaurant association
-- **backend/api/customers.py** (create): Customer endpoints with phone-based lookup
-- **backend/api/bookings.py** (create): Booking CRUD endpoints with status management
-- **backend/api/availability.py** (create): Availability checking endpoint with conflict detection
-- **backend/services/__init__.py** (create): Services module initialization
-- **backend/services/booking_service.py** (create): Core booking logic including availability checking and table assignment algorithms
-- **backend/tests/__init__.py** (create): Test module initialization
-- **backend/tests/conftest.py** (create): Pytest fixtures for test database and client setup
-- **backend/tests/test_restaurants.py** (create): Restaurant API endpoint tests
-- **backend/tests/test_tables.py** (create): Table management tests
-- **backend/tests/test_customers.py** (create): Customer CRUD and lookup tests
-- **backend/tests/test_bookings.py** (create): Booking creation, update, and cancellation tests
-- **backend/tests/test_availability.py** (create): Availability checking and conflict detection tests
-- **requirements.txt** (create): Python dependencies specification
-- **.env.example** (create): Environment variables template
-- **README.md** (create): Project documentation and setup instructions
+No backend files.
 
 ## Frontend Files
 
-No frontend files.
+- **frontend/package.json** (create): NPM package configuration with React, Vite, TailwindCSS, React Router, and Axios dependencies
+- **frontend/vite.config.js** (create): Vite build tool configuration with React plugin and proxy settings for API
+- **frontend/tailwind.config.js** (create): TailwindCSS configuration with custom color scheme and content paths
+- **frontend/postcss.config.js** (create): PostCSS configuration for TailwindCSS processing
+- **frontend/index.html** (create): HTML entry point for the Vite React application
+- **frontend/src/main.jsx** (create): React application entry point with BrowserRouter setup
+- **frontend/src/App.jsx** (create): Main App component with React Router routes configuration
+- **frontend/src/index.css** (create): Global CSS with TailwindCSS directives and custom styles
+- **frontend/src/api/client.js** (create): Axios API client configured for backend communication with interceptors
+- **frontend/src/components/Layout.jsx** (create): Main layout wrapper with sidebar and header
+- **frontend/src/components/Sidebar.jsx** (create): Navigation sidebar with menu items and active state
+- **frontend/src/components/Header.jsx** (create): Top header bar with title and user actions
+- **frontend/src/components/shared/Button.jsx** (create): Reusable button with primary, secondary, danger variants and loading state
+- **frontend/src/components/shared/Card.jsx** (create): Container card component with optional header and footer
+- **frontend/src/components/shared/Table.jsx** (create): Data table component with sortable columns and actions
+- **frontend/src/components/shared/Modal.jsx** (create): Reusable modal dialog with header, body, and footer sections
+- **frontend/src/components/shared/Badge.jsx** (create): Status badge component with color variants for different states
+- **frontend/src/components/shared/Input.jsx** (create): Form input component with label, validation, and error message display
+- **frontend/src/components/shared/Select.jsx** (create): Dropdown select component with label and validation
+- **frontend/src/components/shared/Toast.jsx** (create): Toast notification component for success/error messages
+- **frontend/src/components/shared/Spinner.jsx** (create): Loading spinner component for async operations
+- **frontend/src/components/shared/ConfirmDialog.jsx** (create): Confirmation dialog for destructive actions
+- **frontend/src/components/shared/index.js** (create): Barrel export for all shared components
+- **frontend/src/pages/Dashboard.jsx** (create): Dashboard page with stat cards, recent bookings, and overview metrics
+- **frontend/src/pages/Restaurants.jsx** (create): Restaurant management page with CRUD operations and form modal
+- **frontend/src/pages/Tables.jsx** (create): Table management page with restaurant selector and table CRUD
+- **frontend/src/pages/Bookings.jsx** (create): Booking management page with filters, list view, and booking creation
+- **frontend/src/pages/Customers.jsx** (create): Customer list page with search and booking history
+- **frontend/src/hooks/useApi.js** (create): Custom hook for API calls with loading, error, and data state management
+- **frontend/src/hooks/useToast.js** (create): Custom hook for toast notification management
+- **frontend/src/context/ToastContext.jsx** (create): React context for global toast notifications
+- **frontend/src/utils/helpers.js** (create): Utility functions for date formatting, validation, and data transformation
+- **frontend/src/utils/constants.js** (create): Application constants including API endpoints and status values
 
 ## API Endpoints
 
-- **POST /api/restaurants**: Create new restaurant
-- **GET /api/restaurants/{id}**: Get restaurant details
-- **PUT /api/restaurants/{id}**: Update restaurant information
-- **GET /api/restaurants**: List all restaurants
-- **POST /api/tables**: Create new table
-- **GET /api/restaurants/{restaurant_id}/tables**: List tables for a restaurant
-- **PUT /api/tables/{id}**: Update table information
-- **DELETE /api/tables/{id}**: Delete table
-- **POST /api/customers**: Create new customer
-- **GET /api/customers/by-phone/{phone}**: Find customer by phone number
-- **PUT /api/customers/{id}**: Update customer information
-- **POST /api/bookings**: Create booking with auto table assignment
-- **GET /api/bookings/{id}**: Get booking details
-- **PUT /api/bookings/{id}**: Update booking with re-validation
-- **DELETE /api/bookings/{id}**: Cancel booking
-- **GET /api/restaurants/{restaurant_id}/bookings**: List bookings with filters
-- **GET /api/availability**: Check availability and suggest alternatives
+- **GET /api/**: List all restaurants
+- **POST /api/**: Create a new restaurant
+- **PUT /api/{id}**: Update an existing restaurant
+- **DELETE /api/{id}**: Delete a restaurant
+- **GET /api/{restaurant_id}/tables**: List tables for a restaurant
+- **POST /api/{restaurant_id}/tables**: Create a new table
+- **GET /api/bookings/**: List all bookings with optional filters
+- **POST /api/bookings/**: Create a new booking
+- **DELETE /api/bookings/{id}**: Cancel a booking
+- **GET /api/customers/**: List all customers
+- **POST /api/availability/check**: Check table availability
 
 ## Dependencies
 
-- fastapi==0.104.1
-- uvicorn[standard]==0.24.0
-- sqlalchemy==2.0.23
-- pydantic==2.5.0
-- python-dotenv==1.0.0
-- pytest==7.4.3
-- pytest-asyncio==0.21.1
-- httpx==0.25.1
+- react@^18.2.0
+- react-dom@^18.2.0
+- react-router-dom@^6.20.0
+- axios@^1.6.0
+- @vitejs/plugin-react@^4.2.0
+- vite@^5.0.0
+- tailwindcss@^3.4.0
+- autoprefixer@^10.4.16
+- postcss@^8.4.32
+- @heroicons/react@^2.1.0
+- date-fns@^3.0.0
 
 ## Implementation Steps
 
-1. Set up project structure and install dependencies
-2. Create database.py with SQLAlchemy configuration for SQLite
-3. Define all SQLAlchemy models in models.py with proper relationships
-4. Create Pydantic schemas for request/response validation
-5. Implement CRUD operations in crud.py with error handling
-6. Build booking_service.py with availability checking and table assignment logic
-7. Create API endpoints for restaurants and tables
-8. Implement customer endpoints with phone-based lookup
-9. Build booking endpoints with auto-assignment and validation
-10. Create availability endpoint with conflict detection
-11. Write comprehensive test suite with fixtures
-12. Add integration tests for complete booking flow
-13. Implement proper error handling and HTTP status codes
-14. Add API documentation with docstrings
-15. Test all endpoints via Swagger UI at /docs
+1. Initialize Vite project with React template and configure build settings
+2. Install and configure TailwindCSS with custom color scheme
+3. Set up React Router with route definitions for all pages
+4. Create API client with Axios including base URL and interceptors
+5. Build shared UI components (Button, Card, Table, Modal, Badge, Input, Select, Toast, Spinner)
+6. Create Layout component with Sidebar and Header navigation
+7. Implement useApi custom hook for data fetching with loading/error states
+8. Implement Toast context and useToast hook for notifications
+9. Build Dashboard page with stat cards and recent bookings table
+10. Build Restaurants page with list view, add/edit modal, and delete confirmation
+11. Build Tables page with restaurant selector and table management
+12. Build Bookings page with filters, booking list, and create booking modal
+13. Build Customers page with search and customer list
+14. Add form validation to all forms
+15. Implement error boundaries and loading states throughout
+16. Test all CRUD operations against backend API
+17. Polish UI/UX with responsive design adjustments
 
 ## Risks
 
-- Concurrent booking race conditions - mitigate with database transactions and row locking
-- Time zone handling complexities - store all times in UTC
-- Performance with large booking volumes - add database indexes on date/time columns
-- Data validation edge cases - comprehensive input validation needed
-- Booking status state transitions - ensure valid state machine logic
+- CORS configuration must be properly set on backend for frontend development server
+- API endpoint response formats must match expected frontend data structures
+- Date/time handling between frontend and backend timezone considerations
+- Form validation must align with backend validation rules
+- Error handling for network failures and API errors
+- State management complexity for nested data (restaurants -> tables -> bookings)

@@ -119,8 +119,11 @@ def init_db() -> None:
     """
     try:
         # Import all models to ensure they're registered with Base
-        from backend.models import restaurant, table, customer, booking  # noqa
-        
+        from backend.models import Restaurant, Table, Customer, Booking, Order, Delivery  # noqa
+        from backend.models_platform import (  # noqa
+            RestaurantAccount, Menu, MenuCategory, MenuItem, MenuModifier
+        )
+
         # Create all tables
         Base.metadata.create_all(bind=engine)
         logger.info("Database initialized successfully")

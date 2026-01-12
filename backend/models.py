@@ -13,11 +13,10 @@ from sqlalchemy import (
     Boolean, Column, DateTime, ForeignKey, Integer, String, Time,
     UniqueConstraint, CheckConstraint, Index, Text
 )
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, validates
 from sqlalchemy.sql import func
 
-Base = declarative_base()
+from backend.database import Base
 
 
 class BookingStatus(str, Enum):
@@ -38,6 +37,26 @@ class TableLocation(str, Enum):
     BAR = "bar"
 
 
+class OrderStatus(str, Enum):
+    """Enum for order status values."""
+    PENDING = "pending"
+    CONFIRMED = "confirmed"
+    PREPARING = "preparing"
+    READY = "ready"
+    OUT_FOR_DELIVERY = "out_for_delivery"
+    DELIVERED = "delivered"
+    CANCELLED = "cancelled"
+
+
+class DeliveryStatus(str, Enum):
+    """Enum for delivery status values."""
+    ASSIGNED = "assigned"
+    PICKED_UP = "picked_up"
+    IN_TRANSIT = "in_transit"
+    DELIVERED = "delivered"
+    FAILED = "failed"
+
+
 class Restaurant(Base):
     """
     Restaurant model representing a dining establishment.
@@ -56,8 +75,9 @@ class Restaurant(Base):
         updated_at: Last update timestamp
     """
     __tablename__ = "restaurants"
-    
+
     id = Column(Integer, primary_key=True, index=True)
+    account_id = Column(Integer, ForeignKey("restaurant_accounts.id", ondelete="CASCADE"), nullable=True)  # Nullable for migration
     name = Column(String(255), nullable=False, index=True)
     address = Column(Text, nullable=False)
     phone = Column(String(20), nullable=False, unique=True)
@@ -70,6 +90,7 @@ class Restaurant(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     
     # Relationships
+    account = relationship("RestaurantAccount", back_populates="locations")
     tables = relationship("Table", back_populates="restaurant", cascade="all, delete-orphan")
     bookings = relationship("Booking", back_populates="restaurant", cascade="all, delete-orphan")
     
@@ -119,7 +140,7 @@ class Table(Base):
     restaurant_id = Column(Integer, ForeignKey("restaurants.id", ondelete="CASCADE"), nullable=False)
     table_number = Column(String(20), nullable=False)
     capacity = Column(Integer, nullable=False)
-    location = Column(String(20), nullable=False, default=TableLocation.INDOOR)
+    location = Column(String(50), nullable=True)  # Optional location description
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     
@@ -266,9 +287,12 @@ class Booking(Base):
         return status
     
     @validates('booking_date')
-    def validate_booking_date(self, key: str, booking_date: datetime) -> datetime:
+    def validate_booking_date(self, key: str, booking_date) -> datetime:
         """Validate booking date is not in the past."""
-        if booking_date.date() < datetime.now().date():
+        from datetime import date as date_type
+        # Handle both date and datetime objects
+        check_date = booking_date if isinstance(booking_date, date_type) else booking_date.date()
+        if check_date < datetime.now().date():
             raise ValueError("Booking date cannot be in the past")
         return booking_date
     
@@ -300,3 +324,133 @@ class Booking(Base):
     
     def __repr__(self) -> str:
         return f"<Booking(id={self.id}, date={self.booking_date}, time={self.booking_time}, status={self.status})>"
+
+class Order(Base):
+    """
+    Order model representing a food order for delivery or pickup.
+    
+    Attributes:
+        id: Primary key
+        restaurant_id: Foreign key to restaurant
+        customer_id: Foreign key to customer
+        order_date: Date and time order was placed
+        delivery_address: Delivery address
+        order_items: JSON field with order items
+        subtotal: Order subtotal in cents
+        tax: Tax amount in cents
+        delivery_fee: Delivery fee in cents
+        total: Total amount in cents
+        status: Current order status
+        special_instructions: Special delivery or preparation instructions
+        created_at: Record creation timestamp
+        updated_at: Last update timestamp
+    """
+    __tablename__ = "orders"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    restaurant_id = Column(Integer, ForeignKey("restaurants.id", ondelete="CASCADE"), nullable=False)
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="RESTRICT"), nullable=False)
+    order_date = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    delivery_address = Column(Text, nullable=False)
+    order_items = Column(Text, nullable=False)  # JSON string of items
+    subtotal = Column(Integer, nullable=False)  # in cents
+    tax = Column(Integer, nullable=False, default=0)
+    delivery_fee = Column(Integer, nullable=False, default=0)
+    total = Column(Integer, nullable=False)
+    status = Column(String(20), nullable=False, default=OrderStatus.PENDING)
+    special_instructions = Column(Text, nullable=True)
+
+    # Payment fields
+    payment_status = Column(String(20), nullable=False, default='unpaid')  # paid, unpaid, pending
+    payment_method = Column(String(30), nullable=True)  # card, cash, pay_on_arrival
+    payment_intent_id = Column(String(255), nullable=True)  # Stripe payment intent ID
+
+    # Customer info (denormalized for quick access)
+    customer_name = Column(String(100), nullable=True)
+    customer_phone = Column(String(20), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # Relationships
+    restaurant = relationship("Restaurant", backref="orders")
+    customer = relationship("Customer", backref="orders")
+    delivery = relationship("Delivery", back_populates="order", uselist=False)
+    
+    # Constraints
+    __table_args__ = (
+        CheckConstraint('subtotal >= 0', name='check_subtotal_non_negative'),
+        CheckConstraint('tax >= 0', name='check_tax_non_negative'),
+        CheckConstraint('delivery_fee >= 0', name='check_delivery_fee_non_negative'),
+        CheckConstraint('total >= 0', name='check_total_non_negative'),
+        Index('idx_order_status', 'status'),
+        Index('idx_customer_orders', 'customer_id', 'order_date'),
+    )
+    
+    @validates('status')
+    def validate_status(self, key: str, status: str) -> str:
+        """Validate order status."""
+        if status not in [s.value for s in OrderStatus]:
+            raise ValueError(f"Invalid order status: {status}")
+        return status
+    
+    def __repr__(self) -> str:
+        return f"<Order(id={self.id}, status={self.status}, total=${self.total/100:.2f})>"
+
+
+class Delivery(Base):
+    """
+    Delivery model representing a delivery for an order.
+    
+    Attributes:
+        id: Primary key
+        order_id: Foreign key to order
+        driver_name: Name of delivery driver
+        driver_phone: Driver's phone number
+        estimated_delivery_time: Estimated delivery time
+        actual_delivery_time: Actual delivery time
+        status: Current delivery status
+        tracking_notes: Internal tracking notes
+        created_at: Record creation timestamp
+        updated_at: Last update timestamp
+    """
+    __tablename__ = "deliveries"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, unique=True)
+    driver_name = Column(String(255), nullable=True)
+    driver_phone = Column(String(20), nullable=True)
+    estimated_delivery_time = Column(DateTime(timezone=True), nullable=True)
+    actual_delivery_time = Column(DateTime(timezone=True), nullable=True)
+    status = Column(String(20), nullable=False, default=DeliveryStatus.ASSIGNED)
+    tracking_notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # Relationships
+    order = relationship("Order", back_populates="delivery")
+    
+    # Constraints
+    __table_args__ = (
+        Index('idx_delivery_status', 'status'),
+    )
+    
+    @validates('status')
+    def validate_status(self, key: str, status: str) -> str:
+        """Validate delivery status."""
+        if status not in [s.value for s in DeliveryStatus]:
+            raise ValueError(f"Invalid delivery status: {status}")
+        return status
+    
+    @validates('driver_phone')
+    def validate_phone(self, key: str, phone: Optional[str]) -> Optional[str]:
+        """Validate and normalize driver phone number."""
+        if phone:
+            cleaned = ''.join(filter(str.isdigit, phone))
+            if len(cleaned) < 10:
+                raise ValueError("Phone number must have at least 10 digits")
+            return cleaned
+        return phone
+    
+    def __repr__(self) -> str:
+        return f"<Delivery(id={self.id}, order_id={self.order_id}, status={self.status})>"

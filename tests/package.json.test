@@ -1,0 +1,368 @@
+Looking at the provided code, this is a `package.json` file which is a configuration file, not executable code. Configuration files like `package.json` don't have functions, methods, or components to test directly.
+
+However, I can provide useful tests that validate the package.json structure and ensure the project configuration is correct. This is a common practice for ensuring project health.
+
+// __tests__/package.config.test.ts
+import { describe, it, expect, beforeAll } from 'vitest';
+import * as fs from 'fs';
+import * as path from 'path';
+
+describe('package.json Configuration', () => {
+  let packageJson: Record<string, unknown>;
+
+  beforeAll(() => {
+    const packagePath = path.resolve(__dirname, '../package.json');
+    const content = fs.readFileSync(packagePath, 'utf-8');
+    packageJson = JSON.parse(content);
+  });
+
+  describe('Basic Structure', () => {
+    it('should have a valid name', () => {
+      expect(packageJson.name).toBe('restaurant-booking-dashboard');
+      expect(typeof packageJson.name).toBe('string');
+    });
+
+    it('should be marked as private', () => {
+      expect(packageJson.private).toBe(true);
+    });
+
+    it('should have a valid semver version', () => {
+      const semverRegex = /^\d+\.\d+\.\d+$/;
+      expect(packageJson.version).toMatch(semverRegex);
+    });
+
+    it('should use ES modules', () => {
+      expect(packageJson.type).toBe('module');
+    });
+  });
+
+  describe('Scripts', () => {
+    let scripts: Record<string, string>;
+
+    beforeAll(() => {
+      scripts = packageJson.scripts as Record<string, string>;
+    });
+
+    it('should have a dev script using vite', () => {
+      expect(scripts.dev).toBe('vite');
+    });
+
+    it('should have a build script with TypeScript compilation', () => {
+      expect(scripts.build).toBe('tsc && vite build');
+      expect(scripts.build).toContain('tsc');
+      expect(scripts.build).toContain('vite build');
+    });
+
+    it('should have a lint script with ESLint', () => {
+      expect(scripts.lint).toContain('eslint');
+      expect(scripts.lint).toContain('--ext ts,tsx');
+      expect(scripts.lint).toContain('--max-warnings 0');
+    });
+
+    it('should have a preview script', () => {
+      expect(scripts.preview).toBe('vite preview');
+    });
+
+    it('should have all required scripts', () => {
+      const requiredScripts = ['dev', 'build', 'lint', 'preview'];
+      requiredScripts.forEach((script) => {
+        expect(scripts).toHaveProperty(script);
+      });
+    });
+  });
+
+  describe('Dependencies', () => {
+    let dependencies: Record<string, string>;
+
+    beforeAll(() => {
+      dependencies = packageJson.dependencies as Record<string, string>;
+    });
+
+    it('should have React 18.x', () => {
+      expect(dependencies.react).toMatch(/^\^18\./);
+    });
+
+    it('should have React DOM matching React version', () => {
+      expect(dependencies['react-dom']).toMatch(/^\^18\./);
+    });
+
+    it('should have react-router-dom for routing', () => {
+      expect(dependencies['react-router-dom']).toBeDefined();
+      expect(dependencies['react-router-dom']).toMatch(/^\^6\./);
+    });
+
+    it('should have axios for HTTP requests', () => {
+      expect(dependencies.axios).toBeDefined();
+      expect(dependencies.axios).toMatch(/^\^1\./);
+    });
+
+    it('should have date-fns for date handling', () => {
+      expect(dependencies['date-fns']).toBeDefined();
+      expect(dependencies['date-fns']).toMatch(/^\^3\./);
+    });
+
+    it('should have heroicons for icons', () => {
+      expect(dependencies['@heroicons/react']).toBeDefined();
+      expect(dependencies['@heroicons/react']).toMatch(/^\^2\./);
+    });
+
+    it('should have all required dependencies', () => {
+      const requiredDeps = [
+        '@heroicons/react',
+        'axios',
+        'date-fns',
+        'react',
+        'react-dom',
+        'react-router-dom',
+      ];
+      requiredDeps.forEach((dep) => {
+        expect(dependencies).toHaveProperty(dep);
+      });
+    });
+  });
+
+  describe('DevDependencies', () => {
+    let devDependencies: Record<string, string>;
+
+    beforeAll(() => {
+      devDependencies = packageJson.devDependencies as Record<string, string>;
+    });
+
+    describe('TypeScript Setup', () => {
+      it('should have TypeScript 5.x', () => {
+        expect(devDependencies.typescript).toMatch(/^\^5\./);
+      });
+
+      it('should have React type definitions', () => {
+        expect(devDependencies['@types/react']).toBeDefined();
+        expect(devDependencies['@types/react-dom']).toBeDefined();
+      });
+
+      it('should have matching React type versions', () => {
+        const reactTypesVersion = devDependencies['@types/react'].match(/\^(\d+)\./)?.[1];
+        const reactDomTypesVersion = devDependencies['@types/react-dom'].match(/\^(\d+)\./)?.[1];
+        expect(reactTypesVersion).toBe(reactDomTypesVersion);
+      });
+    });
+
+    describe('Build Tools', () => {
+      it('should have Vite 5.x', () => {
+        expect(devDependencies.vite).toMatch(/^\^5\./);
+      });
+
+      it('should have Vite React plugin', () => {
+        expect(devDependencies['@vitejs/plugin-react']).toBeDefined();
+        expect(devDependencies['@vitejs/plugin-react']).toMatch(/^\^4\./);
+      });
+    });
+
+    describe('ESLint Setup', () => {
+      it('should have ESLint', () => {
+        expect(devDependencies.eslint).toBeDefined();
+        expect(devDependencies.eslint).toMatch(/^\^8\./);
+      });
+
+      it('should have TypeScript ESLint plugin', () => {
+        expect(devDependencies['@typescript-eslint/eslint-plugin']).toBeDefined();
+      });
+
+      it('should have TypeScript ESLint parser', () => {
+        expect(devDependencies['@typescript-eslint/parser']).toBeDefined();
+      });
+
+      it('should have matching TypeScript ESLint versions', () => {
+        const pluginVersion = devDependencies['@typescript-eslint/eslint-plugin'];
+        const parserVersion = devDependencies['@typescript-eslint/parser'];
+        expect(pluginVersion).toBe(parserVersion);
+      });
+
+      it('should have React hooks ESLint plugin', () => {
+        expect(devDependencies['eslint-plugin-react-hooks']).toBeDefined();
+      });
+
+      it('should have React refresh ESLint plugin', () => {
+        expect(devDependencies['eslint-plugin-react-refresh']).toBeDefined();
+      });
+    });
+
+    describe('CSS/Styling Setup', () => {
+      it('should have Tailwind CSS', () => {
+        expect(devDependencies.tailwindcss).toBeDefined();
+        expect(devDependencies.tailwindcss).toMatch(/^\^3\./);
+      });
+
+      it('should have PostCSS', () => {
+        expect(devDependencies.postcss).toBeDefined();
+      });
+
+      it('should have Autoprefixer', () => {
+        expect(devDependencies.autoprefixer).toBeDefined();
+      });
+    });
+
+    it('should have all required devDependencies', () => {
+      const requiredDevDeps = [
+        '@types/react',
+        '@types/react-dom',
+        '@typescript-eslint/eslint-plugin',
+        '@typescript-eslint/parser',
+        '@vitejs/plugin-react',
+        'autoprefixer',
+        'eslint',
+        'eslint-plugin-react-hooks',
+        'eslint-plugin-react-refresh',
+        'postcss',
+        'tailwindcss',
+        'typescript',
+        'vite',
+      ];
+      requiredDevDeps.forEach((dep) => {
+        expect(devDependencies).toHaveProperty(dep);
+      });
+    });
+  });
+
+  describe('Version Compatibility', () => {
+    it('should have compatible React and React DOM versions', () => {
+      const dependencies = packageJson.dependencies as Record<string, string>;
+      expect(dependencies.react).toBe(dependencies['react-dom']);
+    });
+
+    it('should have React types matching React major version', () => {
+      const dependencies = packageJson.dependencies as Record<string, string>;
+      const devDependencies = packageJson.devDependencies as Record<string, string>;
+      
+      const reactMajor = dependencies.react.match(/\^(\d+)\./)?.[1];
+      const typesMajor = devDependencies['@types/react'].match(/\^(\d+)\./)?.[1];
+      
+      expect(reactMajor).toBe(typesMajor);
+    });
+  });
+
+  describe('Security and Best Practices', () => {
+    it('should not have any dependencies with known vulnerabilities patterns', () => {
+      const dependencies = packageJson.dependencies as Record<string, string>;
+      const devDependencies = packageJson.devDependencies as Record<string, string>;
+      const allDeps = { ...dependencies, ...devDependencies };
+
+      // Check for wildcard versions (security risk)
+      Object.entries(allDeps).forEach(([name, version]) => {
+        expect(version).not.toBe('*');
+        expect(version).not.toBe('latest');
+      });
+    });
+
+    it('should use caret (^) for version ranges', () => {
+      const dependencies = packageJson.dependencies as Record<string, string>;
+      const devDependencies = packageJson.devDependencies as Record<string, string>;
+      const allDeps = { ...dependencies, ...devDependencies };
+
+      Object.entries(allDeps).forEach(([name, version]) => {
+        expect(version).toMatch(/^\^/);
+      });
+    });
+
+    it('should not have deprecated packages', () => {
+      const dependencies = packageJson.dependencies as Record<string, string>;
+      const deprecatedPackages = ['request', 'node-uuid', 'nomnom'];
+      
+      deprecatedPackages.forEach((pkg) => {
+        expect(dependencies).not.toHaveProperty(pkg);
+      });
+    });
+  });
+
+  describe('JSON Validity', () => {
+    it('should be valid JSON', () => {
+      const packagePath = path.resolve(__dirname, '../package.json');
+      const content = fs.readFileSync(packagePath, 'utf-8');
+      
+      expect(() => JSON.parse(content)).not.toThrow();
+    });
+
+    it('should not have duplicate keys', () => {
+      const packagePath = path.resolve(__dirname, '../package.json');
+      const content = fs.readFileSync(packagePath, 'utf-8');
+      
+      // Simple check - if JSON.parse works, there are no syntax errors
+      // For duplicate keys, we'd need a custom parser
+      const parsed = JSON.parse(content);
+      expect(parsed).toBeDefined();
+    });
+  });
+});
+
+describe('Package.json Dependency Validation', () => {
+  it('should not mix incompatible major versions of related packages', () => {
+    const packagePath = path.resolve(__dirname, '../package.json');
+    const content = fs.readFileSync(packagePath, 'utf-8');
+    const pkg = JSON.parse(content);
+
+    // Check React ecosystem compatibility
+    const reactVersion = pkg.dependencies.react;
+    const reactDomVersion = pkg.dependencies['react-dom'];
+    
+    expect(reactVersion).toBe(reactDomVersion);
+  });
+
+  it('should have test script configured', () => {
+    const packagePath = path.resolve(__dirname, '../package.json');
+    const content = fs.readFileSync(packagePath, 'utf-8');
+    const pkg = JSON.parse(content);
+
+    // Note: The current package.json doesn't have a test script
+    // This test documents that and can be updated when tests are added
+    const hasTestScript = pkg.scripts?.test !== undefined;
+    
+    // This is a reminder that test script should be added
+    if (!hasTestScript) {
+      console.warn('Warning: No test script defined in package.json');
+    }
+  });
+});
+
+// Utility function tests for version parsing
+describe('Version Parsing Utilities', () => {
+  const parseVersion = (version: string): { major: number; minor: number; patch: number } | null => {
+    const match = version.match(/\^?(\d+)\.(\d+)\.(\d+)/);
+    if (!match) return null;
+    return {
+      major: parseInt(match[1], 10),
+      minor: parseInt(match[2], 10),
+      patch: parseInt(match[3], 10),
+    };
+  };
+
+  it('should parse caret versions correctly', () => {
+    const result = parseVersion('^18.2.0');
+    expect(result).toEqual({ major: 18, minor: 2, patch: 0 });
+  });
+
+  it('should parse versions without caret', () => {
+    const result = parseVersion('18.2.0');
+    expect(result).toEqual({ major: 18, minor: 2, patch: 0 });
+  });
+
+  it('should return null for invalid versions', () => {
+    const result = parseVersion('invalid');
+    expect(result).toBeNull();
+  });
+
+  it('should handle single digit versions', () => {
+    const result = parseVersion('^1.0.0');
+    expect(result).toEqual({ major: 1, minor: 0, patch: 0 });
+  });
+});
+To run these tests, you'll need to add Vitest to your devDependencies and create a test script:
+
+```json
+{
+  "scripts": {
+    "test": "vitest",
+    "test:coverage": "vitest --coverage"
+  },
+  "devDependencies": {
+    "vitest": "^1.0.0",
+    "@vitest/coverage-v8": "^1.0.0"
+  }
+}

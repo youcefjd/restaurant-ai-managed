@@ -16,26 +16,27 @@ from .models import Restaurant, Table, Customer, Booking
 from .schemas import (
     RestaurantCreate,
     RestaurantUpdate,
-    RestaurantResponse,
+    Restaurant as RestaurantResponse,
     TableCreate,
     TableUpdate,
-    TableResponse,
+    Table as TableResponse,
     CustomerCreate,
     CustomerUpdate,
-    CustomerResponse,
+    Customer as CustomerResponse,
     BookingCreate,
     BookingUpdate,
-    BookingResponse,
+    Booking as BookingResponse,
     AvailabilityQuery,
     AvailabilityResponse
 )
-from .services import (
-    RestaurantService,
-    TableService,
-    CustomerService,
-    BookingService,
-    AvailabilityService
-)
+# Services are imported directly in route handlers where needed
+# from .services import (
+#     RestaurantService,
+#     TableService,
+#     CustomerService,
+#     BookingService,
+#     AvailabilityService
+# )
 
 # Export main components
 __all__ = [
@@ -65,13 +66,6 @@ __all__ = [
     "BookingResponse",
     "AvailabilityQuery",
     "AvailabilityResponse",
-    
-    # Services
-    "RestaurantService",
-    "TableService",
-    "CustomerService",
-    "BookingService",
-    "AvailabilityService",
 ]
 
 # Initialize database tables on import

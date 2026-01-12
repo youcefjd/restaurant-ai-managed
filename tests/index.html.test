@@ -1,0 +1,444 @@
+/**
+ * Tests for frontend/index.html
+ * 
+ * Since index.html is a static HTML file with embedded CSS,
+ * we test it using DOM parsing and validation approaches.
+ */
+
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { JSDOM } from 'jsdom';
+import fs from 'fs';
+import path from 'path';
+
+// Read the HTML file
+const htmlPath = path.resolve(__dirname, '../index.html');
+const htmlContent = fs.readFileSync(htmlPath, 'utf-8');
+
+describe('index.html', () => {
+  let dom;
+  let document;
+
+  beforeEach(() => {
+    dom = new JSDOM(htmlContent);
+    document = dom.window.document;
+  });
+
+  afterEach(() => {
+    dom = null;
+    document = null;
+  });
+
+  describe('Document Structure', () => {
+    it('should have correct DOCTYPE', () => {
+      expect(htmlContent.trim().startsWith('<!DOCTYPE html>')).toBe(true);
+    });
+
+    it('should have html element with lang attribute', () => {
+      const html = document.documentElement;
+      expect(html).toBeTruthy();
+      expect(html.getAttribute('lang')).toBe('en');
+    });
+
+    it('should have head element', () => {
+      const head = document.head;
+      expect(head).toBeTruthy();
+    });
+
+    it('should have body element', () => {
+      const body = document.body;
+      expect(body).toBeTruthy();
+    });
+  });
+
+  describe('Meta Tags', () => {
+    it('should have charset meta tag', () => {
+      const charset = document.querySelector('meta[charset]');
+      expect(charset).toBeTruthy();
+      expect(charset.getAttribute('charset')).toBe('UTF-8');
+    });
+
+    it('should have viewport meta tag for responsive design', () => {
+      const viewport = document.querySelector('meta[name="viewport"]');
+      expect(viewport).toBeTruthy();
+      expect(viewport.getAttribute('content')).toContain('width=device-width');
+      expect(viewport.getAttribute('content')).toContain('initial-scale=1.0');
+    });
+
+    it('should have description meta tag for SEO', () => {
+      const description = document.querySelector('meta[name="description"]');
+      expect(description).toBeTruthy();
+      expect(description.getAttribute('content')).toContain('Restaurant');
+      expect(description.getAttribute('content').length).toBeGreaterThan(50);
+    });
+
+    it('should have theme-color meta tag', () => {
+      const themeColor = document.querySelector('meta[name="theme-color"]');
+      expect(themeColor).toBeTruthy();
+      expect(themeColor.getAttribute('content')).toMatch(/^#[0-9a-fA-F]{6}$/);
+    });
+  });
+
+  describe('Favicon and Icons', () => {
+    it('should have favicon link', () => {
+      const favicon = document.querySelector('link[rel="icon"]');
+      expect(favicon).toBeTruthy();
+      expect(favicon.getAttribute('href')).toBeTruthy();
+    });
+
+    it('should have apple-touch-icon for iOS', () => {
+      const appleTouchIcon = document.querySelector('link[rel="apple-touch-icon"]');
+      expect(appleTouchIcon).toBeTruthy();
+      expect(appleTouchIcon.getAttribute('href')).toBeTruthy();
+    });
+  });
+
+  describe('Preconnect Links', () => {
+    it('should have preconnect to API server', () => {
+      const preconnect = document.querySelector('link[rel="preconnect"]');
+      expect(preconnect).toBeTruthy();
+      expect(preconnect.getAttribute('href')).toContain('localhost:8000');
+    });
+  });
+
+  describe('Title', () => {
+    it('should have a title element', () => {
+      const title = document.querySelector('title');
+      expect(title).toBeTruthy();
+    });
+
+    it('should have descriptive title text', () => {
+      const title = document.querySelector('title');
+      expect(title.textContent).toContain('Restaurant');
+      expect(title.textContent).toContain('Dashboard');
+    });
+  });
+
+  describe('Accessibility Features', () => {
+    it('should have skip link for keyboard navigation', () => {
+      const skipLink = document.querySelector('.skip-link');
+      expect(skipLink).toBeTruthy();
+    });
+
+    it('should have skip link with href to main content', () => {
+      const skipLink = document.querySelector('.skip-link');
+      expect(skipLink.getAttribute('href')).toBe('#main-content');
+    });
+
+    it('should have root element for React mounting', () => {
+      const root = document.getElementById('root');
+      expect(root).toBeTruthy();
+    });
+
+    it('should have main element with correct id', () => {
+      const main = document.getElementById('main-content');
+      expect(main).toBeTruthy();
+      expect(main.tagName.toLowerCase()).toBe('main');
+    });
+
+    it('should have aria-live region for announcements', () => {
+      const ariaLive = document.querySelector('[aria-live]');
+      expect(ariaLive).toBeTruthy();
+      expect(ariaLive.getAttribute('aria-live')).toBe('polite');
+    });
+
+    it('should have sr-only class for screen reader announcements', () => {
+      const srOnly = document.querySelector('.sr-only');
+      expect(srOnly).toBeTruthy();
+    });
+  });
+
+  describe('Loading State', () => {
+    it('should have initial loader element', () => {
+      const loader = document.querySelector('.initial-loader');
+      expect(loader).toBeTruthy();
+    });
+
+    it('should have spinner in loader', () => {
+      const spinner = document.querySelector('.initial-loader .spinner');
+      expect(spinner).toBeTruthy();
+    });
+
+    it('should have loading text', () => {
+      const text = document.querySelector('.initial-loader .text');
+      expect(text).toBeTruthy();
+      expect(text.textContent).toContain('Loading');
+    });
+  });
+
+  describe('Script Loading', () => {
+    it('should have main script with type module', () => {
+      const script = document.querySelector('script[type="module"]');
+      expect(script).toBeTruthy();
+    });
+
+    it('should load main.tsx entry point', () => {
+      const script = document.querySelector('script[type="module"]');
+      expect(script.getAttribute('src')).toContain('main.tsx');
+    });
+  });
+
+  describe('Noscript Fallback', () => {
+    it('should have noscript element for JS-disabled browsers', () => {
+      const noscript = document.querySelector('noscript');
+      expect(noscript).toBeTruthy();
+    });
+
+    it('should have helpful message in noscript', () => {
+      const noscript = document.querySelector('noscript');
+      expect(noscript.textContent).toContain('JavaScript');
+    });
+  });
+});
+
+describe('index.html CSS Styles', () => {
+  let dom;
+  let document;
+  let styleContent;
+
+  beforeEach(() => {
+    dom = new JSDOM(htmlContent);
+    document = dom.window.document;
+    const styleElement = document.querySelector('style');
+    styleContent = styleElement ? styleElement.textContent : '';
+  });
+
+  afterEach(() => {
+    dom = null;
+    document = null;
+    styleContent = '';
+  });
+
+  describe('Skip Link Styles', () => {
+    it('should have skip-link styles defined', () => {
+      expect(styleContent).toContain('.skip-link');
+    });
+
+    it('should position skip-link off-screen initially', () => {
+      expect(styleContent).toContain('top: -40px');
+    });
+
+    it('should have focus state for skip-link', () => {
+      expect(styleContent).toContain('.skip-link:focus');
+    });
+
+    it('should show skip-link on focus', () => {
+      expect(styleContent).toContain('top: 0');
+    });
+  });
+
+  describe('Loader Styles', () => {
+    it('should have initial-loader styles', () => {
+      expect(styleContent).toContain('.initial-loader');
+    });
+
+    it('should center loader with flexbox', () => {
+      expect(styleContent).toContain('display: flex');
+      expect(styleContent).toContain('align-items: center');
+      expect(styleContent).toContain('justify-content: center');
+    });
+
+    it('should have spinner styles', () => {
+      expect(styleContent).toContain('.spinner');
+    });
+
+    it('should have spin animation', () => {
+      expect(styleContent).toContain('@keyframes spin');
+      expect(styleContent).toContain('rotate(360deg)');
+    });
+  });
+
+  describe('Accessibility Styles', () => {
+    it('should have reduced motion media query', () => {
+      expect(styleContent).toContain('prefers-reduced-motion');
+    });
+
+    it('should disable animations for reduced motion preference', () => {
+      expect(styleContent).toContain('animation-duration: 0.01ms');
+    });
+
+    it('should have focus-visible styles', () => {
+      expect(styleContent).toContain(':focus-visible');
+    });
+
+    it('should have smooth scrolling preference', () => {
+      expect(styleContent).toContain('scroll-behavior: smooth');
+    });
+  });
+
+  describe('Layout Styles', () => {
+    it('should set full height on html, body, and root', () => {
+      expect(styleContent).toContain('html, body, #root');
+      expect(styleContent).toContain('height: 100%');
+    });
+
+    it('should reset margin and padding', () => {
+      expect(styleContent).toContain('margin: 0');
+      expect(styleContent).toContain('padding: 0');
+    });
+  });
+
+  describe('Loader Hiding Logic', () => {
+    it('should hide loader when root has content', () => {
+      expect(styleContent).toContain('#root:not(:empty)');
+      expect(styleContent).toContain('display: none');
+    });
+  });
+});
+
+describe('index.html Validation', () => {
+  let dom;
+  let document;
+
+  beforeEach(() => {
+    dom = new JSDOM(htmlContent);
+    document = dom.window.document;
+  });
+
+  afterEach(() => {
+    dom = null;
+    document = null;
+  });
+
+  describe('HTML Validity', () => {
+    it('should not have duplicate IDs', () => {
+      const allIds = document.querySelectorAll('[id]');
+      const idSet = new Set();
+      const duplicates = [];
+
+      allIds.forEach((el) => {
+        const id = el.getAttribute('id');
+        if (idSet.has(id)) {
+          duplicates.push(id);
+        }
+        idSet.add(id);
+      });
+
+      expect(duplicates).toHaveLength(0);
+    });
+
+    it('should have all required elements in correct order', () => {
+      const head = document.head;
+      const body = document.body;
+
+      // Head should come before body in DOM
+      expect(head.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('should have charset meta as first element in head', () => {
+      const firstChild = document.head.firstElementChild;
+      expect(firstChild.tagName.toLowerCase()).toBe('meta');
+      expect(firstChild.hasAttribute('charset')).toBe(true);
+    });
+  });
+
+  describe('Link Integrity', () => {
+    it('should have valid href attributes on links', () => {
+      const links = document.querySelectorAll('link[href]');
+      links.forEach((link) => {
+        const href = link.getAttribute('href');
+        expect(href).toBeTruthy();
+        expect(href.length).toBeGreaterThan(0);
+      });
+    });
+
+    it('should have valid src attributes on scripts', () => {
+      const scripts = document.querySelectorAll('script[src]');
+      scripts.forEach((script) => {
+        const src = script.getAttribute('src');
+        expect(src).toBeTruthy();
+        expect(src.length).toBeGreaterThan(0);
+      });
+    });
+  });
+
+  describe('Semantic Structure', () => {
+    it('should have proper heading hierarchy', () => {
+      const headings = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
+      // In this HTML, headings might be in noscript or loader
+      // Just verify if any exist, they follow proper structure
+      if (headings.length > 0) {
+        const levels = Array.from(headings).map((h) => parseInt(h.tagName[1]));
+        // First heading should be h1 or reasonable level
+        expect(levels[0]).toBeLessThanOrEqual(2);
+      }
+    });
+
+    it('should have main landmark', () => {
+      const main = document.querySelector('main');
+      expect(main).toBeTruthy();
+    });
+  });
+});
+
+describe('index.html Security', () => {
+  it('should not have inline event handlers', () => {
+    const eventHandlerPattern = /\s(on\w+)=/gi;
+    const matches = htmlContent.match(eventHandlerPattern);
+    expect(matches).toBeNull();
+  });
+
+  it('should not have javascript: URLs', () => {
+    expect(htmlContent).not.toContain('javascript:');
+  });
+
+  it('should not have data: URLs in links', () => {
+    const dom = new JSDOM(htmlContent);
+    const links = dom.window.document.querySelectorAll('a[href^="data:"], link[href^="data:"]');
+    expect(links.length).toBe(0);
+  });
+});
+
+describe('index.html Performance', () => {
+  let dom;
+  let document;
+
+  beforeEach(() => {
+    dom = new JSDOM(htmlContent);
+    document = dom.window.document;
+  });
+
+  afterEach(() => {
+    dom = null;
+    document = null;
+  });
+
+  it('should have preconnect hints for external resources', () => {
+    const preconnects = document.querySelectorAll('link[rel="preconnect"]');
+    expect(preconnects.length).toBeGreaterThan(0);
+  });
+
+  it('should use module type for main script', () => {
+    const mainScript = document.querySelector('script[src*="main"]');
+    expect(mainScript.getAttribute('type')).toBe('module');
+  });
+
+  it('should have minimal blocking resources in head', () => {
+    const blockingScripts = document.querySelectorAll('head script:not([async]):not([defer]):not([type="module"])');
+    expect(blockingScripts.length).toBe(0);
+  });
+
+  it('should have critical CSS inlined', () => {
+    const inlineStyles = document.querySelectorAll('head style');
+    expect(inlineStyles.length).toBeGreaterThan(0);
+  });
+});
+
+describe('index.html Color Contrast', () => {
+  it('should use accessible color values', () => {
+    // Extract color values from CSS
+    const colorPattern = /#[0-9a-fA-F]{3,6}/g;
+    const colors = htmlContent.match(colorPattern) || [];
+    
+    // Verify colors are valid hex codes
+    colors.forEach((color) => {
+      expect(color).toMatch(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/);
+    });
+  });
+
+  it('should have theme color defined', () => {
+    const dom = new JSDOM(htmlContent);
+    const themeColor = dom.window.document.querySelector('meta[name="theme-color"]');
+    expect(themeColor).toBeTruthy();
+    expect(themeColor.getAttribute('content')).toMatch(/^#[0-9a-fA-F]{6}$/);
+  });
+});

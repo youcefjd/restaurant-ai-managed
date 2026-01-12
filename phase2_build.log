@@ -1,0 +1,848 @@
+/Users/youcef/close-to-zero-prompting-ai-brain/venv/lib/python3.14/site-packages/langchain_core/_api/deprecation.py:26: UserWarning: Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.
+  from pydantic.v1.fields import FieldInfo as FieldInfoV1
+================================================================================
+🚀 PHASE 2: ADMIN DASHBOARD FRONTEND
+================================================================================
+
+Building React admin dashboard with Vite and TailwindCSS...
+
+ℹ️  Emergency stop signal handlers disabled (web server mode)
+📋 Requirements:
+
+# Phase 2: Restaurant Admin Dashboard
+
+Build a modern React admin dashboard for restaurant owners using Vite, React Router, and TailwindCSS.
+
+## Project Structure
+```
+frontend/
+├── package.json
+├── vite.config.js
+├── tailwind.config.js
+├── index.html
+├── src/
+│   ├── main.jsx
+│   ├── App.jsx
+│   ├── api/
+│   │   └── client.js          # API client for backend
+│   ├── components/
+│   │   ├── Layout.jsx         # Main layout with sidebar
+│   │   ├── Sidebar.jsx        # Navigation sidebar
+│   │  ...
+
+
+======================================================================
+🚀 AUTONOMOUS ENGINEER STARTING
+======================================================================
+📋 Feature Request: 
+# Phase 2: Restaurant Admin Dashboard
+
+Build a modern React admin dashboard for restaurant owners using Vite, React Router, and TailwindCSS.
+
+## Project Structure
+```
+frontend/
+├── package.json
+├── vite.config.js
+├── tailwind.config.js
+├── index.html
+├── src/
+│   ├── main.jsx
+│   ├── App.jsx
+│   ├── api/
+│   │   └── client.js          # API client for backend
+│   ├── components/
+│   │   ├── Layout.jsx         # Main layout with sidebar
+│   │   ├── Sidebar.jsx        # Navigation sidebar
+│   │   ├── Header.jsx         # Top header bar
+│   │   └── shared/            # Reusable components
+│   │       ├── Button.jsx
+│   │       ├── Card.jsx
+│   │       ├── Table.jsx
+│   │       ├── Modal.jsx
+│   │       ├── Badge.jsx
+│   │       └── Input.jsx
+│   ├── pages/
+│   │   ├── Dashboard.jsx      # Dashboard with stats
+│   │   ├── Restaurants.jsx    # Restaurant CRUD
+│   │   ├── Tables.jsx         # Table management
+│   │   ├── Bookings.jsx       # Booking management
+│   │   └── Customers.jsx      # Customer list
+│   ├── hooks/
+│   │   └── useApi.js          # Custom hook for API calls
+│   └── utils/
+│       └── helpers.js         # Utility functions
+```
+
+## Technical Requirements
+
+### 1. Setup & Configuration
+- Use Vite as the build tool
+- React 18+ with hooks
+- React Router v6 for routing
+- TailwindCSS for styling
+- Axios for API requests
+
+### 2. API Integration
+Backend API is running at http://localhost:8000
+
+Endpoints to integrate:
+- GET /api/ - List restaurants
+- POST /api/ - Create restaurant
+- PUT /api/{id} - Update restaurant
+- DELETE /api/{id} - Delete restaurant
+- GET /api/{restaurant_id}/tables - List tables
+- POST /api/{restaurant_id}/tables - Create table
+- GET /api/bookings/ - List bookings
+- POST /api/bookings/ - Create booking
+- DELETE /api/bookings/{id} - Cancel booking
+- GET /api/customers/ - List customers
+- POST /api/availability/check - Check availability
+
+### 3. Pages & Features
+
+#### Dashboard Page
+- Show 4 stat cards: Total Restaurants, Total Bookings, Total Customers, Active Tables
+- Recent bookings table (last 10)
+- Today's bookings count
+- Weekly booking trend chart (bonus)
+
+#### Restaurants Page
+- Table view of all restaurants
+- "Add Restaurant" button with modal form
+- Edit/Delete actions for each restaurant
+- Form fields: name, address, phone, email, opening_time, closing_time, booking_duration_minutes, max_party_size
+- Client-side validation
+
+#### Tables Page
+- Restaurant selector dropdown
+- Table list for selected restaurant
+- Add/Edit/Delete table functionality
+- Fields: table_number, capacity, location, is_active
+- Visual table layout view (bonus)
+
+#### Bookings Page
+- Filterable booking list (by date, status, restaurant)
+- Create booking button with modal
+- Cancel booking action
+- Status badges (pending, confirmed, cancelled, completed, no_show)
+- Calendar view (bonus)
+
+#### Customers Page
+- Customer list table
+- Show: name, phone, email, total_bookings, no_shows
+- Search by phone number
+
+### 4. UI/UX Requirements
+- Clean, modern design
+- Responsive layout (desktop-first)
+- Loading states for API calls
+- Error handling with toast notifications
+- Form validation
+- Confirmation dialogs for destructive actions
+- Color scheme: Blue primary (#2563eb), success green, warning yellow, danger red
+
+### 5. Component Requirements
+
+All components should be modular and reusable.
+
+**Button.jsx** - Primary, secondary, danger variants with loading state
+**Card.jsx** - Container with optional header and footer
+**Table.jsx** - Data table with sortable columns
+**Modal.jsx** - Reusable modal with header, body, footer
+**Badge.jsx** - Status badges with color variants
+**Input.jsx** - Form inputs with label and error message
+
+### 6. Dependencies (package.json)
+```json
+{
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.20.0",
+    "axios": "^1.6.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.2.0",
+    "vite": "^5.0.0",
+    "tailwindcss": "^3.4.0",
+    "autoprefixer": "^10.4.16",
+    "postcss": "^8.4.32"
+  }
+}
+```
+
+### 7. Implementation Notes
+- Use React hooks (useState, useEffect, useContext)
+- Create custom useApi hook for data fetching
+- Handle CORS properly (backend already configured)
+- Use TailwindCSS utility classes for styling
+- Implement proper error boundaries
+- Add loading spinners for async operations
+
+## Success Criteria
+1. All pages load without errors
+2. Can create, read, update, delete restaurants
+3. Can view and manage bookings
+4. Clean, professional UI
+5. Proper error handling
+6. Responsive design
+
+Build this as a production-ready admin dashboard that restaurant owners would actually want to use.
+
+📁 Repository: /Users/youcef/restaurant-assistant
+======================================================================
+
+
+📍 Phase: ARCHITECTURE
+----------------------------------------------------------------------
+🏗️  Analyzing codebase and designing architecture...
+🏗️  Analyzing codebase at: /Users/youcef/restaurant-assistant
+   📂 Project type: python
+   🔧 Tech stack: Python, FastAPI
+   🎨 Designing architecture for: 
+# Phase 2: Restaurant Admin Dashboard
+
+Build a modern React admin dashboard for restaurant owners using Vite, React Router, and TailwindCSS.
+
+## Project Structure
+```
+frontend/
+├── package.json
+├── vite.config.js
+├── tailwind.config.js
+├── index.html
+├── src/
+│   ├── main.jsx
+│   ├── App.jsx
+│   ├── api/
+│   │   └── client.js          # API client for backend
+│   ├── components/
+│   │   ├── Layout.jsx         # Main layout with sidebar
+│   │   ├── Sidebar.jsx        # Navigation sidebar
+│   │   ├── Header.jsx         # Top header bar
+│   │   └── shared/            # Reusable components
+│   │       ├── Button.jsx
+│   │       ├── Card.jsx
+│   │       ├── Table.jsx
+│   │       ├── Modal.jsx
+│   │       ├── Badge.jsx
+│   │       └── Input.jsx
+│   ├── pages/
+│   │   ├── Dashboard.jsx      # Dashboard with stats
+│   │   ├── Restaurants.jsx    # Restaurant CRUD
+│   │   ├── Tables.jsx         # Table management
+│   │   ├── Bookings.jsx       # Booking management
+│   │   └── Customers.jsx      # Customer list
+│   ├── hooks/
+│   │   └── useApi.js          # Custom hook for API calls
+│   └── utils/
+│       └── helpers.js         # Utility functions
+```
+
+## Technical Requirements
+
+### 1. Setup & Configuration
+- Use Vite as the build tool
+- React 18+ with hooks
+- React Router v6 for routing
+- TailwindCSS for styling
+- Axios for API requests
+
+### 2. API Integration
+Backend API is running at http://localhost:8000
+
+Endpoints to integrate:
+- GET /api/ - List restaurants
+- POST /api/ - Create restaurant
+- PUT /api/{id} - Update restaurant
+- DELETE /api/{id} - Delete restaurant
+- GET /api/{restaurant_id}/tables - List tables
+- POST /api/{restaurant_id}/tables - Create table
+- GET /api/bookings/ - List bookings
+- POST /api/bookings/ - Create booking
+- DELETE /api/bookings/{id} - Cancel booking
+- GET /api/customers/ - List customers
+- POST /api/availability/check - Check availability
+
+### 3. Pages & Features
+
+#### Dashboard Page
+- Show 4 stat cards: Total Restaurants, Total Bookings, Total Customers, Active Tables
+- Recent bookings table (last 10)
+- Today's bookings count
+- Weekly booking trend chart (bonus)
+
+#### Restaurants Page
+- Table view of all restaurants
+- "Add Restaurant" button with modal form
+- Edit/Delete actions for each restaurant
+- Form fields: name, address, phone, email, opening_time, closing_time, booking_duration_minutes, max_party_size
+- Client-side validation
+
+#### Tables Page
+- Restaurant selector dropdown
+- Table list for selected restaurant
+- Add/Edit/Delete table functionality
+- Fields: table_number, capacity, location, is_active
+- Visual table layout view (bonus)
+
+#### Bookings Page
+- Filterable booking list (by date, status, restaurant)
+- Create booking button with modal
+- Cancel booking action
+- Status badges (pending, confirmed, cancelled, completed, no_show)
+- Calendar view (bonus)
+
+#### Customers Page
+- Customer list table
+- Show: name, phone, email, total_bookings, no_shows
+- Search by phone number
+
+### 4. UI/UX Requirements
+- Clean, modern design
+- Responsive layout (desktop-first)
+- Loading states for API calls
+- Error handling with toast notifications
+- Form validation
+- Confirmation dialogs for destructive actions
+- Color scheme: Blue primary (#2563eb), success green, warning yellow, danger red
+
+### 5. Component Requirements
+
+All components should be modular and reusable.
+
+**Button.jsx** - Primary, secondary, danger variants with loading state
+**Card.jsx** - Container with optional header and footer
+**Table.jsx** - Data table with sortable columns
+**Modal.jsx** - Reusable modal with header, body, footer
+**Badge.jsx** - Status badges with color variants
+**Input.jsx** - Form inputs with label and error message
+
+### 6. Dependencies (package.json)
+```json
+{
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.20.0",
+    "axios": "^1.6.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.2.0",
+    "vite": "^5.0.0",
+    "tailwindcss": "^3.4.0",
+    "autoprefixer": "^10.4.16",
+    "postcss": "^8.4.32"
+  }
+}
+```
+
+### 7. Implementation Notes
+- Use React hooks (useState, useEffect, useContext)
+- Create custom useApi hook for data fetching
+- Handle CORS properly (backend already configured)
+- Use TailwindCSS utility classes for styling
+- Implement proper error boundaries
+- Add loading spinners for async operations
+
+## Success Criteria
+1. All pages load without errors
+2. Can create, read, update, delete restaurants
+3. Can view and manage bookings
+4. Clean, professional UI
+5. Proper error handling
+6. Responsive design
+
+Build this as a production-ready admin dashboard that restaurant owners would actually want to use.
+
+   🤖 Calling LLM to design architecture...
+   ✅ LLM generated architecture plan:
+      - Backend files: 0
+      - Frontend files: 33
+   ✅ Architecture plan created: /Users/youcef/restaurant-assistant/ARCHITECTURE.md
+   📄 Architecture plan created: ['/Users/youcef/restaurant-assistant/ARCHITECTURE.md']
+   🎯 Complexity: medium
+✅ Architecture completed successfully
+
+📍 Phase: IMPLEMENTATION
+----------------------------------------------------------------------
+⚙️  Implementing backend...
+⚙️  Implementing backend code...
+   ℹ️  No backend files specified in architecture plan
+   ✅ Backend: 0 files created
+🎨 Implementing frontend...
+🎨 Implementing frontend code...
+   📝 Creating frontend/package.json...
+      🤖 Calling LLM to generate JavaScript/TypeScript code...
+      ✅ Generated 977 characters of JavaScript/TypeScript code
+      ✅ Created frontend/package.json
+   📝 Creating frontend/vite.config.js...
+      🤖 Calling LLM to generate JavaScript/TypeScript code...
+      ✅ Generated 6065 characters of JavaScript/TypeScript code
+      ✅ Created frontend/vite.config.js
+   📝 Creating frontend/tailwind.config.js...
+      🤖 Calling LLM to generate JavaScript/TypeScript code...
+      ✅ Generated 11583 characters of JavaScript/TypeScript code
+      ✅ Created frontend/tailwind.config.js
+   📝 Creating frontend/postcss.config.js...
+      🤖 Calling LLM to generate JavaScript/TypeScript code...
+      ✅ Generated 79 characters of JavaScript/TypeScript code
+      ✅ Created frontend/postcss.config.js
+   📝 Creating frontend/index.html...
+      🤖 Calling LLM to generate JavaScript/TypeScript code...
+      ✅ Generated 5521 characters of JavaScript/TypeScript code
+      ✅ Created frontend/index.html
+   📝 Creating frontend/src/main.jsx...
+      🤖 Calling LLM to generate React JavaScript code...
+      ✅ Generated 1304 characters of React JavaScript code
+      ✅ Created frontend/src/main.jsx
+   📝 Creating frontend/src/App.jsx...
+      🤖 Calling LLM to generate React JavaScript code...
+      ✅ Generated 8539 characters of React JavaScript code
+      ✅ Created frontend/src/App.jsx
+   📝 Creating frontend/src/index.css...
+      🤖 Calling LLM to generate JavaScript/TypeScript code...
+      ✅ Generated 14614 characters of JavaScript/TypeScript code
+      ✅ Created frontend/src/index.css
+   📝 Creating frontend/src/api/client.js...
+      🤖 Calling LLM to generate JavaScript/TypeScript code...
+      ✅ Generated 6617 characters of JavaScript/TypeScript code
+      🔒 Sanitized: TOKEN_REDACTED
+      ✅ Created frontend/src/api/client.js
+   📝 Creating frontend/src/components/Layout.jsx...
+      🤖 Calling LLM to generate React JavaScript code...
+      ✅ Generated 10637 characters of React JavaScript code
+      ✅ Created frontend/src/components/Layout.jsx
+   📝 Creating frontend/src/components/Sidebar.jsx...
+      🤖 Calling LLM to generate React JavaScript code...
+      ✅ Generated 9143 characters of React JavaScript code
+      ✅ Created frontend/src/components/Sidebar.jsx
+   📝 Creating frontend/src/components/Header.jsx...
+      🤖 Calling LLM to generate React JavaScript code...
+      ✅ Generated 16764 characters of React JavaScript code
+      🔒 Sanitized: EMAIL_REDACTED
+      ✅ Created frontend/src/components/Header.jsx
+   📝 Creating frontend/src/components/shared/Button.jsx...
+      🤖 Calling LLM to generate React JavaScript code...
+      ✅ Generated 4237 characters of React JavaScript code
+      ✅ Created frontend/src/components/shared/Button.jsx
+   📝 Creating frontend/src/components/shared/Card.jsx...
+      🤖 Calling LLM to generate React JavaScript code...
+      ✅ Generated 10041 characters of React JavaScript code
+      ✅ Created frontend/src/components/shared/Card.jsx
+   📝 Creating frontend/src/components/shared/Table.jsx...
+      🤖 Calling LLM to generate React JavaScript code...
+      ✅ Generated 18901 characters of React JavaScript code
+      ✅ Created frontend/src/components/shared/Table.jsx
+   📝 Creating frontend/src/components/shared/Modal.jsx...
+      🤖 Calling LLM to generate React JavaScript code...
+      ✅ Generated 10321 characters of React JavaScript code
+      ✅ Created frontend/src/components/shared/Modal.jsx
+   📝 Creating frontend/src/components/shared/Badge.jsx...
+      🤖 Calling LLM to generate React JavaScript code...
+      ✅ Generated 5678 characters of React JavaScript code
+      ✅ Created frontend/src/components/shared/Badge.jsx
+   📝 Creating frontend/src/components/shared/Input.jsx...
+      🤖 Calling LLM to generate React JavaScript code...
+      ✅ Generated 8160 characters of React JavaScript code
+      ✅ Created frontend/src/components/shared/Input.jsx
+   📝 Creating frontend/src/components/shared/Select.jsx...
+      🤖 Calling LLM to generate React JavaScript code...
+      ✅ Generated 8362 characters of React JavaScript code
+      ✅ Created frontend/src/components/shared/Select.jsx
+   📝 Creating frontend/src/components/shared/Toast.jsx...
+      🤖 Calling LLM to generate React JavaScript code...
+      ✅ Generated 10260 characters of React JavaScript code
+      ✅ Created frontend/src/components/shared/Toast.jsx
+   📝 Creating frontend/src/components/shared/Spinner.jsx...
+      🤖 Calling LLM to generate React JavaScript code...
+      ✅ Generated 4881 characters of React JavaScript code
+      ✅ Created frontend/src/components/shared/Spinner.jsx
+   📝 Creating frontend/src/components/shared/ConfirmDialog.jsx...
+      🤖 Calling LLM to generate React JavaScript code...
+      ✅ Generated 8372 characters of React JavaScript code
+      ✅ Created frontend/src/components/shared/ConfirmDialog.jsx
+   📝 Creating frontend/src/components/shared/index.js...
+      🤖 Calling LLM to generate JavaScript/TypeScript code...
+      ✅ Generated 1597 characters of JavaScript/TypeScript code
+      ✅ Created frontend/src/components/shared/index.js
+   📝 Creating frontend/src/pages/Dashboard.jsx...
+      🤖 Calling LLM to generate React JavaScript code...
+      ✅ Generated 21416 characters of React JavaScript code
+      ✅ Created frontend/src/pages/Dashboard.jsx
+   📝 Creating frontend/src/pages/Restaurants.jsx...
+      🤖 Calling LLM to generate React JavaScript code...
+      ⚠️  LLM generation failed: Connection error., using fallback
+      ✅ Created frontend/src/pages/Restaurants.jsx
+   📝 Creating frontend/src/pages/Tables.jsx...
+      🤖 Calling LLM to generate React JavaScript code...
+      ✅ Generated 20786 characters of React JavaScript code
+      ✅ Created frontend/src/pages/Tables.jsx
+   📝 Creating frontend/src/pages/Bookings.jsx...
+      🤖 Calling LLM to generate React JavaScript code...
+      ⚠️  LLM generation failed: Connection error., using fallback
+      ✅ Created frontend/src/pages/Bookings.jsx
+   📝 Creating frontend/src/pages/Customers.jsx...
+      🤖 Calling LLM to generate React JavaScript code...
+      ✅ Generated 27027 characters of React JavaScript code
+      ✅ Created frontend/src/pages/Customers.jsx
+   📝 Creating frontend/src/hooks/useApi.js...
+      🤖 Calling LLM to generate JavaScript/TypeScript code...
+      ✅ Generated 10083 characters of JavaScript/TypeScript code
+      🔒 Sanitized: TOKEN_REDACTED
+      ✅ Created frontend/src/hooks/useApi.js
+   📝 Creating frontend/src/hooks/useToast.js...
+      🤖 Calling LLM to generate JavaScript/TypeScript code...
+      ✅ Generated 8719 characters of JavaScript/TypeScript code
+      ✅ Created frontend/src/hooks/useToast.js
+   📝 Creating frontend/src/context/ToastContext.jsx...
+      🤖 Calling LLM to generate React JavaScript code...
+      ✅ Generated 10313 characters of React JavaScript code
+      ✅ Created frontend/src/context/ToastContext.jsx
+   📝 Creating frontend/src/utils/helpers.js...
+      🤖 Calling LLM to generate JavaScript/TypeScript code...
+      ⚠️  LLM generation failed: Connection error., using fallback
+      ✅ Created frontend/src/utils/helpers.js
+   📝 Creating frontend/src/utils/constants.js...
+      🤖 Calling LLM to generate JavaScript/TypeScript code...
+      ✅ Generated 15245 characters of JavaScript/TypeScript code
+      ✅ Created frontend/src/utils/constants.js
+   ✅ Frontend: 33 files created
+✅ Implementation completed successfully
+
+📍 Phase: TESTING
+----------------------------------------------------------------------
+🧪 Generating tests for 33 files...
+🧪 Generating tests for 33 files...
+   📝 Generating tests for frontend/package.json...
+      🤖 Calling LLM to generate appropriate framework tests...
+      ✅ Generated 12499 characters of test code
+      ✅ Created tests/package.json.test
+   📝 Generating tests for frontend/vite.config.js...
+      🤖 Calling LLM to generate Jest tests...
+      ✅ Generated 18290 characters of test code
+      ✅ Created frontend/vite.config.test.js
+   📝 Generating tests for frontend/tailwind.config.js...
+      🤖 Calling LLM to generate Jest tests...
+      ✅ Generated 17160 characters of test code
+      ✅ Created frontend/tailwind.config.test.js
+   📝 Generating tests for frontend/postcss.config.js...
+      🤖 Calling LLM to generate Jest tests...
+      ✅ Generated 6543 characters of test code
+      ✅ Created frontend/postcss.config.test.js
+   📝 Generating tests for frontend/index.html...
+      🤖 Calling LLM to generate appropriate framework tests...
+      ✅ Generated 13974 characters of test code
+      ✅ Created tests/index.html.test
+   📝 Generating tests for frontend/src/main.jsx...
+      🤖 Calling LLM to generate Jest + React Testing Library tests...
+      ✅ Generated 9819 characters of test code
+      ✅ Created frontend/src/main.test.jsx
+   📝 Generating tests for frontend/src/App.jsx...
+      🤖 Calling LLM to generate Jest + React Testing Library tests...
+      ✅ Generated 20252 characters of test code
+      ✅ Created frontend/src/App.test.jsx
+   📝 Generating tests for frontend/src/index.css...
+      🤖 Calling LLM to generate appropriate framework tests...
+      ⚠️  LLM generation failed: Connection error., using fallback
+      ✅ Created tests/index.css.test
+   📝 Generating tests for frontend/src/api/client.js...
+      🤖 Calling LLM to generate Jest tests...
+      ✅ Generated 19482 characters of test code
+      🔒 Sanitized: PASSWORD_REDACTED, TOKEN_REDACTED
+      ✅ Created frontend/src/api/client.test.js
+   📝 Generating tests for frontend/src/components/Layout.jsx...
+      🤖 Calling LLM to generate Jest + React Testing Library tests...
+      ✅ Generated 23913 characters of test code
+      ✅ Created frontend/src/components/Layout.test.jsx
+   📝 Generating tests for frontend/src/components/Sidebar.jsx...
+      🤖 Calling LLM to generate Jest + React Testing Library tests...
+      ✅ Generated 15402 characters of test code
+      ✅ Created frontend/src/components/Sidebar.test.jsx
+   📝 Generating tests for frontend/src/components/Header.jsx...
+      🤖 Calling LLM to generate Jest + React Testing Library tests...
+      ✅ Generated 21886 characters of test code
+      ✅ Created frontend/src/components/Header.test.jsx
+   📝 Generating tests for frontend/src/components/shared/Button.jsx...
+      🤖 Calling LLM to generate Jest + React Testing Library tests...
+      ✅ Generated 16984 characters of test code
+      ✅ Created frontend/src/components/shared/Button.test.jsx
+   📝 Generating tests for frontend/src/components/shared/Card.jsx...
+      🤖 Calling LLM to generate Jest + React Testing Library tests...
+      ✅ Generated 20641 characters of test code
+      ✅ Created frontend/src/components/shared/Card.test.jsx
+   📝 Generating tests for frontend/src/components/shared/Table.jsx...
+      🤖 Calling LLM to generate Jest + React Testing Library tests...
+      ⚠️  LLM generation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CWzv7CbxDRo2awwkvSMLF'}, using fallback
+      ✅ Created frontend/src/components/shared/Table.test.jsx
+   📝 Generating tests for frontend/src/components/shared/Modal.jsx...
+      🤖 Calling LLM to generate Jest + React Testing Library tests...
+      ⚠️  LLM generation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CWzv7CxXbApf6RcxDkDgw'}, using fallback
+      ✅ Created frontend/src/components/shared/Modal.test.jsx
+   📝 Generating tests for frontend/src/components/shared/Badge.jsx...
+      🤖 Calling LLM to generate Jest + React Testing Library tests...
+      ⚠️  LLM generation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CWzv7DP5nWHJHa7Dt9av7'}, using fallback
+      ✅ Created frontend/src/components/shared/Badge.test.jsx
+   📝 Generating tests for frontend/src/components/shared/Input.jsx...
+      🤖 Calling LLM to generate Jest + React Testing Library tests...
+      ⚠️  LLM generation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CWzv7DhvhoUPee2moKhT5'}, using fallback
+      ✅ Created frontend/src/components/shared/Input.test.jsx
+   📝 Generating tests for frontend/src/components/shared/Select.jsx...
+      🤖 Calling LLM to generate Jest + React Testing Library tests...
+      ⚠️  LLM generation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CWzv7E2mb8En1QsuQdeEz'}, using fallback
+      ✅ Created frontend/src/components/shared/Select.test.jsx
+   📝 Generating tests for frontend/src/components/shared/Toast.jsx...
+      🤖 Calling LLM to generate Jest + React Testing Library tests...
+      ⚠️  LLM generation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CWzv7EYHGDemziXmivXbD'}, using fallback
+      ✅ Created frontend/src/components/shared/Toast.test.jsx
+   📝 Generating tests for frontend/src/components/shared/Spinner.jsx...
+      🤖 Calling LLM to generate Jest + React Testing Library tests...
+      ⚠️  LLM generation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CWzv7F4XyAjpVBgiBmUZf'}, using fallback
+      ✅ Created frontend/src/components/shared/Spinner.test.jsx
+   📝 Generating tests for frontend/src/components/shared/ConfirmDialog.jsx...
+      🤖 Calling LLM to generate Jest + React Testing Library tests...
+      ⚠️  LLM generation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CWzv7FPNt82114aCrs2k8'}, using fallback
+      ✅ Created frontend/src/components/shared/ConfirmDialog.test.jsx
+   📝 Generating tests for frontend/src/components/shared/index.js...
+      🤖 Calling LLM to generate Jest tests...
+      ⚠️  LLM generation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CWzv7FmT1qHfa5ykHQE39'}, using fallback
+      ✅ Created frontend/src/components/shared/index.test.js
+   📝 Generating tests for frontend/src/pages/Dashboard.jsx...
+      🤖 Calling LLM to generate Jest + React Testing Library tests...
+      ⚠️  LLM generation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CWzv7G7Hsm5drP7R9e3tG'}, using fallback
+      ✅ Created frontend/src/pages/Dashboard.test.jsx
+   📝 Generating tests for frontend/src/pages/Restaurants.jsx...
+      🤖 Calling LLM to generate Jest + React Testing Library tests...
+      ⚠️  LLM generation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CWzv7GTdBkBd9dTrVzmdF'}, using fallback
+      ✅ Created frontend/src/pages/Restaurants.test.jsx
+   📝 Generating tests for frontend/src/pages/Tables.jsx...
+      🤖 Calling LLM to generate Jest + React Testing Library tests...
+      ⚠️  LLM generation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CWzv7GoxMsieKxkvx94M3'}, using fallback
+      ✅ Created frontend/src/pages/Tables.test.jsx
+   📝 Generating tests for frontend/src/pages/Bookings.jsx...
+      🤖 Calling LLM to generate Jest + React Testing Library tests...
+      ⚠️  LLM generation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CWzv7H9YjEhzFiw4htLa5'}, using fallback
+      ✅ Created frontend/src/pages/Bookings.test.jsx
+   📝 Generating tests for frontend/src/pages/Customers.jsx...
+      🤖 Calling LLM to generate Jest + React Testing Library tests...
+      ⚠️  LLM generation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CWzv7HZMaJJZpSfMiSqCx'}, using fallback
+      ✅ Created frontend/src/pages/Customers.test.jsx
+   📝 Generating tests for frontend/src/hooks/useApi.js...
+      🤖 Calling LLM to generate Jest tests...
+      ⚠️  LLM generation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CWzv7HuBuNTYsqpn6nRBQ'}, using fallback
+      ✅ Created frontend/src/hooks/useApi.test.js
+   📝 Generating tests for frontend/src/hooks/useToast.js...
+      🤖 Calling LLM to generate Jest tests...
+      ⚠️  LLM generation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CWzv7JEXtyfmrRM4c2TRC'}, using fallback
+      ✅ Created frontend/src/hooks/useToast.test.js
+   📝 Generating tests for frontend/src/context/ToastContext.jsx...
+      🤖 Calling LLM to generate Jest + React Testing Library tests...
+      ⚠️  LLM generation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CWzv7JcrF7URQbVYWmWEZ'}, using fallback
+      ✅ Created frontend/src/context/ToastContext.test.jsx
+   📝 Generating tests for frontend/src/utils/helpers.js...
+      🤖 Calling LLM to generate Jest tests...
+      ⚠️  LLM generation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CWzv7KEZXxFaBzEvR5TrA'}, using fallback
+      ✅ Created frontend/src/utils/helpers.test.js
+   📝 Generating tests for frontend/src/utils/constants.js...
+      🤖 Calling LLM to generate Jest tests...
+      ⚠️  LLM generation failed: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CWzv7KpXgH49wZWvpk2Mk'}, using fallback
+      ✅ Created frontend/src/utils/constants.test.js
+
+   🏃 Running test suite...
+   ✅ Tests created: 33
+   📊 Test results: npm error code ENOENT
+npm error syscall open
+npm error path /Users/youcef/restaurant-assistant/package.json
+npm error errno -2
+npm error enoent Could not read package.json: Error: ENOENT: no such file or directory, open '/Users/youcef/restaurant-assistant/package.json'
+npm error enoent This is related to npm not being able to find a file.
+npm error enoent
+npm error A complete log of this run can be found in: /Users/youcef/.npm/_logs/2026-01-11T03_55_36_135Z-debug-0.log
+
+✅ Testing completed successfully
+
+📍 Phase: REVIEW
+----------------------------------------------------------------------
+🔍 Running security and quality review...
+✅ Review completed successfully
+
+📍 Phase: FIX
+----------------------------------------------------------------------
+⏭️  Skipping fix - No issues to fix
+
+📍 Phase: DEPLOY
+----------------------------------------------------------------------
+🚀 Deploying and creating pull request...
+🚀 Deploying: 
+# Phase 2: Restaurant Admin Dashboard
+
+Build a modern React admin dashboard for restaurant owners using Vite, React Router, and TailwindCSS.
+
+## Project Structure
+```
+frontend/
+├── package.json
+├── vite.config.js
+├── tailwind.config.js
+├── index.html
+├── src/
+│   ├── main.jsx
+│   ├── App.jsx
+│   ├── api/
+│   │   └── client.js          # API client for backend
+│   ├── components/
+│   │   ├── Layout.jsx         # Main layout with sidebar
+│   │   ├── Sidebar.jsx        # Navigation sidebar
+│   │   ├── Header.jsx         # Top header bar
+│   │   └── shared/            # Reusable components
+│   │       ├── Button.jsx
+│   │       ├── Card.jsx
+│   │       ├── Table.jsx
+│   │       ├── Modal.jsx
+│   │       ├── Badge.jsx
+│   │       └── Input.jsx
+│   ├── pages/
+│   │   ├── Dashboard.jsx      # Dashboard with stats
+│   │   ├── Restaurants.jsx    # Restaurant CRUD
+│   │   ├── Tables.jsx         # Table management
+│   │   ├── Bookings.jsx       # Booking management
+│   │   └── Customers.jsx      # Customer list
+│   ├── hooks/
+│   │   └── useApi.js          # Custom hook for API calls
+│   └── utils/
+│       └── helpers.js         # Utility functions
+```
+
+## Technical Requirements
+
+### 1. Setup & Configuration
+- Use Vite as the build tool
+- React 18+ with hooks
+- React Router v6 for routing
+- TailwindCSS for styling
+- Axios for API requests
+
+### 2. API Integration
+Backend API is running at http://localhost:8000
+
+Endpoints to integrate:
+- GET /api/ - List restaurants
+- POST /api/ - Create restaurant
+- PUT /api/{id} - Update restaurant
+- DELETE /api/{id} - Delete restaurant
+- GET /api/{restaurant_id}/tables - List tables
+- POST /api/{restaurant_id}/tables - Create table
+- GET /api/bookings/ - List bookings
+- POST /api/bookings/ - Create booking
+- DELETE /api/bookings/{id} - Cancel booking
+- GET /api/customers/ - List customers
+- POST /api/availability/check - Check availability
+
+### 3. Pages & Features
+
+#### Dashboard Page
+- Show 4 stat cards: Total Restaurants, Total Bookings, Total Customers, Active Tables
+- Recent bookings table (last 10)
+- Today's bookings count
+- Weekly booking trend chart (bonus)
+
+#### Restaurants Page
+- Table view of all restaurants
+- "Add Restaurant" button with modal form
+- Edit/Delete actions for each restaurant
+- Form fields: name, address, phone, email, opening_time, closing_time, booking_duration_minutes, max_party_size
+- Client-side validation
+
+#### Tables Page
+- Restaurant selector dropdown
+- Table list for selected restaurant
+- Add/Edit/Delete table functionality
+- Fields: table_number, capacity, location, is_active
+- Visual table layout view (bonus)
+
+#### Bookings Page
+- Filterable booking list (by date, status, restaurant)
+- Create booking button with modal
+- Cancel booking action
+- Status badges (pending, confirmed, cancelled, completed, no_show)
+- Calendar view (bonus)
+
+#### Customers Page
+- Customer list table
+- Show: name, phone, email, total_bookings, no_shows
+- Search by phone number
+
+### 4. UI/UX Requirements
+- Clean, modern design
+- Responsive layout (desktop-first)
+- Loading states for API calls
+- Error handling with toast notifications
+- Form validation
+- Confirmation dialogs for destructive actions
+- Color scheme: Blue primary (#2563eb), success green, warning yellow, danger red
+
+### 5. Component Requirements
+
+All components should be modular and reusable.
+
+**Button.jsx** - Primary, secondary, danger variants with loading state
+**Card.jsx** - Container with optional header and footer
+**Table.jsx** - Data table with sortable columns
+**Modal.jsx** - Reusable modal with header, body, footer
+**Badge.jsx** - Status badges with color variants
+**Input.jsx** - Form inputs with label and error message
+
+### 6. Dependencies (package.json)
+```json
+{
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.20.0",
+    "axios": "^1.6.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.2.0",
+    "vite": "^5.0.0",
+    "tailwindcss": "^3.4.0",
+    "autoprefixer": "^10.4.16",
+    "postcss": "^8.4.32"
+  }
+}
+```
+
+### 7. Implementation Notes
+- Use React hooks (useState, useEffect, useContext)
+- Create custom useApi hook for data fetching
+- Handle CORS properly (backend already configured)
+- Use TailwindCSS utility classes for styling
+- Implement proper error boundaries
+- Add loading spinners for async operations
+
+## Success Criteria
+1. All pages load without errors
+2. Can create, read, update, delete restaurants
+3. Can view and manage bookings
+4. Clean, professional UI
+5. Proper error handling
+6. Responsive design
+
+Build this as a production-ready admin dashboard that restaurant owners would actually want to use.
+
+
+   1️⃣  Running full test suite...
+      ❌ Tests failed
+
+❌ ERROR in deploy phase:
+   Tests failed - cannot deploy
+
+======================================================================
+🛑 AUTONOMOUS ENGINEER STOPPED
+======================================================================
+
+
+================================================================================
+❌ PHASE 2 FAILED
+================================================================================
+Error: {'status': 'error', 'message': 'Tests failed - cannot deploy', 'test_output': "npm error code ENOENT\nnpm error syscall open\nnpm error path /Users/youcef/restaurant-assistant/package.json\nnpm error errno -2\nnpm error enoent Could not read package.json: Error: ENOENT: no such file or directory, open '/Users/youcef/restaurant-assistant/package.json'\nnpm error enoent This is related to npm not being able to find a file.\nnpm error enoent\nnpm error A complete log of this run can be found in: /Users/youcef/.npm/_logs/2026-01-11T03_55_36_413Z-debug-0.log\n"}

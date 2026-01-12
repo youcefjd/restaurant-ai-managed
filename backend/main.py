@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 import os
 
 from backend.database import engine, Base
-from backend.api import restaurants, tables, customers, bookings, availability
+from backend.api import restaurants, tables, customers, bookings, availability, voice, payments, deliveries, onboarding, platform_admin, stripe_connect, auth
 from backend.core.exceptions import (
     BusinessLogicError,
     ResourceNotFoundError,
@@ -305,10 +305,17 @@ async def health_check() -> Dict[str, Any]:
     }
 
 
-# Register API routers
+# Register API routers with unique prefixes
+# Authentication (public routes)
+app.include_router(
+    auth.router,
+    prefix="/api",
+    tags=["Authentication"]
+)
+
 app.include_router(
     restaurants.router,
-    prefix="/api",
+    prefix="/api/restaurants",
     tags=["Restaurants"]
 )
 
@@ -320,20 +327,56 @@ app.include_router(
 
 app.include_router(
     customers.router,
-    prefix="/api",
+    prefix="/api/customers",
     tags=["Customers"]
 )
 
 app.include_router(
     bookings.router,
-    prefix="/api",
+    prefix="/api/bookings",
     tags=["Bookings"]
 )
 
 app.include_router(
     availability.router,
-    prefix="/api",
+    prefix="/api/availability",
     tags=["Availability"]
+)
+
+app.include_router(
+    voice.router,
+    prefix="/api/voice",
+    tags=["Voice"]
+)
+
+app.include_router(
+    payments.router,
+    prefix="/api/payments",
+    tags=["Payments"]
+)
+
+app.include_router(
+    deliveries.router,
+    prefix="/api",
+    tags=["Deliveries & Orders"]
+)
+
+app.include_router(
+    onboarding.router,
+    prefix="/api/onboarding",
+    tags=["Restaurant Onboarding"]
+)
+
+app.include_router(
+    platform_admin.router,
+    prefix="/api/admin",
+    tags=["Platform Admin"]
+)
+
+app.include_router(
+    stripe_connect.router,
+    prefix="/api/stripe-connect",
+    tags=["Stripe Connect (Marketplace)"]
 )
 
 

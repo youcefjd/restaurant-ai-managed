@@ -575,8 +575,8 @@ nano .env
 3. Add these lines (replace with YOUR actual values):
 ```bash
 # Twilio Voice Configuration
-TWILIO_ACCOUNT_SID=AC1234567890abcdef1234567890abcdef
-TWILIO_AUTH_TOKEN=your_32_character_auth_token_here
+TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+TWILIO_AUTH_TOKEN=your_auth_token_here
 TWILIO_PHONE_NUMBER=+15551234567
 
 # Your public server URL (ngrok or domain)

@@ -43,6 +43,7 @@ class ConversationHandler:
         self,
         message: str,
         phone: str,
+        restaurant_id: int,
         context: Dict[str, Any],
         db: Session
     ) -> Dict[str, Any]:
@@ -52,6 +53,7 @@ class ConversationHandler:
         Args:
             message: Customer's message (from speech-to-text or SMS)
             phone: Customer's phone number
+            restaurant_id: ID of the restaurant being called
             context: Conversation context (previous exchanges, gathered data)
             db: Database session
 
@@ -68,21 +70,28 @@ class ConversationHandler:
             # Get or create customer
             customer = db.query(Customer).filter(Customer.phone == phone).first()
 
-            # Get menu data for menu-aware responses
-            # TODO: Associate phone number with restaurant account
-            # For now, get the first restaurant account's menu
+            # Get menu data for menu-aware responses using the specific restaurant
             from backend.models_platform import RestaurantAccount
-            account = db.query(RestaurantAccount).first()
+            account = db.query(RestaurantAccount).filter(
+                RestaurantAccount.id == restaurant_id
+            ).first()
+
+            if not account:
+                logger.error(f"Restaurant account not found: {restaurant_id}")
+                return {
+                    "type": "error",
+                    "message": "Restaurant information not available. Please try again later."
+                }
+
             menu_data = None
-            if account:
-                # Fetch full menu structure
-                import requests
-                try:
-                    response = requests.get(f"http://localhost:8000/api/onboarding/accounts/{account.id}/menu-full")
-                    if response.status_code == 200:
-                        menu_data = response.json()
-                except:
-                    pass
+            # Fetch full menu structure for this specific restaurant
+            import requests
+            try:
+                response = requests.get(f"http://localhost:8000/api/onboarding/accounts/{account.id}/menu-full")
+                if response.status_code == 200:
+                    menu_data = response.json()
+            except Exception as e:
+                logger.warning(f"Failed to fetch menu for restaurant {restaurant_id}: {e}")
 
             # Build prompt for Ollama
             system_prompt = self._build_system_prompt(context, customer, menu_data)

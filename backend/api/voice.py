@@ -26,13 +26,39 @@ conversation_state: Dict[str, Dict[str, Any]] = {}
 
 
 @router.post("/welcome")
-async def voice_welcome():
+async def voice_welcome(
+    To: Optional[str] = Form(None),
+    From: Optional[str] = Form(None),
+    db: Session = Depends(get_db)
+):
     """
     Initial webhook when call is received.
     Returns TwiML with welcome message.
+
+    Args:
+        To: Twilio phone number that was called (identifies restaurant)
+        From: Caller's phone number
+        db: Database session
     """
-    logger.info("Voice call received - sending welcome message")
-    response = voice_service.create_welcome_response()
+    logger.info(f"Voice call received from {From} to {To}")
+
+    # Look up which restaurant owns this Twilio number
+    from backend.models_platform import RestaurantAccount
+    restaurant = db.query(RestaurantAccount).filter(
+        RestaurantAccount.twilio_phone_number == To
+    ).first()
+
+    if not restaurant:
+        logger.warning(f"No restaurant found for Twilio number {To}")
+        response = voice_service.create_error_response(
+            "This number is not configured. Please contact support."
+        )
+        return Response(content=str(response), media_type="application/xml")
+
+    # Create welcome with restaurant's business name
+    response = voice_service.create_welcome_response(
+        restaurant_name=restaurant.business_name
+    )
     return Response(content=str(response), media_type="application/xml")
 
 
@@ -42,6 +68,7 @@ async def process_speech(
     SpeechResult: Optional[str] = Form(None),
     CallSid: Optional[str] = Form(None),
     From: Optional[str] = Form(None),
+    To: Optional[str] = Form(None),
     db: Session = Depends(get_db)
 ):
     """
@@ -51,12 +78,26 @@ async def process_speech(
         SpeechResult: Transcribed speech from Twilio
         CallSid: Unique call identifier
         From: Caller's phone number
+        To: Twilio phone number called (identifies restaurant)
         db: Database session
 
     Returns:
         TwiML response
     """
-    logger.info(f"Processing speech from {From}: {SpeechResult}")
+    logger.info(f"Processing speech from {From} to {To}: {SpeechResult}")
+
+    # Look up which restaurant owns this Twilio number
+    from backend.models_platform import RestaurantAccount
+    restaurant = db.query(RestaurantAccount).filter(
+        RestaurantAccount.twilio_phone_number == To
+    ).first()
+
+    if not restaurant:
+        logger.warning(f"No restaurant found for Twilio number {To}")
+        response = voice_service.create_error_response(
+            "This number is not configured. Please contact support."
+        )
+        return Response(content=str(response), media_type="application/xml")
 
     # Handle missing speech
     if not SpeechResult:
@@ -69,6 +110,7 @@ async def process_speech(
     if CallSid not in conversation_state:
         conversation_state[CallSid] = {
             "phone": From,
+            "restaurant_id": restaurant.id,
             "context": {},
             "step": "initial"
         }
@@ -80,6 +122,7 @@ async def process_speech(
         result = await conversation_handler.process_message(
             message=SpeechResult,
             phone=From,
+            restaurant_id=restaurant.id,
             context=state["context"],
             db=db
         )

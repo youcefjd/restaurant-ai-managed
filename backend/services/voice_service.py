@@ -23,9 +23,12 @@ class VoiceService:
         if not self.enabled:
             logger.warning("Voice service disabled - Twilio credentials not configured")
 
-    def create_welcome_response(self) -> VoiceResponse:
+    def create_welcome_response(self, restaurant_name: str = "our restaurant") -> VoiceResponse:
         """
         Create initial welcome message when call is received.
+
+        Args:
+            restaurant_name: Name of the restaurant to include in greeting
 
         Returns:
             VoiceResponse with welcome message and speech gathering
@@ -42,11 +45,9 @@ class VoiceService:
         )
 
         gather.say(
-            "Welcome to our restaurant reservation system. "
-            "How can I help you today? You can say things like: "
-            "I'd like to make a reservation, "
-            "check availability, "
-            "or cancel my booking.",
+            f"Thank you for calling {restaurant_name}! "
+            "I'm your AI assistant. How can I help you today? "
+            "You can ask about our menu, place an order, or make a reservation.",
             voice='alice',
             language='en-US'
         )

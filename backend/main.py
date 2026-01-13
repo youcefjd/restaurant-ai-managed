@@ -300,6 +300,10 @@ async def health_check() -> Dict[str, Any]:
         logger.error(f"Database health check failed: {str(e)}")
         db_status = "unhealthy"
     
+    # Get CORS origins for debugging
+    cors_origins_env = os.getenv("CORS_ORIGINS", "http://localhost:4173,http://localhost:5173")
+    cors_origins = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
+    
     return {
         "status": "healthy" if db_status == "healthy" else "degraded",
         "timestamp": time.time(),
@@ -308,7 +312,8 @@ async def health_check() -> Dict[str, Any]:
             "database": db_status
         },
         "version": "1.0.0",
-        "environment": os.getenv("ENVIRONMENT", "development")
+        "environment": os.getenv("ENVIRONMENT", "development"),
+        "cors_origins": cors_origins
     }
 
 

@@ -393,7 +393,7 @@ export default function Settings() {
             )}
             {account.operating_days && account.operating_days.length > 0 && (
               <p className="text-sm text-gray-600">
-                Open: {account.operating_days.map(d => weekdays[d].label).join(', ')}
+                Open: {account.operating_days.map((d: number) => weekdays[d].label).join(', ')}
               </p>
             )}
           </div>

@@ -129,6 +129,14 @@ async def login_restaurant(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    # Check if password hash exists
+    if not account.password_hash:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account password not set. Please contact support.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     # Verify password
     if not verify_password(form_data.password, account.password_hash):
         raise HTTPException(

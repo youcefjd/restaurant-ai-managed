@@ -1,12 +1,13 @@
-# 📞 Twilio Voice Integration - AI Phone Assistant Setup
+# 📞💬 Twilio Voice + SMS Integration - AI Assistant Setup
 
-**Complete guide to enable AI-powered phone calls for your restaurant**
+**Complete guide to enable AI-powered phone calls AND text messages for your restaurant**
 
 ---
 
 ## 🎯 What This Enables
 
-When a customer calls your restaurant:
+### Voice Calls
+When a customer **calls** your restaurant:
 1. **Twilio answers** the call
 2. **Customer speaks**: "I'd like to order 2 pizzas for delivery"
 3. **Twilio Whisper** converts speech → text
@@ -15,12 +16,23 @@ When a customer calls your restaurant:
 6. **Twilio speaks** response back to customer
 7. **Order created** in your dashboard
 
-**All automatic!** No human needed to answer.
+### Text Messages (SMS)
+When a customer **texts** your restaurant:
+1. **Twilio receives** the text
+2. **Customer texts**: "1 large pepperoni pizza, delivery"
+3. **Ollama AI** understands the request
+4. **AI texts back**: "Great! Delivery address?"
+5. **Customer replies**: "456 Oak Ave"
+6. **AI texts**: "✅ Order #1234 confirmed! $17.99, 30 min delivery"
+7. **Order created** in your dashboard
+
+**All automatic!** No human needed to answer phone or texts.
 
 ---
 
 ## 🏗️ System Architecture
 
+### Voice Call Flow
 ```
 Customer Phone Call
         ↓
@@ -42,6 +54,30 @@ Customer Phone Call
         ↓
 [Text-to-Speech] → Customer hears response
 ```
+
+### SMS Text Flow
+```
+Customer Text Message
+        ↓
+[Twilio Phone Number]
+        ↓
+[Twilio Messaging API]
+        ↓
+[Your Server - Backend API]
+   /api/voice/sms/incoming
+        ↓
+[Ollama AI - Local LLM]
+   - Understands intent
+   - Generates response
+        ↓
+[Your Restaurant Menu Database]
+        ↓
+[Response back to Twilio]
+        ↓
+[SMS Message] → Customer receives text
+```
+
+**Same AI brain handles both voice AND text!**
 
 ---
 
@@ -79,12 +115,12 @@ Customer Phone Call
 
 1. In Twilio Console → Phone Numbers → Buy a Number
 2. Select country (United States recommended)
-3. Check **Voice** capability
+3. Check **Voice** AND **SMS** capabilities ✅
 4. Search for available numbers
 5. Choose a number you like
 6. Buy it (**$1/month**, uses your free credit)
 
-**Your restaurant phone number!** Customers will call this.
+**Your restaurant phone number!** Customers can call **AND** text this number.
 
 **Copy the number:** Format like `+15551234567`
 
@@ -184,6 +220,23 @@ uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
 
 4. Click **Save**
 
+### Set SMS Webhooks (Text Message Support)
+
+**IMPORTANT:** Configure SMS to enable text message orders!
+
+1. Stay on the same phone number configuration page
+2. Scroll to **Messaging Configuration**
+
+**Configure as follows:**
+
+**A MESSAGE COMES IN:**
+- **Webhook:** `https://abc123.ngrok.io/api/voice/sms/incoming`
+   (Replace with YOUR ngrok or domain URL!)
+- **HTTP Method:** POST
+- **Configure With:** Webhooks
+
+3. Click **Save**
+
 ---
 
 ## 🗣️ Step 6: How the Voice Flow Works
@@ -250,7 +303,120 @@ The system remembers context:
 
 ---
 
+## 💬 SMS Flow (Text Messages)
+
+### When Customer Texts
+
+```
+1. Customer sends text: "I want to order a large pepperoni pizza"
+   ↓
+2. Twilio receives SMS
+   ↓
+3. Twilio sends webhook to: /api/voice/sms/incoming
+   with:
+   - From: +15559876543 (customer phone)
+   - To: +15551234567 (your restaurant number)
+   - Body: "I want to order a large pepperoni pizza"
+   ↓
+4. Backend identifies restaurant by "To" number
+   ↓
+5. Backend loads restaurant menu
+   ↓
+6. Backend sends to Ollama AI:
+   "Customer says: I want to order a large pepperoni pizza"
+   "Menu: [Full menu with prices]"
+   "Current context: [Previous messages if any]"
+   ↓
+7. Ollama responds:
+   "Great choice! Large Pepperoni Pizza is $18.99.
+    Would you like delivery or pickup?"
+   ↓
+8. Backend creates TwiML SMS response:
+   <Response>
+     <Message>Great choice! Large Pepperoni Pizza is $18.99.
+              Would you like delivery or pickup?</Message>
+   </Response>
+   ↓
+9. Twilio sends SMS to customer
+   ↓
+10. Customer replies: "Delivery to 123 Main St"
+    ↓
+11. Process repeats... (maintains conversation context)
+    ↓
+12. When complete:
+    - Order created in database
+    - Confirmation SMS sent
+    - Order appears in restaurant dashboard
+```
+
+### SMS vs Voice Comparison
+
+| Feature | Voice Calls | SMS Messages |
+|---------|-------------|--------------|
+| **Speed** | Real-time (immediate) | Async (customer can reply anytime) |
+| **Input** | Speech-to-text | Direct text |
+| **Best For** | Complex orders, elderly customers | Quick orders, busy customers |
+| **Cost** | $0.0085/min | $0.0079/message |
+| **Context** | Session-based (call duration) | Persistent (hours/days) |
+
+### SMS Advantages
+
+✅ **Convenience** - Customer can text while doing other things
+✅ **Accuracy** - No speech recognition errors
+✅ **Record** - Customer has text confirmation
+✅ **Async** - Customer replies when ready
+✅ **Quiet** - Works in noisy environments
+
+### Example SMS Conversations
+
+**Order Pizza:**
+```
+Customer: Hi, can I order a pizza?
+AI: Sure! We have Margherita ($15), Pepperoni ($17), and Veggie ($16). Which would you like?
+Customer: Pepperoni please
+AI: Great! Pepperoni pizza $17. Delivery or pickup?
+Customer: Delivery to 123 Main St
+AI: Perfect! Total: $17. Estimated delivery 30 mins. Confirm?
+Customer: Yes
+AI: ✅ Order Confirmed! Order #1234. We'll text when on the way!
+```
+
+**Make Reservation:**
+```
+Customer: Table for 2 tonight at 7?
+AI: Let me check... Yes! We have availability at 7 PM for 2 guests. What name?
+Customer: Sarah
+AI: ✅ Reservation Confirmed! Table for 2 on Jan 12 at 7:00 PM. Name: Sarah. Confirmation #5678. See you then!
+```
+
+**Check Menu:**
+```
+Customer: What vegetarian options do you have?
+AI: Our vegetarian options:
+    🥗 Caesar Salad - $12
+    🍝 Vegetarian Pasta - $14
+    🍕 Veggie Pizza - $16
+    🥙 Falafel Wrap - $11
+Customer: Thanks!
+AI: You're welcome! Text back to order anytime!
+```
+
+### SMS Conversation State
+
+The system maintains context per phone number:
+- Each customer-restaurant pair has unique conversation
+- Context persists for multiple messages
+- Auto-expires after inactivity
+- Remembers: items in cart, delivery address, customer preferences
+
+**Stored in:** `sms_conversation_state` dictionary
+**Cleanup:** Automatic after conversation ends or timeout
+
+---
+
 ## 🧪 Step 7: Test the System
+
+### Test Voice Calls
 
 ### Test from Your Phone
 
@@ -281,12 +447,47 @@ The system remembers context:
 - You: "John"
 - AI: "Confirmed! Table for 4 on Friday at 7 PM for John."
 
+### Test SMS Messages
+
+1. **Text your Twilio number:** `+15551234567`
+2. Send: `"Hi, what's on your menu?"`
+3. You should receive an SMS response with menu items
+4. Continue texting naturally
+
+**Test SMS Scenarios:**
+
+**Scenario 1: Quick Order**
+```
+You: "1 large pepperoni pizza, delivery"
+AI: "Pepperoni pizza $17.99. Delivery address?"
+You: "456 Oak Avenue"
+AI: "Total $17.99. Confirm order?"
+You: "Yes"
+AI: "✅ Order #1234 confirmed! 30 min delivery"
+```
+
+**Scenario 2: Menu Browse**
+```
+You: "What vegetarian options?"
+AI: Lists all vegetarian menu items with prices
+You: "I'll take the veggie pasta"
+AI: "Great! Veggie pasta $14. Pickup or delivery?"
+```
+
+**Scenario 3: Table Reservation**
+```
+You: "Table for 2 tomorrow at 6pm"
+AI: "Available! What name for reservation?"
+You: "Mike"
+AI: "✅ Reserved! Table for 2, Jan 13 at 6pm, Name: Mike. #5678"
+```
+
 ### Check Dashboard
 
-After test call:
+After voice call or SMS test:
 1. Log into restaurant dashboard
 2. Go to **Orders** or **Reservations**
-3. You should see the test order/booking!
+3. You should see the test order/booking from both voice AND SMS!
 
 ---
 
@@ -294,16 +495,24 @@ After test call:
 
 ### Check Twilio Logs
 
+**For Voice Calls:**
 1. Twilio Console → Monitor → Logs → Call Logs
 2. Click your test call
 3. See all webhook requests and responses
 4. Check for errors (red indicators)
 
+**For SMS Messages:**
+1. Twilio Console → Monitor → Logs → Messaging Logs
+2. Click your test message
+3. See webhook requests and responses
+4. Check for errors (red indicators)
+
 ### Check Server Logs
 
 ```bash
-# If using systemd
-sudo journalctl -u restaurant-backend -f
+# If using systemd/launchd
+sudo journalctl -u restaurant-backend -f  # Linux
+tail -f ~/Library/Logs/restaurant-backend.log  # Mac
 
 # If using PM2
 pm2 logs restaurant-backend
@@ -312,10 +521,15 @@ pm2 logs restaurant-backend
 # Check the terminal where uvicorn is running
 ```
 
-**Look for:**
-- `INFO: Voice call received`
+**Look for (Voice):**
+- `INFO: Voice call received from +15551234567 to +15559876543`
 - `INFO: Processing speech from +15551234567: [transcription]`
 - `INFO: Ollama response: [AI response]`
+
+**Look for (SMS):**
+- `INFO: SMS received from +15551234567 to +15559876543: [message]`
+- `INFO: Processing SMS: [message content]`
+- `INFO: SMS response sent: [AI response]`
 
 ### Common Issues
 
@@ -324,24 +538,41 @@ pm2 logs restaurant-backend
 - Check webhook URL is correct
 - Verify backend is running
 - Check ngrok tunnel is active
+- Test webhook: `curl -X POST https://your-domain.com/api/voice/welcome`
+
+**Problem:** SMS not received
+**Solution:**
+- Check SMS webhook URL is correct
+- Verify messaging capability on Twilio number
+- Check ngrok tunnel is active
+- Test webhook: `curl -X POST https://your-domain.com/api/voice/sms/incoming -d "Body=test&From=%2B15551234567&To=%2B15559876543"`
 
 **Problem:** AI doesn't respond
 **Solution:**
 - Check Ollama is running: `curl http://localhost:11434/api/tags`
 - Verify OLLAMA_URL in .env
 - Check server logs for errors
+- Test conversation handler directly
 
 **Problem:** Speech not transcribed
 **Solution:**
 - Speak clearly and wait for beep
 - Check phone connection quality
 - Try shorter sentences
+- Consider using SMS for clearer input
 
 **Problem:** Wrong menu items
 **Solution:**
 - Verify menu is in database
 - Check AI has access to menu
-- Review conversation_handler.py line 62-76
+- Review conversation_handler.py
+- Test with SMS first (eliminates speech-to-text issues)
+
+**Problem:** Restaurant identification fails
+**Solution:**
+- Verify `twilio_phone_number` is set in database for restaurant
+- Check "To" parameter in webhook logs
+- Ensure each restaurant has unique Twilio number
 
 ---
 
@@ -411,27 +642,57 @@ We'll have it ready in 20 minutes!
 
 ### Twilio Pricing
 
-**Phone Number:** $1/month
+**Phone Number:** $1/month (supports both voice AND SMS)
+
 **Voice Calls:**
 - Incoming: $0.0085/minute
 - Outgoing: $0.013/minute
+- Speech Recognition (Whisper): $0.02/minute of audio
+- Text-to-Speech: $0.006 per 1000 characters
 
-**Speech Recognition (Whisper):**
-- $0.02 per minute of audio
+**SMS Messages:**
+- Incoming: $0.0079/message (160 chars)
+- Outgoing: $0.0079/message (160 chars)
+- Long messages (>160 chars): Multiple segment charges
 
-**Text-to-Speech:**
-- $0.006 per 1000 characters
+### Example Monthly Costs
 
-### Example Monthly Cost
+**Scenario 1: Voice-Heavy Restaurant**
+- **100 voice calls/month, 3 min average, 20 SMS/month:**
+  - Phone number: $1.00
+  - Voice calls: 100 × 3 × $0.0085 = $2.55
+  - Speech recognition: 100 × 3 × $0.02 = $6.00
+  - Text-to-speech: ~$0.50
+  - SMS: 40 messages × $0.0079 = $0.32
+  - **Total: ~$10.37/month**
 
-**100 calls/month, 3 minutes average:**
-- Phone number: $1.00
-- Voice calls: 100 × 3 × $0.0085 = $2.55
-- Speech recognition: 100 × 3 × $0.02 = $6.00
-- Text-to-speech: ~$0.50
-- **Total: ~$10/month**
+**Scenario 2: SMS-Heavy Restaurant**
+- **50 voice calls/month, 200 SMS conversations/month:**
+  - Phone number: $1.00
+  - Voice calls: 50 × 3 × $0.0085 = $1.28
+  - Speech recognition: 50 × 3 × $0.02 = $3.00
+  - Text-to-speech: ~$0.25
+  - SMS: 400 messages (2 per conversation) × $0.0079 = $3.16
+  - **Total: ~$8.69/month**
+
+**Scenario 3: Balanced**
+- **75 voice calls, 100 SMS conversations/month:**
+  - Phone number: $1.00
+  - Voice calls: $1.91
+  - Speech recognition: $4.50
+  - Text-to-speech: ~$0.38
+  - SMS: 200 messages × $0.0079 = $1.58
+  - **Total: ~$9.37/month**
 
 **Very affordable!** Much cheaper than hiring phone staff.
+
+### Cost Comparison
+
+| Solution | Monthly Cost | Staff Hours Saved |
+|----------|-------------|-------------------|
+| **AI Phone + SMS** | $8-12/month | 20-40 hours |
+| **Part-time Staff** | $800-1600/month | - |
+| **Savings** | **98% cheaper!** | Staff can focus on food |
 
 ---
 

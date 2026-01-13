@@ -196,6 +196,22 @@ Reply CONFIRM to acknowledge.
 
         return self.send_sms(customer.phone, message)
 
+    def create_twiml_response(self, message: str) -> str:
+        """
+        Create TwiML response for replying to incoming SMS.
+
+        Args:
+            message: Text message to send back
+
+        Returns:
+            TwiML XML string
+        """
+        from twilio.twiml.messaging_response import MessagingResponse
+
+        response = MessagingResponse()
+        response.message(message)
+        return str(response)
+
 
 # Global SMS service instance
 sms_service = SMSService()

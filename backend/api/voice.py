@@ -215,3 +215,139 @@ async def voice_health():
         "enabled": voice_service.enabled,
         "status": "healthy" if voice_service.enabled else "disabled"
     }
+
+
+# SMS conversation state (in production, use Redis or similar)
+sms_conversation_state: Dict[str, Dict[str, Any]] = {}
+
+
+@router.post("/sms/incoming")
+async def sms_incoming(
+    To: Optional[str] = Form(None),
+    From: Optional[str] = Form(None),
+    Body: Optional[str] = Form(None),
+    MessageSid: Optional[str] = Form(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Handle incoming SMS messages.
+
+    Args:
+        To: Twilio phone number that received the SMS (identifies restaurant)
+        From: Customer's phone number
+        Body: SMS message content
+        MessageSid: Unique message identifier
+        db: Database session
+
+    Returns:
+        TwiML response with reply message
+    """
+    logger.info(f"SMS received from {From} to {To}: {Body}")
+
+    # Look up which restaurant owns this Twilio number
+    from backend.models_platform import RestaurantAccount
+    restaurant = db.query(RestaurantAccount).filter(
+        RestaurantAccount.twilio_phone_number == To
+    ).first()
+
+    if not restaurant:
+        logger.warning(f"No restaurant found for Twilio number {To}")
+        response = sms_service.create_twiml_response(
+            "This number is not configured. Please contact support."
+        )
+        return Response(content=response, media_type="application/xml")
+
+    # Handle missing body
+    if not Body:
+        response = sms_service.create_twiml_response(
+            "I didn't receive your message. Could you please try again?"
+        )
+        return Response(content=response, media_type="application/xml")
+
+    # Get or create conversation state for this phone number
+    state_key = f"{From}_{To}"  # Unique per customer-restaurant pair
+    if state_key not in sms_conversation_state:
+        sms_conversation_state[state_key] = {
+            "phone": From,
+            "restaurant_id": restaurant.id,
+            "context": {},
+            "step": "initial",
+            "last_activity": datetime.now()
+        }
+
+    state = sms_conversation_state[state_key]
+    state["last_activity"] = datetime.now()
+
+    try:
+        # Process the message with AI conversation handler
+        result = await conversation_handler.process_message(
+            message=Body,
+            phone=From,
+            restaurant_id=restaurant.id,
+            context=state["context"],
+            db=db
+        )
+
+        # Update state
+        state["context"] = result.get("context", {})
+        state["step"] = result.get("next_step", "initial")
+
+        # Get the response message
+        response_message = result.get("message", "I'm not sure I understand. Could you rephrase that?")
+
+        # Handle different response types
+        response_type = result.get("type")
+
+        if response_type == "confirmation":
+            # Order/booking was made successfully
+            if "booking" in result:
+                booking_data = result.get("booking")
+                response_message = f"""✅ Reservation Confirmed!
+
+{restaurant.business_name}
+Date: {booking_data['booking_date']}
+Time: {booking_data['booking_time']}
+Party Size: {booking_data['party_size']}
+Name: {booking_data['customer_name']}
+
+Confirmation #: {booking_data['confirmation_id']}
+
+We'll see you then!"""
+            elif "order" in result:
+                order_data = result.get("order")
+                response_message = f"""✅ Order Confirmed!
+
+{restaurant.business_name}
+Order #: {order_data.get('order_id', 'N/A')}
+Total: ${order_data.get('total', 0):.2f}
+
+{order_data.get('message', 'Your order will be ready soon!')}"""
+
+        elif response_type == "goodbye":
+            # End conversation
+            response_message = result.get("message", "Thanks for contacting us!")
+            # Clean up state after a delay (or immediately)
+            if state_key in sms_conversation_state:
+                del sms_conversation_state[state_key]
+
+        # Create TwiML response
+        response = sms_service.create_twiml_response(response_message)
+        return Response(content=response, media_type="application/xml")
+
+    except Exception as e:
+        logger.error(f"Error processing SMS: {str(e)}", exc_info=True)
+        response = sms_service.create_twiml_response(
+            f"Sorry, I encountered an error. Please call us at {restaurant.phone or 'our restaurant'} or try again later."
+        )
+        return Response(content=response, media_type="application/xml")
+
+
+@router.get("/sms/health")
+async def sms_health():
+    """Health check for SMS service."""
+    return {
+        "service": "sms",
+        "enabled": sms_service.enabled,
+        "status": "healthy" if sms_service.enabled else "disabled",
+        "active_conversations": len(sms_conversation_state)
+    }

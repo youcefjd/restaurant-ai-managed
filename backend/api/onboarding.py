@@ -6,10 +6,11 @@ Handles restaurant signup, profile management, and menu setup.
 
 import logging
 from typing import List, Optional
+from pydantic import Field
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr
 
 from backend.database import get_db
 from backend.models_platform import (
@@ -43,6 +44,9 @@ class RestaurantAccountResponse(BaseModel):
     owner_email: str
     owner_phone: str
     twilio_phone_number: Optional[str]
+    opening_time: Optional[str]
+    closing_time: Optional[str]
+    operating_days: Optional[List[int]]
     subscription_tier: str
     subscription_status: str
     platform_commission_rate: float
@@ -172,6 +176,147 @@ async def get_account(account_id: int, db: Session = Depends(get_db)):
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Account not found"
         )
+
+    return account
+
+
+class TwilioPhoneUpdate(BaseModel):
+    """Schema for updating Twilio phone number."""
+    twilio_phone_number: str = Field(..., min_length=10, max_length=20, description="Twilio phone number in E.164 format (e.g., +15551234567)")
+
+
+@router.patch("/accounts/{account_id}/twilio-phone", response_model=RestaurantAccountResponse)
+async def update_twilio_phone(
+    account_id: int,
+    phone_data: TwilioPhoneUpdate,
+    db: Session = Depends(get_db)
+):
+    """
+    Update Twilio phone number for restaurant account.
+    
+    This phone number is used to identify which restaurant a call is for.
+    The number must match the Twilio phone number configured in your Twilio account.
+    """
+    # Verify account exists
+    account = db.query(RestaurantAccount).filter(RestaurantAccount.id == account_id).first()
+    if not account:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Account not found"
+        )
+
+    # Validate phone number format (E.164 format: +[country code][number])
+    phone = phone_data.twilio_phone_number.strip()
+    
+    # Basic validation: should start with + and have 10+ digits
+    if not phone.startswith('+'):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Phone number must be in E.164 format (e.g., +15551234567). Must start with +"
+        )
+    
+    # Remove + and check if remaining is all digits
+    digits_only = phone[1:].replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
+    if not digits_only.isdigit() or len(digits_only) < 10:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Phone number must contain at least 10 digits"
+        )
+
+    # Check if phone number is already in use by another account
+    existing = db.query(RestaurantAccount).filter(
+        RestaurantAccount.twilio_phone_number == phone,
+        RestaurantAccount.id != account_id
+    ).first()
+    
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This phone number is already assigned to another restaurant"
+        )
+
+    # Update phone number
+    account.twilio_phone_number = phone
+    db.commit()
+    db.refresh(account)
+
+    logger.info(f"Updated Twilio phone number for account {account_id}: {phone}")
+
+    return account
+
+
+class OperatingHoursUpdate(BaseModel):
+    """Schema for updating operating hours."""
+    opening_time: Optional[str] = Field(None, description="Opening time in HH:MM format (e.g., '09:00')")
+    closing_time: Optional[str] = Field(None, description="Closing time in HH:MM format (e.g., '22:00')")
+    operating_days: Optional[List[int]] = Field(None, description="Array of weekdays (0=Monday, 6=Sunday)")
+
+
+@router.patch("/accounts/{account_id}/operating-hours", response_model=RestaurantAccountResponse)
+async def update_operating_hours(
+    account_id: int,
+    hours_data: OperatingHoursUpdate,
+    db: Session = Depends(get_db)
+):
+    """
+    Update operating hours for restaurant account.
+    
+    This information is used by the AI to answer customer questions about hours of operation.
+    """
+    # Verify account exists
+    account = db.query(RestaurantAccount).filter(RestaurantAccount.id == account_id).first()
+    if not account:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Account not found"
+        )
+
+    # Validate time format if provided
+    if hours_data.opening_time:
+        try:
+            # Validate HH:MM format
+            parts = hours_data.opening_time.split(':')
+            if len(parts) != 2 or not all(p.isdigit() for p in parts):
+                raise ValueError("Invalid time format")
+            hour, minute = int(parts[0]), int(parts[1])
+            if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+                raise ValueError("Invalid time values")
+            account.opening_time = hours_data.opening_time
+        except (ValueError, AttributeError):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Opening time must be in HH:MM format (e.g., '09:00')"
+            )
+
+    if hours_data.closing_time:
+        try:
+            # Validate HH:MM format
+            parts = hours_data.closing_time.split(':')
+            if len(parts) != 2 or not all(p.isdigit() for p in parts):
+                raise ValueError("Invalid time format")
+            hour, minute = int(parts[0]), int(parts[1])
+            if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+                raise ValueError("Invalid time values")
+            account.closing_time = hours_data.closing_time
+        except (ValueError, AttributeError):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Closing time must be in HH:MM format (e.g., '22:00')"
+            )
+
+    if hours_data.operating_days is not None:
+        # Validate operating days (0-6, Monday-Sunday)
+        if not all(isinstance(day, int) and 0 <= day <= 6 for day in hours_data.operating_days):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Operating days must be integers between 0 (Monday) and 6 (Sunday)"
+            )
+        account.operating_days = hours_data.operating_days
+
+    db.commit()
+    db.refresh(account)
+
+    logger.info(f"Updated operating hours for account {account_id}")
 
     return account
 

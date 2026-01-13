@@ -10,6 +10,7 @@ export default function RestaurantLayout() {
     { to: '/restaurant/orders', icon: ShoppingBag, label: 'Orders' },
     { to: '/restaurant/menu', icon: MenuIcon, label: 'Menu' },
     { to: '/restaurant/analytics', icon: BarChart3, label: 'Analytics' },
+    { to: '/restaurant/settings', icon: Settings, label: 'Settings' },
   ]
 
   return (
@@ -66,9 +67,6 @@ export default function RestaurantLayout() {
             <h2 className="text-xl font-semibold">Welcome back!</h2>
             <div className="flex items-center gap-4">
               <button onClick={() => navigate('/restaurant/orders')} className="btn btn-primary">New Order</button>
-              <button onClick={() => alert('Settings coming soon!')} className="p-2 hover:bg-gray-100 rounded-lg" title="Settings">
-                <Settings className="w-5 h-5" />
-              </button>
             </div>
           </div>
         </header>

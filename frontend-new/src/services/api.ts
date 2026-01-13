@@ -68,6 +68,11 @@ export const restaurantAPI = {
   getMenu: (accountId: number) => api.get(`/onboarding/accounts/${accountId}/menu-full`),
   createMenuItem: (data: any) => api.post('/onboarding/items', data),
   createModifier: (data: any) => api.post('/onboarding/modifiers', data),
+  getAccount: (accountId: number) => api.get(`/onboarding/accounts/${accountId}`),
+  updateTwilioPhone: (accountId: number, phoneNumber: string) =>
+    api.patch(`/onboarding/accounts/${accountId}/twilio-phone`, { twilio_phone_number: phoneNumber }),
+  updateOperatingHours: (accountId: number, hours: { opening_time?: string; closing_time?: string; operating_days?: number[] }) =>
+    api.patch(`/onboarding/accounts/${accountId}/operating-hours`, hours),
 }
 
 // Stripe Connect API

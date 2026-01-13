@@ -131,7 +131,20 @@ class ConversationHandler:
                     "context": result.get("context", context)
                 }
 
+            elif result["intent"] == "operating_hours":
+                return await self._handle_operating_hours(account, result)
+
             elif result["intent"] == "place_order":
+                # Check if menu exists before processing order
+                if not menu_data or not menu_data.get("menus") or not any(
+                    menu.get("categories") and any(cat.get("items") for cat in menu["categories"])
+                    for menu in menu_data["menus"]
+                ):
+                    return {
+                        "type": "gather",
+                        "message": "I'm sorry, we don't have a menu set up yet. Please check back later or contact the restaurant directly.",
+                        "context": context
+                    }
                 return await self._handle_order(result, phone, db, context, account)
 
             elif result["intent"] == "book_table":
@@ -194,12 +207,29 @@ class ConversationHandler:
                                 price_str = f" (+${mod['price_adjustment_cents']/100:.2f})" if mod['price_adjustment_cents'] > 0 else ""
                                 menu_info += f"        • {mod['name']}{price_str}\n"
 
+        # Get operating hours info
+        hours_info = ""
+        if account:
+            if account.opening_time and account.closing_time:
+                days_str = ""
+                if account.operating_days:
+                    day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+                    days_str = ", ".join([day_names[d] for d in sorted(account.operating_days)])
+                
+                hours_info = f"\n\nOPERATING HOURS:\n"
+                hours_info += f"Hours: {account.opening_time} - {account.closing_time}\n"
+                if days_str:
+                    hours_info += f"Days: {days_str}\n"
+                hours_info += "\nUse ONLY this information when answering questions about operating hours. Do not make up hours.\n"
+
         return f"""You are a helpful AI assistant for {menu_data.get('business_name', 'our restaurant') if menu_data else 'a restaurant'}. You help with:
 
-1. **Menu Questions**: Answer questions about items, prices, dietary options (vegetarian, vegan, halal, etc.)
-2. **Takeout Orders**: Take food orders with customizations
-3. **Reservations**: Book tables, check availability, cancel bookings
+1. **Operating Hours**: Answer questions about when the restaurant is open (use ONLY the provided operating hours information)
+2. **Menu Questions**: Answer questions about items, prices, dietary options (vegetarian, vegan, halal, etc.)
+3. **Takeout Orders**: Take food orders with customizations (ONLY if menu exists)
+4. **Reservations**: Book tables, check availability, cancel bookings
 
+{hours_info}
 {menu_info}
 {customer_info}
 
@@ -207,7 +237,7 @@ Current conversation context: {json.dumps(context)}
 
 Respond with JSON in this format:
 {{
-    "intent": "menu_question|place_order|book_table|check_availability|cancel_booking|need_more_info|goodbye",
+    "intent": "operating_hours|menu_question|place_order|book_table|check_availability|cancel_booking|need_more_info|goodbye",
     "message": "response to customer",
     "order_items": [  // For place_order intent
         {{"item_name": "...", "quantity": 1, "modifiers": ["No tomato", "Extra sauce"], "price_cents": 1200}}
@@ -428,6 +458,37 @@ Be conversational, helpful, and accurate about menu items and pricing."""
         return {
             "type": "gather",
             "message": f"I've cancelled your reservation for {booking.booking_date.strftime('%B %d')}. Is there anything else I can help you with?"
+        }
+
+    async def _handle_operating_hours(
+        self,
+        account,
+        result: Dict
+    ) -> Dict[str, Any]:
+        """Handle operating hours questions."""
+        if not account.opening_time or not account.closing_time:
+            return {
+                "type": "gather",
+                "message": "I'm sorry, I don't have the operating hours information available right now. Please contact the restaurant directly for their hours.",
+                "context": {}
+            }
+
+        # Format operating days
+        days_str = ""
+        if account.operating_days:
+            day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+            days_str = ", ".join([day_names[d] for d in sorted(account.operating_days)])
+        
+        # Build response message
+        message = f"We're open from {account.opening_time} to {account.closing_time}"
+        if days_str:
+            message += f" on {days_str}"
+        message += ". Is there anything else I can help you with?"
+
+        return {
+            "type": "gather",
+            "message": message,
+            "context": {}
         }
 
     def _get_missing_field_prompt(self, field: str) -> str:

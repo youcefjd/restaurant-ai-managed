@@ -2,15 +2,28 @@ import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { restaurantAPI } from '../../services/api'
 import { useAuth } from '../../contexts/AuthContext'
-import { Phone, Save, AlertCircle, CheckCircle, Info, ExternalLink } from 'lucide-react'
+import { Phone, Save, AlertCircle, CheckCircle, Info, ExternalLink, Clock } from 'lucide-react'
 
 export default function Settings() {
   const { user } = useAuth()
   const accountId = user?.id
   const queryClient = useQueryClient()
   const [phoneNumber, setPhoneNumber] = useState('')
+  const [openingTime, setOpeningTime] = useState('')
+  const [closingTime, setClosingTime] = useState('')
+  const [operatingDays, setOperatingDays] = useState<number[]>([])
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  
+  const weekdays = [
+    { value: 0, label: 'Monday' },
+    { value: 1, label: 'Tuesday' },
+    { value: 2, label: 'Wednesday' },
+    { value: 3, label: 'Thursday' },
+    { value: 4, label: 'Friday' },
+    { value: 5, label: 'Saturday' },
+    { value: 6, label: 'Sunday' },
+  ]
 
   // Fetch current account details
   const { data: account, isLoading } = useQuery({
@@ -22,10 +35,21 @@ export default function Settings() {
     enabled: !!accountId,
   })
 
-  // Update phone number when account data loads
+  // Update form fields when account data loads
   useEffect(() => {
-    if (account?.twilio_phone_number) {
-      setPhoneNumber(account.twilio_phone_number)
+    if (account) {
+      if (account.twilio_phone_number) {
+        setPhoneNumber(account.twilio_phone_number)
+      }
+      if (account.opening_time) {
+        setOpeningTime(account.opening_time)
+      }
+      if (account.closing_time) {
+        setClosingTime(account.closing_time)
+      }
+      if (account.operating_days) {
+        setOperatingDays(account.operating_days)
+      }
     }
   }, [account])
 
@@ -38,7 +62,6 @@ export default function Settings() {
       setSuccess('Phone number updated successfully!')
       setError('')
       queryClient.invalidateQueries({ queryKey: ['account', accountId] })
-      // Clear success message after 5 seconds
       setTimeout(() => setSuccess(''), 5000)
     },
     onError: (err: any) => {
@@ -47,7 +70,24 @@ export default function Settings() {
     },
   })
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Mutation to update operating hours
+  const updateHoursMutation = useMutation({
+    mutationFn: async (hours: { opening_time?: string; closing_time?: string; operating_days?: number[] }) => {
+      return restaurantAPI.updateOperatingHours(accountId!, hours)
+    },
+    onSuccess: () => {
+      setSuccess('Operating hours updated successfully!')
+      setError('')
+      queryClient.invalidateQueries({ queryKey: ['account', accountId] })
+      setTimeout(() => setSuccess(''), 5000)
+    },
+    onError: (err: any) => {
+      setError(err.response?.data?.detail || 'Failed to update operating hours')
+      setSuccess('')
+    },
+  })
+
+  const handlePhoneSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
     setSuccess('')
@@ -72,6 +112,44 @@ export default function Settings() {
     updatePhoneMutation.mutate(phoneNumber.trim())
   }
 
+  const handleHoursSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    setSuccess('')
+
+    // Validate time format
+    const timeRegex = /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/
+    
+    if (openingTime && !timeRegex.test(openingTime)) {
+      setError('Opening time must be in HH:MM format (e.g., 09:00)')
+      return
+    }
+
+    if (closingTime && !timeRegex.test(closingTime)) {
+      setError('Closing time must be in HH:MM format (e.g., 22:00)')
+      return
+    }
+
+    if (openingTime && closingTime && openingTime >= closingTime) {
+      setError('Opening time must be before closing time')
+      return
+    }
+
+    updateHoursMutation.mutate({
+      opening_time: openingTime || undefined,
+      closing_time: closingTime || undefined,
+      operating_days: operatingDays.length > 0 ? operatingDays : undefined,
+    })
+  }
+
+  const toggleDay = (day: number) => {
+    setOperatingDays(prev => 
+      prev.includes(day) 
+        ? prev.filter(d => d !== day)
+        : [...prev, day].sort()
+    )
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -88,7 +166,7 @@ export default function Settings() {
       {/* Header */}
       <div className="bg-gradient-to-r from-primary-600 to-secondary-600 rounded-2xl p-8 text-white shadow-xl">
         <h1 className="text-3xl font-bold mb-2">Settings</h1>
-        <p className="text-blue-100">Configure your restaurant's voice AI phone number</p>
+        <p className="text-blue-100">Configure your restaurant's phone number and operating hours</p>
       </div>
 
       {/* Twilio Phone Number Configuration */}
@@ -132,7 +210,7 @@ export default function Settings() {
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handlePhoneSubmit} className="space-y-4">
           <div>
             <label htmlFor="phone" className="block text-sm font-semibold text-gray-700 mb-2">
               Twilio Phone Number
@@ -209,6 +287,119 @@ export default function Settings() {
         </form>
       </div>
 
+      {/* Operating Hours Configuration */}
+      <div className="bg-white rounded-2xl p-8 shadow-card border border-gray-100">
+        <div className="flex items-start gap-4 mb-6">
+          <div className="p-3 bg-primary-100 rounded-xl">
+            <Clock className="w-6 h-6 text-primary-600" />
+          </div>
+          <div className="flex-1">
+            <h2 className="text-xl font-bold text-gray-900 mb-2">Operating Hours</h2>
+            <p className="text-gray-600">
+              Set your restaurant's operating hours. The AI assistant will use this information to answer customer questions about when you're open.
+            </p>
+          </div>
+        </div>
+
+        <form onSubmit={handleHoursSubmit} className="space-y-6">
+          {/* Time Inputs */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="opening-time" className="block text-sm font-semibold text-gray-700 mb-2">
+                Opening Time
+              </label>
+              <input
+                type="time"
+                id="opening-time"
+                value={openingTime}
+                onChange={(e) => setOpeningTime(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
+                disabled={updateHoursMutation.isPending}
+              />
+              <p className="text-xs text-gray-500 mt-2">When your restaurant opens (24-hour format)</p>
+            </div>
+
+            <div>
+              <label htmlFor="closing-time" className="block text-sm font-semibold text-gray-700 mb-2">
+                Closing Time
+              </label>
+              <input
+                type="time"
+                id="closing-time"
+                value={closingTime}
+                onChange={(e) => setClosingTime(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
+                disabled={updateHoursMutation.isPending}
+              />
+              <p className="text-xs text-gray-500 mt-2">When your restaurant closes (24-hour format)</p>
+            </div>
+          </div>
+
+          {/* Operating Days */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">
+              Operating Days
+            </label>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {weekdays.map((day) => (
+                <button
+                  key={day.value}
+                  type="button"
+                  onClick={() => toggleDay(day.value)}
+                  disabled={updateHoursMutation.isPending}
+                  className={`px-4 py-2 rounded-lg border-2 transition-all ${
+                    operatingDays.includes(day.value)
+                      ? 'bg-primary-600 text-white border-primary-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:border-primary-300'
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  {day.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500 mt-2">Select the days your restaurant is open</p>
+          </div>
+
+          {/* Save Button */}
+          <div className="flex justify-end">
+            <button
+              type="submit"
+              disabled={updateHoursMutation.isPending}
+              className="px-6 py-3 bg-primary-600 text-white rounded-xl font-semibold hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+            >
+              {updateHoursMutation.isPending ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4" />
+                  Save Hours
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+
+        {/* Current Hours Display */}
+        {(account?.opening_time || account?.closing_time || account?.operating_days?.length) && (
+          <div className="mt-6 bg-gray-50 border border-gray-200 rounded-xl p-4">
+            <p className="text-sm font-semibold text-gray-700 mb-2">Current Operating Hours:</p>
+            {account.opening_time && account.closing_time && (
+              <p className="text-lg text-gray-900 mb-2">
+                {account.opening_time} - {account.closing_time}
+              </p>
+            )}
+            {account.operating_days && account.operating_days.length > 0 && (
+              <p className="text-sm text-gray-600">
+                Open: {account.operating_days.map(d => weekdays[d].label).join(', ')}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Additional Information */}
       <div className="bg-white rounded-2xl p-8 shadow-card border border-gray-100">
         <h3 className="text-lg font-bold text-gray-900 mb-4">What happens after configuration?</h3>
@@ -229,7 +420,7 @@ export default function Settings() {
             <div className="w-6 h-6 rounded-full bg-primary-100 text-primary-600 flex items-center justify-center font-semibold text-sm flex-shrink-0 mt-0.5">
               3
             </div>
-            <p>AI can take orders, answer menu questions, and make reservations</p>
+            <p>AI can answer operating hours questions, take orders, and make reservations</p>
           </div>
           <div className="flex items-start gap-3">
             <div className="w-6 h-6 rounded-full bg-primary-100 text-primary-600 flex items-center justify-center font-semibold text-sm flex-shrink-0 mt-0.5">

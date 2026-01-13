@@ -88,6 +88,11 @@ class RestaurantAccount(Base):
     # Twilio integration
     twilio_phone_number = Column(String(20), nullable=True, unique=True)
 
+    # Operating hours
+    opening_time = Column(String(10), nullable=True)  # Format: "HH:MM" (e.g., "09:00")
+    closing_time = Column(String(10), nullable=True)  # Format: "HH:MM" (e.g., "22:00")
+    operating_days = Column(JSON, nullable=True)  # Array of weekdays: [0,1,2,3,4,5,6] (Mon-Sun)
+
     # Subscription
     subscription_tier = Column(String(20), nullable=False, default=SubscriptionTier.FREE.value)
     subscription_status = Column(String(20), nullable=False, default=SubscriptionStatus.TRIAL.value)

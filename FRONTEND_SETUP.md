@@ -30,11 +30,8 @@ Frontend (React + TypeScript)
 ```bash
 cd /Users/youcef/restaurant-assistant
 source venv/bin/activate
-export ANTHROPIC_API_KEY='your-key-here'
-export TWILIO_ACCOUNT_SID='your-sid-here'
-export TWILIO_AUTH_TOKEN='your-token-here'
-export STRIPE_API_KEY='your-stripe-key-here'
-uvicorn main:app --reload --port 8000
+# Load environment variables from .env file (see README.md for setup)
+uvicorn backend.main:app --reload --port 8000
 ```
 
 ### 2. Start Frontend (Vite)

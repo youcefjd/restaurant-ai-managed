@@ -1,7 +1,24 @@
 import axios from 'axios'
 
+// Use environment variable for API URL, fallback to relative path for dev proxy
+// In preview/production, use the same hostname as the frontend but port 8000
+const getApiBaseUrl = () => {
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL
+  }
+  if (import.meta.env.DEV) {
+    // Development mode - use proxy
+    return '/api'
+  }
+  // Preview/Production mode - use same hostname, port 8000
+  const hostname = window.location.hostname
+  return `http://${hostname}:8000/api`
+}
+
+const API_BASE_URL = getApiBaseUrl()
+
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },

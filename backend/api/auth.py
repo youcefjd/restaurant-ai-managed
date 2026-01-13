@@ -75,6 +75,7 @@ async def signup_restaurant(
         subscription_tier=SubscriptionTier.FREE.value,
         subscription_status=SubscriptionStatus.TRIAL.value,
         platform_commission_rate=10.0,
+        commission_enabled=True,
         trial_ends_at=datetime.now() + timedelta(days=30),
         onboarding_completed=False,
         is_active=True

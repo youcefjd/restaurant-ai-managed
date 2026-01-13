@@ -132,7 +132,7 @@ export default function RestaurantDashboard() {
 
       {/* Stats Grid - Optimized for Tablets */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-        {stats.map((stat, index) => (
+        {stats.map((stat) => (
           <div
             key={stat.label}
             className="relative group bg-white rounded-2xl p-6 shadow-card hover:shadow-card-hover transition-all duration-300 border border-gray-100 overflow-hidden min-h-[180px]"

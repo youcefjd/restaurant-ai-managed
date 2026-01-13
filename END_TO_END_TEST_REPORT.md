@@ -304,21 +304,25 @@ AuthenticationError: Error code: 401
 
 To enable all features, you need to configure the following API keys:
 
-### 1. Anthropic (Claude AI) ✅ PRIORITY
+### 1. Ollama (Local AI) ✅ REQUIRED
 ```bash
 # For AI conversation, menu understanding, order processing
-ANTHROPIC_API_KEY=sk-ant-api03-...
+OLLAMA_URL=http://localhost:11434
+OLLAMA_MODEL=llama2
 
-# Get from: https://console.anthropic.com/
+# Install Ollama: https://ollama.ai/
+# Start: ollama serve
+# Pull model: ollama pull llama2
 # Used by: conversation_handler.py
 ```
 
-**Status:** ❌ Current key is invalid/expired
+**Status:** ✅ Uses local Ollama (no API key needed)
 
 **Impact:**
-- AI menu questions not working
-- Voice assistant not working
-- Natural language order processing not working
+- AI menu questions work locally
+- Voice assistant works with Ollama
+- Natural language order processing works locally
+- No API costs or external dependencies
 
 ---
 
@@ -388,9 +392,11 @@ STRIPE_WEBHOOK_SECRET=whsec_xxxxxxxxxxxxx
 
 ### Immediate (Critical)
 
-1. **Update Anthropic API Key** ✅ PRIORITY
-   - Get new key from https://console.anthropic.com/
-   - Set `ANTHROPIC_API_KEY` in environment
+1. **Setup Ollama** ✅ PRIORITY
+   - Install Ollama: https://ollama.ai/
+   - Start Ollama: `ollama serve`
+   - Pull model: `ollama pull llama2`
+   - Verify: `curl http://localhost:11434/api/tags`
    - Rerun test: `python3 test_ai_conversation.py`
    - Verify AI can answer menu questions
 

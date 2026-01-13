@@ -140,9 +140,10 @@ npm run preview
 ~/restaurant-ai-managed/.env
 
 # Add these lines:
+# Note: Each restaurant sets their own phone number in Settings
+# These credentials are only for making Twilio API calls
 TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 TWILIO_AUTH_TOKEN=your_auth_token_here
-TWILIO_PHONE_NUMBER=+15551234567
 PUBLIC_URL=https://your-ngrok-url.ngrok.io
 
 # Restart backend
@@ -242,10 +243,11 @@ DATABASE_URL=sqlite:///./restaurant_reservations.db
 OLLAMA_URL=http://localhost:11434
 OLLAMA_MODEL=llama2
 
-# Twilio Voice (Optional - for AI phone assistant)
+# Twilio (Required for AI phone assistant and SMS)
+# Note: Each restaurant sets their own phone number in Settings
+# These credentials are only for making Twilio API calls
 TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 TWILIO_AUTH_TOKEN=your_auth_token_here
-TWILIO_PHONE_NUMBER=+15551234567
 
 # Stripe Payments (Optional)
 STRIPE_SECRET_KEY=sk_test_xxxxxxxxxxxxxxxxxxxx

@@ -14,10 +14,17 @@ class SMSService:
     """Service for sending SMS notifications via Twilio."""
 
     def __init__(self):
-        """Initialize Twilio client."""
+        """
+        Initialize Twilio client.
+        
+        Note: TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN are required for the platform
+        to make Twilio API calls (send SMS, handle webhooks).
+        
+        Each restaurant must have their own phone number set in the database.
+        No fallback phone number is used.
+        """
         self.account_sid = os.getenv("TWILIO_ACCOUNT_SID")
         self.auth_token = os.getenv("TWILIO_AUTH_TOKEN")
-        self.from_number = os.getenv("TWILIO_PHONE_NUMBER")
 
         # Initialize Twilio client if credentials are provided
         if self.account_sid and self.auth_token:
@@ -29,13 +36,14 @@ class SMSService:
             self.enabled = False
             logger.warning("Twilio credentials not found - SMS service disabled")
 
-    def send_sms(self, to: str, message: str) -> Optional[str]:
+    def send_sms(self, to: str, message: str, from_number: str) -> Optional[str]:
         """
         Send an SMS message.
 
         Args:
             to: Phone number to send to (E.164 format)
             message: Message content
+            from_number: Phone number to send from (REQUIRED - must be restaurant's Twilio number)
 
         Returns:
             Message SID if successful, None otherwise
@@ -44,13 +52,17 @@ class SMSService:
             logger.warning(f"SMS disabled - would have sent to {to}: {message}")
             return None
 
+        if not from_number:
+            logger.error("No 'from' phone number provided - SMS requires restaurant's Twilio phone number")
+            return None
+
         try:
             message_obj = self.client.messages.create(
                 body=message,
-                from_=self.from_number,
+                from_=from_number,
                 to=to
             )
-            logger.info(f"SMS sent to {to}, SID: {message_obj.sid}")
+            logger.info(f"SMS sent to {to} from {from_number}, SID: {message_obj.sid}")
             return message_obj.sid
         except Exception as e:
             logger.error(f"Failed to send SMS to {to}: {str(e)}")
@@ -60,7 +72,8 @@ class SMSService:
         self,
         booking: Booking,
         customer: Customer,
-        restaurant: Restaurant
+        restaurant: Restaurant,
+        from_number: Optional[str] = None
     ) -> Optional[str]:
         """
         Send booking confirmation SMS.
@@ -69,10 +82,20 @@ class SMSService:
             booking: Booking object
             customer: Customer object
             restaurant: Restaurant object
+            from_number: Restaurant's Twilio phone number (required)
 
         Returns:
             Message SID if successful, None otherwise
         """
+        # Get restaurant's Twilio phone number
+        if not from_number:
+            if hasattr(restaurant, 'account') and restaurant.account:
+                from_number = restaurant.account.twilio_phone_number
+        
+        if not from_number:
+            logger.warning(f"Cannot send booking confirmation SMS - restaurant {restaurant.id} has no Twilio phone number configured")
+            return None
+
         message = f"""
 🎉 Booking Confirmed!
 
@@ -90,7 +113,7 @@ Confirmation #: {booking.id}
 See you soon! Reply CANCEL to cancel your booking.
         """.strip()
 
-        return self.send_sms(customer.phone, message)
+        return self.send_sms(customer.phone, message, from_number=from_number)
 
     def send_booking_reminder(
         self,
@@ -124,7 +147,16 @@ Confirmation #: {booking.id}
 Reply CONFIRM if you're coming or CANCEL to cancel.
         """.strip()
 
-        return self.send_sms(customer.phone, message)
+        # Get restaurant's Twilio phone number
+        from_number = None
+        if hasattr(restaurant, 'account') and restaurant.account:
+            from_number = restaurant.account.twilio_phone_number
+        
+        if not from_number:
+            logger.warning(f"Cannot send reminder SMS - restaurant {restaurant.id} has no Twilio phone number configured")
+            return None
+        
+        return self.send_sms(customer.phone, message, from_number=from_number)
 
     def send_cancellation_confirmation(
         self,
@@ -157,7 +189,16 @@ Confirmation #: {booking.id}
 We hope to see you another time! To make a new reservation, visit our website.
         """.strip()
 
-        return self.send_sms(customer.phone, message)
+        # Get restaurant's Twilio phone number
+        from_number = None
+        if hasattr(restaurant, 'account') and restaurant.account:
+            from_number = restaurant.account.twilio_phone_number
+        
+        if not from_number:
+            logger.warning(f"Cannot send cancellation SMS - restaurant {restaurant.id} has no Twilio phone number configured")
+            return None
+        
+        return self.send_sms(customer.phone, message, from_number=from_number)
 
     def send_booking_update(
         self,
@@ -194,7 +235,16 @@ Party Size: {booking.party_size} guests
 Reply CONFIRM to acknowledge.
         """.strip()
 
-        return self.send_sms(customer.phone, message)
+        # Get restaurant's Twilio phone number
+        from_number = None
+        if hasattr(restaurant, 'account') and restaurant.account:
+            from_number = restaurant.account.twilio_phone_number
+        
+        if not from_number:
+            logger.warning(f"Cannot send booking update SMS - restaurant {restaurant.id} has no Twilio phone number configured")
+            return None
+        
+        return self.send_sms(customer.phone, message, from_number=from_number)
 
     def create_twiml_response(self, message: str) -> str:
         """

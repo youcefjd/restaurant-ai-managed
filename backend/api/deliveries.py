@@ -60,14 +60,20 @@ async def create_order(
     try:
         restaurant = db.query(Restaurant).filter(Restaurant.id == order.restaurant_id).first()
         if restaurant and sms_service.enabled:
-            # Parse order items for SMS
-            try:
-                items = json.loads(order.order_items)
-                items_text = "\\n".join([f"- {item.get('quantity', 1)}x {item.get('name', 'Item')}" for item in items])
-            except:
-                items_text = "Your order"
+            # Get restaurant's Twilio phone number
+            from_number = None
+            if restaurant.account:
+                from_number = restaurant.account.twilio_phone_number
+            
+            if from_number:
+                # Parse order items for SMS
+                try:
+                    items = json.loads(order.order_items)
+                    items_text = "\\n".join([f"- {item.get('quantity', 1)}x {item.get('name', 'Item')}" for item in items])
+                except:
+                    items_text = "Your order"
 
-            message = f"""
+                message = f"""
 📦 Order Confirmed!
 
 Restaurant: {restaurant.name}
@@ -79,9 +85,11 @@ Total: ${order.total / 100:.2f}
 Delivery to: {order.delivery_address}
 
 We'll notify you when your order is ready for delivery!
-            """.strip()
+                """.strip()
 
-            sms_service.send_sms(customer.phone, message)
+                sms_service.send_sms(customer.phone, message, from_number=from_number)
+            else:
+                logger.warning(f"Cannot send order confirmation SMS - restaurant {restaurant.id} has no Twilio phone number configured")
     except Exception as e:
         logger.error(f"SMS sending failed: {e}")
 
@@ -155,16 +163,24 @@ async def update_order(
             restaurant = db.query(Restaurant).filter(Restaurant.id == order.restaurant_id).first()
 
             if customer and restaurant and sms_service.enabled:
-                status_messages = {
-                    "preparing": f"🍳 Your order #{order.id} from {restaurant.name} is being prepared!",
-                    "ready": f"✅ Your order #{order.id} is ready for pickup/delivery!",
-                    "out_for_delivery": f"🚗 Your order #{order.id} is out for delivery! It should arrive soon.",
-                    "delivered": f"🎉 Your order #{order.id} has been delivered! Enjoy your meal!",
-                    "cancelled": f"❌ Your order #{order.id} has been cancelled."
-                }
+                # Get restaurant's Twilio phone number
+                from_number = None
+                if restaurant.account:
+                    from_number = restaurant.account.twilio_phone_number
+                
+                if from_number:
+                    status_messages = {
+                        "preparing": f"🍳 Your order #{order.id} from {restaurant.name} is being prepared!",
+                        "ready": f"✅ Your order #{order.id} is ready for pickup/delivery!",
+                        "out_for_delivery": f"🚗 Your order #{order.id} is out for delivery! It should arrive soon.",
+                        "delivered": f"🎉 Your order #{order.id} has been delivered! Enjoy your meal!",
+                        "cancelled": f"❌ Your order #{order.id} has been cancelled."
+                    }
 
-                message = status_messages.get(order.status, f"Order #{order.id} status: {order.status}")
-                sms_service.send_sms(customer.phone, message)
+                    message = status_messages.get(order.status, f"Order #{order.id} status: {order.status}")
+                    sms_service.send_sms(customer.phone, message, from_number=from_number)
+                else:
+                    logger.warning(f"Cannot send order status SMS - restaurant {restaurant.id} has no Twilio phone number configured")
         except Exception as e:
             logger.error(f"SMS sending failed: {e}")
 

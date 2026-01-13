@@ -686,7 +686,9 @@ Total: ${total / 100:.2f}
 Payment: {payment_method}
 
 We'll have it ready in 15-20 minutes. Thank you!"""
-        sms_service.send_sms(phone, confirmation_msg)
+        # Use restaurant's Twilio phone number for SMS if available
+        from_number = account.twilio_phone_number if account else None
+        sms_service.send_sms(phone, confirmation_msg, from_number=from_number)
     except Exception as e:
         logger.error(f"Failed to send order confirmation SMS: {str(e)}")
 

@@ -40,9 +40,9 @@ class RestaurantAccountResponse(BaseModel):
     """Schema for restaurant account response."""
     id: int
     business_name: str
-    owner_name: str
+    owner_name: Optional[str]
     owner_email: str
-    owner_phone: str
+    owner_phone: Optional[str]
     twilio_phone_number: Optional[str]
     opening_time: Optional[str]
     closing_time: Optional[str]

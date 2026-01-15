@@ -1,11 +1,15 @@
-import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { restaurantAPI } from '../../services/api'
-import { Plus, Edit, Leaf, Flame } from 'lucide-react'
+import { Plus, Edit, Leaf, Flame, Trash2 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
+import CreateMenuModal from '../../components/CreateMenuModal'
 
 export default function RestaurantMenu() {
   const { user } = useAuth()
   const accountId = user?.id
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+  const queryClient = useQueryClient()
 
   const { data: menuData, isLoading } = useQuery({
     queryKey: ['menu', accountId],
@@ -14,6 +18,37 @@ export default function RestaurantMenu() {
   })
 
   const menu = menuData?.data
+
+  // Mutation to delete a single menu item
+  const deleteItemMutation = useMutation({
+    mutationFn: (itemId: number) => restaurantAPI.deleteMenuItem(itemId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['menu', accountId] })
+    },
+  })
+
+  // Mutation to delete all menu items
+  const deleteAllItemsMutation = useMutation({
+    mutationFn: ({ accountId, menuId }: { accountId: number; menuId: number }) =>
+      restaurantAPI.deleteAllMenuItems(accountId, menuId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['menu', accountId] })
+    },
+  })
+
+  const handleDeleteItem = (itemId: number, itemName: string) => {
+    if (window.confirm(`Are you sure you want to delete "${itemName}"? This action cannot be undone.`)) {
+      deleteItemMutation.mutate(itemId)
+    }
+  }
+
+  const handleDeleteAllItems = (menuId: number, menuName: string) => {
+    if (window.confirm(`Are you sure you want to delete ALL items from "${menuName}"? This action cannot be undone.`)) {
+      if (accountId) {
+        deleteAllItemsMutation.mutate({ accountId, menuId })
+      }
+    }
+  }
 
   const getDietaryBadge = (tags: string[]) => {
     const badges = []
@@ -54,20 +89,29 @@ export default function RestaurantMenu() {
 
   if (!menu?.menus || menu.menus.length === 0) {
     return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">Menu</h1>
-            <p className="text-gray-600 mt-1">Manage your restaurant menu</p>
+      <>
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold">Menu</h1>
+              <p className="text-gray-600 mt-1">Manage your restaurant menu</p>
+            </div>
+            <button onClick={() => setIsCreateModalOpen(true)} className="btn btn-primary">
+              <Plus className="w-5 h-5 mr-2" /> Create Menu
+            </button>
           </div>
-          <button onClick={() => alert('Menu creation form coming soon!')} className="btn btn-primary">
-            <Plus className="w-5 h-5 mr-2" /> Create Menu
-          </button>
+          <div className="card text-center py-12">
+            <p className="text-gray-500">No menu created yet. Start by creating your first menu.</p>
+          </div>
         </div>
-        <div className="card text-center py-12">
-          <p className="text-gray-500">No menu created yet. Start by creating your first menu.</p>
-        </div>
-      </div>
+        {accountId && (
+          <CreateMenuModal
+            isOpen={isCreateModalOpen}
+            onClose={() => setIsCreateModalOpen(false)}
+            accountId={accountId}
+          />
+        )}
+      </>
     )
   }
 
@@ -86,16 +130,34 @@ export default function RestaurantMenu() {
         </button>
       </div>
 
-      {menu.menus.map((menuObj: any) => (
-        <div key={menuObj.id}>
-          {menuObj.categories.map((category: any) => (
-            <div key={category.id} className="mb-8">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold">{category.name}</h2>
-                <button className="text-sm text-primary-600 hover:text-primary-700">
-                  Edit Category
-                </button>
+      {menu.menus.map((menuObj: any) => {
+        const totalItems = menuObj.categories.reduce((sum: number, cat: any) => sum + (cat.items?.length || 0), 0)
+        return (
+          <div key={menuObj.id} className="mb-8">
+            <div className="flex items-center justify-between mb-4 p-4 bg-gray-50 rounded-lg">
+              <div>
+                <h2 className="text-xl font-bold">{menuObj.name}</h2>
+                <p className="text-sm text-gray-500 mt-1">{totalItems} item(s) total</p>
               </div>
+              {totalItems > 0 && (
+                <button
+                  onClick={() => handleDeleteAllItems(menuObj.id, menuObj.name)}
+                  disabled={deleteAllItemsMutation.isPending}
+                  className="px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg font-medium hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  {deleteAllItemsMutation.isPending ? 'Deleting...' : 'Delete All Items'}
+                </button>
+              )}
+            </div>
+            {menuObj.categories.map((category: any) => (
+              <div key={category.id} className="mb-8">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-bold">{category.name}</h2>
+                  <button className="text-sm text-primary-600 hover:text-primary-700">
+                    Edit Category
+                  </button>
+                </div>
 
               <div className="grid gap-4">
                 {category.items.map((item: any) => (
@@ -136,17 +198,28 @@ export default function RestaurantMenu() {
                         )}
                       </div>
 
-                      <button className="ml-4 p-2 text-gray-400 hover:text-gray-600">
-                        <Edit className="w-5 h-5" />
-                      </button>
+                      <div className="ml-4 flex gap-2">
+                        <button className="p-2 text-gray-400 hover:text-gray-600">
+                          <Edit className="w-5 h-5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteItem(item.id, item.name)}
+                          disabled={deleteItemMutation.isPending}
+                          className="p-2 text-red-400 hover:text-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          title="Delete item"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
           ))}
-        </div>
-      ))}
+          </div>
+        )
+      })}
     </div>
   )
 }

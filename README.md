@@ -254,6 +254,9 @@ STRIPE_SECRET_KEY=sk_test_xxxxxxxxxxxxxxxxxxxx
 STRIPE_PUBLISHABLE_KEY=pk_test_xxxxxxxxxxxxxxxxxxxx
 STRIPE_WEBHOOK_SECRET=whsec_xxxxxxxxxxxxxxxxxxxx
 
+# Google Maps (Optional - for importing operating hours from Google Maps)
+GOOGLE_MAPS_API_KEY=your_google_maps_api_key_here
+
 # Server Config
 PORT=8000
 PUBLIC_URL=https://your-domain.com

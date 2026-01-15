@@ -1,9 +1,9 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import RestaurantDashboard from './pages/restaurant/Dashboard'
 import RestaurantOrders from './pages/restaurant/Orders'
-import RestaurantMenu from './pages/restaurant/Menu'
 import RestaurantAnalytics from './pages/restaurant/Analytics'
 import RestaurantSettings from './pages/restaurant/Settings'
+import RestaurantTranscripts from './pages/restaurant/Transcripts'
 import AdminDashboard from './pages/admin/Dashboard'
 import AdminRestaurants from './pages/admin/Restaurants'
 import AdminRevenue from './pages/admin/Revenue'
@@ -37,7 +37,8 @@ function App() {
         <Route index element={<Navigate to="/restaurant/dashboard" replace />} />
         <Route path="dashboard" element={<RestaurantDashboard />} />
         <Route path="orders" element={<RestaurantOrders />} />
-        <Route path="menu" element={<RestaurantMenu />} />
+        <Route path="menu" element={<Navigate to="/restaurant/settings" replace />} />
+        <Route path="transcripts" element={<RestaurantTranscripts />} />
         <Route path="analytics" element={<RestaurantAnalytics />} />
         <Route path="settings" element={<RestaurantSettings />} />
       </Route>

@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 import os
 
 from backend.database import engine, Base
-from backend.api import restaurants, tables, customers, bookings, availability, voice, payments, deliveries, onboarding, platform_admin, stripe_connect, auth
+from backend.api import restaurants, tables, customers, bookings, availability, voice, payments, deliveries, onboarding, platform_admin, stripe_connect, auth, transcripts
 from backend.core.exceptions import (
     BusinessLogicError,
     ResourceNotFoundError,
@@ -389,6 +389,12 @@ app.include_router(
     stripe_connect.router,
     prefix="/api/stripe-connect",
     tags=["Stripe Connect (Marketplace)"]
+)
+
+app.include_router(
+    transcripts.router,
+    prefix="/api/onboarding",
+    tags=["Transcripts"]
 )
 
 

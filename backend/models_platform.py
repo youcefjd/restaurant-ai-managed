@@ -88,6 +88,11 @@ class RestaurantAccount(Base):
     # Twilio integration
     twilio_phone_number = Column(String(20), nullable=True, unique=True)
 
+    # Operating hours
+    opening_time = Column(String(10), nullable=True)  # Format: "HH:MM" (e.g., "09:00")
+    closing_time = Column(String(10), nullable=True)  # Format: "HH:MM" (e.g., "22:00")
+    operating_days = Column(JSON, nullable=True)  # Array of weekdays: [0,1,2,3,4,5,6] (Mon-Sun)
+
     # Subscription
     subscription_tier = Column(String(20), nullable=False, default=SubscriptionTier.FREE.value)
     subscription_status = Column(String(20), nullable=False, default=SubscriptionStatus.TRIAL.value)
@@ -274,3 +279,60 @@ class MenuModifier(Base):
     def __repr__(self) -> str:
         price_str = f"+${self.price_adjustment_cents/100:.2f}" if self.price_adjustment_cents > 0 else ""
         return f"<MenuModifier(id={self.id}, name='{self.name}'{price_str})>"
+
+
+class TranscriptType(str, Enum):
+    """Enum for transcript types."""
+    SMS = "sms"
+    VOICE = "voice"
+
+
+class Transcript(Base):
+    """
+    Transcript model for storing SMS and voice call conversations.
+    
+    Attributes:
+        id: Primary key
+        account_id: Foreign key to restaurant account
+        transcript_type: Type of transcript (sms or voice)
+        customer_phone: Customer's phone number
+        twilio_phone: Restaurant's Twilio phone number
+        conversation_id: Unique identifier for the conversation (CallSid for voice, MessageSid for SMS)
+        messages: JSON array of conversation messages
+        summary: Optional summary of the conversation
+        outcome: Outcome of the conversation (booking_created, order_placed, inquiry, etc.)
+        created_at: Transcript creation timestamp
+        updated_at: Last update timestamp
+    """
+    __tablename__ = "transcripts"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    account_id = Column(Integer, ForeignKey("restaurant_accounts.id", ondelete="CASCADE"), nullable=False)
+    transcript_type = Column(String(20), nullable=False)  # "sms" or "voice"
+    customer_phone = Column(String(20), nullable=False, index=True)
+    twilio_phone = Column(String(20), nullable=True)  # Restaurant's Twilio number
+    conversation_id = Column(String(255), nullable=False, index=True)  # CallSid or MessageSid
+    messages = Column(JSON, nullable=False)  # Array of {role: "user"|"assistant", content: str, timestamp: str}
+    summary = Column(Text, nullable=True)
+    outcome = Column(String(100), nullable=True)  # "booking_created", "order_placed", "inquiry", etc.
+    duration_seconds = Column(Integer, nullable=True)  # For voice calls
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # Relationships
+    account = relationship("RestaurantAccount", backref="transcripts")
+    
+    __table_args__ = (
+        Index('idx_account_transcripts', 'account_id', 'created_at'),
+        Index('idx_transcript_type', 'transcript_type', 'created_at'),
+    )
+    
+    @validates('transcript_type')
+    def validate_transcript_type(self, key: str, transcript_type: str) -> str:
+        """Validate transcript type."""
+        if transcript_type not in [t.value for t in TranscriptType]:
+            raise ValueError(f"Invalid transcript type: {transcript_type}")
+        return transcript_type
+    
+    def __repr__(self) -> str:
+        return f"<Transcript(id={self.id}, type={self.transcript_type}, phone={self.customer_phone})>"

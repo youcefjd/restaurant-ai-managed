@@ -1,7 +1,24 @@
 import axios from 'axios'
 
+// Use environment variable for API URL, fallback to relative path for dev proxy
+// In preview/production, use the same hostname as the frontend but port 8000
+const getApiBaseUrl = () => {
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL
+  }
+  if (import.meta.env.DEV) {
+    // Development mode - use proxy
+    return '/api'
+  }
+  // Preview/Production mode - use same hostname, port 8000
+  const hostname = window.location.hostname
+  return `http://${hostname}:8000/api`
+}
+
+const API_BASE_URL = getApiBaseUrl()
+
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -37,6 +54,9 @@ export const adminAPI = {
   getRevenue: (params?: { start_date?: string; end_date?: string }) =>
     api.get('/admin/revenue', { params }),
   getAnalytics: (days: number = 30) => api.get(`/admin/analytics/growth?days=${days}`),
+  createRestaurant: (data: any) => api.post('/admin/restaurants', data),
+  updateCommission: (id: number, data: { platform_commission_rate: number, commission_enabled: boolean }) =>
+    api.put(`/admin/restaurants/${id}/commission`, data),
   suspendRestaurant: (id: number) => api.post(`/admin/restaurants/${id}/suspend`),
   activateRestaurant: (id: number) => api.post(`/admin/restaurants/${id}/activate`),
 }
@@ -49,8 +69,26 @@ export const restaurantAPI = {
   updateOrderStatus: (id: number, status: string) =>
     api.put(`/orders/${id}`, { status }),
   getMenu: (accountId: number) => api.get(`/onboarding/accounts/${accountId}/menu-full`),
+  importMenu: (accountId: number, formData: FormData) => 
+    api.post(`/onboarding/accounts/${accountId}/menus/import`, formData),
   createMenuItem: (data: any) => api.post('/onboarding/items', data),
+  deleteMenuItem: (itemId: number) => api.delete(`/onboarding/items/${itemId}`),
+  deleteAllMenuItems: (accountId: number, menuId: number) =>
+    api.delete(`/onboarding/accounts/${accountId}/menus/${menuId}/items`),
   createModifier: (data: any) => api.post('/onboarding/modifiers', data),
+  getAccount: (accountId: number) => api.get(`/onboarding/accounts/${accountId}`),
+  updateTwilioPhone: (accountId: number, phoneNumber: string) =>
+    api.patch(`/onboarding/accounts/${accountId}/twilio-phone`, { twilio_phone_number: phoneNumber }),
+  removeTwilioPhone: (accountId: number) =>
+    api.delete(`/onboarding/accounts/${accountId}/twilio-phone`),
+  updateOperatingHours: (accountId: number, hours: { opening_time?: string; closing_time?: string; operating_days?: number[] }) =>
+    api.patch(`/onboarding/accounts/${accountId}/operating-hours`, hours),
+  searchGoogleMaps: (query: string, location?: string) =>
+    api.get('/onboarding/google-maps/search', { params: { query, location } }),
+  getGoogleMapsPlace: (placeId: string) =>
+    api.get(`/onboarding/google-maps/place/${placeId}`),
+  updateHoursFromGoogle: (accountId: number, placeId: string) =>
+    api.post(`/onboarding/accounts/${accountId}/operating-hours-from-google`, { place_id: placeId }),
 }
 
 // Stripe Connect API

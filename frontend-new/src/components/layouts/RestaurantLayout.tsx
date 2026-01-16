@@ -1,5 +1,5 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
-import { Home, ShoppingBag, Menu as MenuIcon, BarChart3, Settings, LogOut } from 'lucide-react'
+import { Home, ShoppingBag, BarChart3, Settings, LogOut, MessageSquare, UtensilsCrossed } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 
 export default function RestaurantLayout() {
@@ -8,8 +8,10 @@ export default function RestaurantLayout() {
   const navItems = [
     { to: '/restaurant/dashboard', icon: Home, label: 'Dashboard' },
     { to: '/restaurant/orders', icon: ShoppingBag, label: 'Orders' },
-    { to: '/restaurant/menu', icon: MenuIcon, label: 'Menu' },
+    { to: '/restaurant/menu', icon: UtensilsCrossed, label: 'Menu' },
+    { to: '/restaurant/transcripts', icon: MessageSquare, label: 'Transcripts' },
     { to: '/restaurant/analytics', icon: BarChart3, label: 'Analytics' },
+    { to: '/restaurant/settings', icon: Settings, label: 'Settings' },
   ]
 
   return (
@@ -66,9 +68,6 @@ export default function RestaurantLayout() {
             <h2 className="text-xl font-semibold">Welcome back!</h2>
             <div className="flex items-center gap-4">
               <button onClick={() => navigate('/restaurant/orders')} className="btn btn-primary">New Order</button>
-              <button onClick={() => alert('Settings coming soon!')} className="p-2 hover:bg-gray-100 rounded-lg" title="Settings">
-                <Settings className="w-5 h-5" />
-              </button>
             </div>
           </div>
         </header>

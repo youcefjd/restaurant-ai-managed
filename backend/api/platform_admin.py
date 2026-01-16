@@ -91,6 +91,19 @@ class CommissionSettings(BaseModel):
         from_attributes = True
 
 
+class RestaurantCreate(BaseModel):
+    """Create new restaurant account."""
+    business_name: str = Field(..., min_length=1, max_length=255)
+    owner_name: str = Field(..., min_length=1, max_length=255)
+    owner_email: str = Field(..., min_length=1, max_length=255)
+    owner_phone: Optional[str] = Field(None, max_length=20)
+    subscription_tier: str = Field(default="professional")
+    subscription_status: str = Field(default="trial")
+
+    class Config:
+        from_attributes = True
+
+
 # Endpoints
 
 @router.get("/stats", response_model=PlatformStats)
@@ -186,6 +199,62 @@ async def list_all_restaurants(
         results.append(summary)
 
     return results
+
+
+@router.post("/restaurants", response_model=RestaurantAccountSummary, status_code=201)
+async def create_restaurant(
+    restaurant_data: RestaurantCreate,
+    db: Session = Depends(get_db)
+):
+    """
+    Create a new restaurant account.
+
+    Creates a restaurant account with basic information. The owner can later
+    complete onboarding, add menus, and configure their settings.
+    """
+    # Check if email already exists
+    existing = db.query(RestaurantAccount).filter(
+        RestaurantAccount.owner_email == restaurant_data.owner_email
+    ).first()
+
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Restaurant with email {restaurant_data.owner_email} already exists"
+        )
+
+    # Create restaurant account
+    account = RestaurantAccount(
+        business_name=restaurant_data.business_name,
+        owner_name=restaurant_data.owner_name,
+        owner_email=restaurant_data.owner_email,
+        owner_phone=restaurant_data.owner_phone,
+        subscription_tier=restaurant_data.subscription_tier,
+        subscription_status=restaurant_data.subscription_status,
+        is_active=True,
+        onboarding_completed=False,
+        platform_commission_rate=10.0,
+        commission_enabled=True
+    )
+
+    db.add(account)
+    db.commit()
+    db.refresh(account)
+
+    return RestaurantAccountSummary(
+        id=account.id,
+        business_name=account.business_name,
+        owner_name=account.owner_name,
+        owner_email=account.owner_email,
+        subscription_tier=account.subscription_tier,
+        subscription_status=account.subscription_status,
+        is_active=account.is_active,
+        trial_ends_at=account.trial_ends_at,
+        total_orders=0,
+        total_revenue_cents=0,
+        commission_owed_cents=0,
+        created_at=account.created_at
+    )
 
 
 @router.get("/restaurants/{account_id}/details")

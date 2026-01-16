@@ -3,6 +3,8 @@ import RestaurantDashboard from './pages/restaurant/Dashboard'
 import RestaurantOrders from './pages/restaurant/Orders'
 import RestaurantMenu from './pages/restaurant/Menu'
 import RestaurantAnalytics from './pages/restaurant/Analytics'
+import RestaurantSettings from './pages/restaurant/Settings'
+import RestaurantTranscripts from './pages/restaurant/Transcripts'
 import AdminDashboard from './pages/admin/Dashboard'
 import AdminRestaurants from './pages/admin/Restaurants'
 import AdminRevenue from './pages/admin/Revenue'
@@ -37,7 +39,9 @@ function App() {
         <Route path="dashboard" element={<RestaurantDashboard />} />
         <Route path="orders" element={<RestaurantOrders />} />
         <Route path="menu" element={<RestaurantMenu />} />
+        <Route path="transcripts" element={<RestaurantTranscripts />} />
         <Route path="analytics" element={<RestaurantAnalytics />} />
+        <Route path="settings" element={<RestaurantSettings />} />
       </Route>
 
       {/* Platform Admin Dashboard (Protected) */}

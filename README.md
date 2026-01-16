@@ -110,12 +110,11 @@ uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
 cd frontend-new
 npm install
 npm run build
-npm install -g serve
-serve -s dist -l 5173 --host 0.0.0.0
+npm run preview
 ```
 
 **Access:**
-- Frontend: http://YOUR_SERVER_IP:5173
+- Frontend: http://YOUR_SERVER_IP:4173 (Vite preview default port)
 - Backend API: http://YOUR_SERVER_IP:8000
 - API Docs: http://YOUR_SERVER_IP:8000/api/docs
 
@@ -125,7 +124,7 @@ serve -s dist -l 5173 --host 0.0.0.0
 
 **Quick version:**
 1. Open browser on tablet/phone/laptop
-2. Go to: `http://SERVER_IP:5173`
+2. Go to: `http://SERVER_IP:4173`
 3. Create account (30-day free trial)
 4. Add your menu
 5. Setup tables
@@ -141,9 +140,10 @@ serve -s dist -l 5173 --host 0.0.0.0
 ~/restaurant-ai-managed/.env
 
 # Add these lines:
+# Note: Each restaurant sets their own phone number in Settings
+# These credentials are only for making Twilio API calls
 TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 TWILIO_AUTH_TOKEN=your_auth_token_here
-TWILIO_PHONE_NUMBER=+15551234567
 PUBLIC_URL=https://your-ngrok-url.ngrok.io
 
 # Restart backend
@@ -243,20 +243,24 @@ DATABASE_URL=sqlite:///./restaurant_reservations.db
 OLLAMA_URL=http://localhost:11434
 OLLAMA_MODEL=llama2
 
-# Twilio Voice (Optional - for AI phone assistant)
+# Twilio (Required for AI phone assistant and SMS)
+# Note: Each restaurant sets their own phone number in Settings
+# These credentials are only for making Twilio API calls
 TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 TWILIO_AUTH_TOKEN=your_auth_token_here
-TWILIO_PHONE_NUMBER=+15551234567
 
 # Stripe Payments (Optional)
 STRIPE_SECRET_KEY=sk_test_xxxxxxxxxxxxxxxxxxxx
 STRIPE_PUBLISHABLE_KEY=pk_test_xxxxxxxxxxxxxxxxxxxx
 STRIPE_WEBHOOK_SECRET=whsec_xxxxxxxxxxxxxxxxxxxx
 
+# Google Maps (Optional - for importing operating hours from Google Maps)
+GOOGLE_MAPS_API_KEY=your_google_maps_api_key_here
+
 # Server Config
 PORT=8000
 PUBLIC_URL=https://your-domain.com
-CORS_ORIGINS=http://localhost:5173,http://192.168.1.100:5173
+CORS_ORIGINS=http://localhost:4173,http://localhost:5173,http://192.168.1.100:4173,http://192.168.1.100:5173
 
 # JWT Secret (generate with: openssl rand -hex 32)
 SECRET_KEY=your_secret_key_here
@@ -429,7 +433,7 @@ See [`SERVER_SETUP_GUIDE.md`](SERVER_SETUP_GUIDE.md) for complete systemd setup.
 **2. Or use PM2:**
 ```bash
 pm2 start "uvicorn backend.main:app --host 0.0.0.0" --name restaurant-backend
-pm2 start "serve -s frontend-new/dist -l 5173" --name restaurant-frontend
+cd frontend-new && pm2 start "npm run preview" --name restaurant-frontend
 pm2 save
 pm2 startup
 ```
@@ -441,7 +445,7 @@ server {
     server_name myrestaurant.com;
 
     location / {
-        proxy_pass http://localhost:5173;
+        proxy_pass http://localhost:4173;
     }
 
     location /api {
@@ -465,7 +469,7 @@ sudo certbot --nginx -d myrestaurant.com
 - Can be any Mac/Linux computer with 8GB+ RAM
 
 ### Restaurant Tablet (Recommended)
-- Access: `http://SERVER_IP:5173`
+- Access: `http://SERVER_IP:4173`
 - Keep at counter for order taking
 - Large screen, easy to use
 - Touch-optimized interface
@@ -543,11 +547,11 @@ ollama pull llama2
 ```bash
 # Check firewall
 sudo ufw status  # Linux
-# Allow ports 8000 and 5173
+# Allow ports 8000 and 4173
 
 # Check server is listening on 0.0.0.0
 lsof -i :8000
-lsof -i :5173
+lsof -i :4173
 ```
 
 ---

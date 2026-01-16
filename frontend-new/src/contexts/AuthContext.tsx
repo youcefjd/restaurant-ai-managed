@@ -1,6 +1,7 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import axios from 'axios'
+import api from '../services/api'
 
 interface User {
   id: number
@@ -57,7 +58,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const fetchCurrentUser = async (token: string) => {
     try {
-      const response = await axios.get('/api/auth/me', {
+      const response = await api.get('/auth/me', {
         headers: { Authorization: `Bearer ${token}` }
       })
       setUser(response.data)
@@ -73,7 +74,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       if (isAdmin) {
         // Admin login
-        const response = await axios.post('/api/auth/admin/login', {
+        const response = await api.post('/auth/admin/login', {
           email,
           password
         })
@@ -87,7 +88,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         formData.append('username', email)
         formData.append('password', password)
 
-        const response = await axios.post('/api/auth/login', formData, {
+        const response = await api.post('/auth/login', formData, {
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
         })
         const { access_token, user: userData } = response.data
@@ -103,7 +104,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signup = async (data: SignupData) => {
     try {
-      const response = await axios.post('/api/auth/signup', data)
+      const response = await api.post('/auth/signup', data)
       const { access_token, user: userData } = response.data
       localStorage.setItem('auth_token', access_token)
       setUser(userData)

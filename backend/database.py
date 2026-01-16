@@ -121,7 +121,7 @@ def init_db() -> None:
         # Import all models to ensure they're registered with Base
         from backend.models import Restaurant, Table, Customer, Booking, Order, Delivery  # noqa
         from backend.models_platform import (  # noqa
-            RestaurantAccount, Menu, MenuCategory, MenuItem, MenuModifier
+            RestaurantAccount, Menu, MenuCategory, MenuItem, MenuModifier, Transcript
         )
 
         # Create all tables

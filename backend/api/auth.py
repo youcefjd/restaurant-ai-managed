@@ -75,6 +75,7 @@ async def signup_restaurant(
         subscription_tier=SubscriptionTier.FREE.value,
         subscription_status=SubscriptionStatus.TRIAL.value,
         platform_commission_rate=10.0,
+        commission_enabled=True,
         trial_ends_at=datetime.now() + timedelta(days=30),
         onboarding_completed=False,
         is_active=True
@@ -125,6 +126,14 @@ async def login_restaurant(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Check if password hash exists
+    if not account.password_hash:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account password not set. Please contact support.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 

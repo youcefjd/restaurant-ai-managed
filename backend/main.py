@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 import os
 
 from backend.database import engine, Base
-from backend.api import restaurants, tables, customers, bookings, availability, voice, payments, deliveries, onboarding, platform_admin, stripe_connect, auth
+from backend.api import restaurants, tables, customers, bookings, availability, voice, payments, deliveries, onboarding, platform_admin, stripe_connect, auth, transcripts
 from backend.core.exceptions import (
     BusinessLogicError,
     ResourceNotFoundError,
@@ -70,11 +70,18 @@ app = FastAPI(
 )
 
 # Configure CORS
+cors_origins_env = os.getenv("CORS_ORIGINS", "http://localhost:4173,http://localhost:5173")
+cors_origins = cors_origins_env.split(",")
+# Strip whitespace from origins
+cors_origins = [origin.strip() for origin in cors_origins if origin.strip()]
+
+logger.info(f"CORS configured with origins: {cors_origins}")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ORIGINS", "*").split(","),
+    allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["*"],
     expose_headers=["X-Total-Count", "X-Page", "X-Per-Page"],
 )
@@ -293,6 +300,10 @@ async def health_check() -> Dict[str, Any]:
         logger.error(f"Database health check failed: {str(e)}")
         db_status = "unhealthy"
     
+    # Get CORS origins for debugging
+    cors_origins_env = os.getenv("CORS_ORIGINS", "http://localhost:4173,http://localhost:5173")
+    cors_origins = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
+    
     return {
         "status": "healthy" if db_status == "healthy" else "degraded",
         "timestamp": time.time(),
@@ -301,7 +312,8 @@ async def health_check() -> Dict[str, Any]:
             "database": db_status
         },
         "version": "1.0.0",
-        "environment": os.getenv("ENVIRONMENT", "development")
+        "environment": os.getenv("ENVIRONMENT", "development"),
+        "cors_origins": cors_origins
     }
 
 
@@ -377,6 +389,12 @@ app.include_router(
     stripe_connect.router,
     prefix="/api/stripe-connect",
     tags=["Stripe Connect (Marketplace)"]
+)
+
+app.include_router(
+    transcripts.router,
+    prefix="/api/onboarding",
+    tags=["Transcripts"]
 )
 
 

@@ -1,18 +1,49 @@
 import { useQuery } from '@tanstack/react-query'
 import { restaurantAPI } from '../../services/api'
-import { ShoppingBag, DollarSign, Clock, TrendingUp, CheckCircle, Package, Activity, ArrowUpRight } from 'lucide-react'
+import { ShoppingBag, DollarSign, Clock, TrendingUp, CheckCircle, Package, Activity, ArrowUpRight, AlertTriangle, Phone, Menu as MenuIcon } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
+import { useNavigate } from 'react-router-dom'
 import { AreaChart, Area, BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip } from 'recharts'
 
 export default function RestaurantDashboard() {
   const { user } = useAuth()
   const restaurantId = user?.id
+  const navigate = useNavigate()
 
   const { data: orders, isLoading, error } = useQuery({
     queryKey: ['orders', restaurantId],
     queryFn: () => restaurantAPI.getOrders(restaurantId!),
     enabled: !!restaurantId,
   })
+
+  // Fetch account details to check for phone number and menu
+  const { data: account } = useQuery({
+    queryKey: ['account', restaurantId],
+    queryFn: async () => {
+      const response = await restaurantAPI.getAccount(restaurantId!)
+      return response.data
+    },
+    enabled: !!restaurantId,
+  })
+
+  // Fetch menu to check if it exists
+  const { data: menuData } = useQuery({
+    queryKey: ['menu', restaurantId],
+    queryFn: async () => {
+      const response = await restaurantAPI.getMenu(restaurantId!)
+      return response.data
+    },
+    enabled: !!restaurantId,
+  })
+
+  // Check for missing setup
+  const hasPhoneNumber = account?.twilio_phone_number
+  const hasMenu = menuData?.menus && menuData.menus.length > 0 && 
+    menuData.menus.some((menu: any) => 
+      menu.categories && menu.categories.some((cat: any) => 
+        cat.items && cat.items.length > 0
+      )
+    )
 
   const orderData = orders?.data || []
 
@@ -116,6 +147,54 @@ export default function RestaurantDashboard() {
 
   return (
     <div className="space-y-6 animate-fade-in pb-8">
+      {/* Setup Warnings */}
+      {(!hasPhoneNumber || !hasMenu) && (
+        <div className="bg-yellow-50 border-2 border-yellow-200 rounded-2xl p-6 shadow-lg">
+          <div className="flex items-start gap-4">
+            <AlertTriangle className="w-6 h-6 text-yellow-600 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="text-lg font-bold text-yellow-900 mb-3">Complete Your Setup</h3>
+              <div className="space-y-3">
+                {!hasPhoneNumber && (
+                  <div className="flex items-center justify-between bg-white rounded-lg p-4 border border-yellow-200">
+                    <div className="flex items-center gap-3">
+                      <Phone className="w-5 h-5 text-yellow-600" />
+                      <div>
+                        <p className="font-semibold text-gray-900">Phone Number Not Configured</p>
+                        <p className="text-sm text-gray-600">Customers can't call your restaurant yet. Set up your Twilio phone number to enable voice AI.</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => navigate('/restaurant/settings')}
+                      className="px-4 py-2 bg-yellow-600 text-white rounded-lg font-semibold hover:bg-yellow-700 transition-colors"
+                    >
+                      Configure Now
+                    </button>
+                  </div>
+                )}
+                {!hasMenu && (
+                  <div className="flex items-center justify-between bg-white rounded-lg p-4 border border-yellow-200">
+                    <div className="flex items-center gap-3">
+                      <MenuIcon className="w-5 h-5 text-yellow-600" />
+                      <div>
+                        <p className="font-semibold text-gray-900">No Menu Items</p>
+                        <p className="text-sm text-gray-600">Add menu items so customers can place orders via phone or online.</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => navigate('/restaurant/menu')}
+                      className="px-4 py-2 bg-yellow-600 text-white rounded-lg font-semibold hover:bg-yellow-700 transition-colors"
+                    >
+                      Add Menu
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Welcome Header */}
       <div className="bg-gradient-to-r from-primary-600 to-secondary-600 rounded-2xl p-8 text-white shadow-xl">
         <div className="flex items-center justify-between">
@@ -132,7 +211,7 @@ export default function RestaurantDashboard() {
 
       {/* Stats Grid - Optimized for Tablets */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-        {stats.map((stat, index) => (
+        {stats.map((stat) => (
           <div
             key={stat.label}
             className="relative group bg-white rounded-2xl p-6 shadow-card hover:shadow-card-hover transition-all duration-300 border border-gray-100 overflow-hidden min-h-[180px]"

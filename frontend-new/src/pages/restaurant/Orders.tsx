@@ -6,17 +6,17 @@ import { useAuth } from '../../contexts/AuthContext'
 
 export default function RestaurantOrders() {
   const { user } = useAuth()
-  const restaurantId = user?.id
+  const accountId = user?.id
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const queryClient = useQueryClient()
 
   const { data: orders, isLoading } = useQuery({
-    queryKey: ['orders', restaurantId, statusFilter],
+    queryKey: ['orders', accountId, statusFilter],
     queryFn: () => {
       const params = statusFilter !== 'all' ? { status_filter: statusFilter } : undefined
-      return restaurantAPI.getOrders(restaurantId!, params)
+      return restaurantAPI.getOrders(accountId!, params)
     },
-    enabled: !!restaurantId,
+    enabled: !!accountId,
   })
 
   const updateStatusMutation = useMutation({
@@ -95,11 +95,20 @@ export default function RestaurantOrders() {
                 <div className="flex items-start gap-4">
                   {getStatusIcon(order.status)}
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="font-semibold text-lg">Order #{order.id}</h3>
                       <span className={`text-xs px-2 py-1 rounded-full ${getStatusColor(order.status)}`}>
                         {order.status}
                       </span>
+                      {order.payment_status && (
+                        <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                          order.payment_status === 'paid'
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-amber-100 text-amber-700'
+                        }`}>
+                          {order.payment_status === 'paid' ? '✓ Paid' : '⏳ Unpaid'}
+                        </span>
+                      )}
                     </div>
                     <p className="text-sm text-gray-600 mt-1">
                       {order.customer_name || 'Anonymous'} • {order.customer_phone || 'No phone'}
@@ -107,9 +116,65 @@ export default function RestaurantOrders() {
                     <p className="text-xs text-gray-500 mt-1">
                       {new Date(order.created_at).toLocaleString()}
                     </p>
-                    {order.special_requests && (
+
+                    {/* Order Items */}
+                    <div className="mt-3 space-y-1">
+                      {(() => {
+                        try {
+                          const items = typeof order.order_items === 'string'
+                            ? JSON.parse(order.order_items)
+                            : order.order_items || []
+                          return items.map((item: any, idx: number) => (
+                            <div key={idx} className="text-sm text-gray-700 flex items-center gap-2">
+                              <span className="font-medium">{item.quantity || 1}x</span>
+                              <span>{item.item_name || item.name || 'Item'}</span>
+                              <span className="text-gray-500">
+                                ${((item.price_cents || 0) / 100).toFixed(2)}
+                              </span>
+                              {item.modifiers && item.modifiers.length > 0 && (
+                                <span className="text-xs text-gray-500">
+                                  ({item.modifiers.join(', ')})
+                                </span>
+                              )}
+                            </div>
+                          ))
+                        } catch (e) {
+                          return <p className="text-sm text-gray-500">No items</p>
+                        }
+                      })()}
+                    </div>
+
+                    {/* Delivery/Pickup Info */}
+                    {order.delivery_address && (
+                      <p className="text-sm text-gray-600 mt-2">
+                        <span className="font-medium">
+                          {order.delivery_address === 'Pickup' ? '🏪 Pickup' : '🚚 Delivery:'}
+                        </span>
+                        {order.delivery_address !== 'Pickup' && ` ${order.delivery_address}`}
+                      </p>
+                    )}
+
+                    {/* Payment Info */}
+                    {order.payment_method && (
+                      <div className="flex items-center gap-2 mt-2">
+                        <p className="text-sm text-gray-700">
+                          <span className="font-medium">💳 Payment:</span> {order.payment_method}
+                        </p>
+                        {order.payment_status && (
+                          <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                            order.payment_status === 'paid'
+                              ? 'bg-green-100 text-green-700 border border-green-300'
+                              : 'bg-amber-100 text-amber-700 border border-amber-300'
+                          }`}>
+                            {order.payment_status === 'paid' ? '✓ PAID' : '⏳ UNPAID'}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {order.special_instructions && (
                       <p className="text-sm text-gray-700 mt-2 bg-yellow-50 p-2 rounded border border-yellow-200">
-                        <span className="font-medium">Note:</span> {order.special_requests}
+                        <span className="font-medium">📝 Note:</span> {order.special_instructions}
                       </p>
                     )}
                   </div>

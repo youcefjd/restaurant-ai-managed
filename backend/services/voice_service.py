@@ -44,8 +44,8 @@ class VoiceService:
             input='speech',
             action=process_url,
             method='POST',
-            timeout=10,
-            speech_timeout=3,
+            timeout=5,
+            speech_timeout='auto',
             language='en-US',
             finish_on_key=''
         )

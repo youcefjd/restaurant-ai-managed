@@ -111,6 +111,7 @@ async def get_order(order_id: int, db: Session = Depends(get_db)):
 @router.get("/orders", response_model=List[OrderResponse])
 async def list_orders(
     restaurant_id: Optional[int] = Query(None),
+    account_id: Optional[int] = Query(None),
     customer_phone: Optional[str] = Query(None),
     status_filter: Optional[str] = Query(None),
     skip: int = 0,
@@ -122,6 +123,15 @@ async def list_orders(
 
     if restaurant_id:
         query = query.filter(Order.restaurant_id == restaurant_id)
+    elif account_id:
+        # Filter by account_id - find all restaurants for this account
+        restaurant_ids = db.query(Restaurant.id).filter(Restaurant.account_id == account_id).all()
+        restaurant_ids = [r[0] for r in restaurant_ids]
+        if restaurant_ids:
+            query = query.filter(Order.restaurant_id.in_(restaurant_ids))
+        else:
+            # No restaurants for this account, return empty
+            return []
 
     if customer_phone:
         customer = db.query(Customer).filter(Customer.phone == customer_phone).first()

@@ -75,6 +75,7 @@ async def get_booking(booking_id: int, db: Session = Depends(get_db)):
 @router.get("/", response_model=List[BookingResponse])
 async def list_bookings(
     restaurant_id: int = Query(None),
+    account_id: int = Query(None),
     status_filter: str = Query(None),
     date_from: date = Query(None),
     skip: int = 0,
@@ -86,12 +87,22 @@ async def list_bookings(
 
     if restaurant_id:
         query = query.filter(Booking.restaurant_id == restaurant_id)
+    elif account_id:
+        # Filter by account_id - find all restaurants for this account
+        restaurant_ids = db.query(Restaurant.id).filter(Restaurant.account_id == account_id).all()
+        restaurant_ids = [r[0] for r in restaurant_ids]
+        if restaurant_ids:
+            query = query.filter(Booking.restaurant_id.in_(restaurant_ids))
+        else:
+            # No restaurants for this account, return empty
+            return []
+
     if status_filter:
         query = query.filter(Booking.status == status_filter)
     if date_from:
         query = query.filter(Booking.booking_date >= date_from)
 
-    bookings = query.offset(skip).limit(limit).all()
+    bookings = query.order_by(Booking.booking_date.desc(), Booking.booking_time.desc()).offset(skip).limit(limit).all()
     return bookings
 
 

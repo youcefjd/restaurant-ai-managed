@@ -50,6 +50,8 @@ class OrderResponse(BaseModel):
     id: int
     restaurant_id: int
     customer_id: int
+    customer_name: Optional[str] = None
+    customer_phone: Optional[str] = None
     order_date: datetime
     delivery_address: str
     order_items: str
@@ -58,7 +60,9 @@ class OrderResponse(BaseModel):
     delivery_fee: int
     total: int
     status: str
-    special_instructions: Optional[str]
+    payment_method: Optional[str] = None
+    payment_status: Optional[str] = None
+    special_instructions: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

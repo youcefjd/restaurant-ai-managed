@@ -22,16 +22,22 @@ class ConversationHandler:
     """Handles conversation flow using AI to understand intent."""
 
     def __init__(self):
-        """Initialize conversation handler with Anthropic Claude."""
-        self.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
-        self.anthropic_model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
-        self.enabled = bool(self.anthropic_api_key)
+        """Initialize conversation handler with Ollama."""
+        self.ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434")
+        self.ollama_model = os.getenv("OLLAMA_MODEL", "gemma3:4b")
+        self.enabled = True  # Always enabled if Ollama is running
 
-        if self.enabled:
-            logger.info(f"Anthropic Claude connection configured, using model: {self.anthropic_model}")
-        else:
-            logger.warning("ANTHROPIC_API_KEY not set, AI features disabled")
-            logger.warning("Set ANTHROPIC_API_KEY environment variable to enable AI features")
+        # Test Ollama connection
+        try:
+            response = requests.get(f"{self.ollama_url}/api/tags", timeout=2)
+            if response.status_code == 200:
+                logger.info(f"Ollama connection successful, using model: {self.ollama_model}")
+            else:
+                logger.warning("Ollama server not responding, AI features may be limited")
+                self.enabled = False
+        except Exception as e:
+            logger.warning(f"Could not connect to Ollama at {self.ollama_url}: {str(e)}")
+            self.enabled = False
 
     async def process_message(
         self,
@@ -134,40 +140,37 @@ class ConversationHandler:
             except Exception as e:
                 logger.warning(f"Failed to fetch menu for restaurant {restaurant_id}: {e}")
 
-            # Build prompt for Claude
+            # Build prompt for Ollama
             system_prompt = self._build_system_prompt(context, customer, menu_data, account)
             user_message = self._build_user_message(message, context)
 
-            # Call Anthropic Claude API
+            # Call Ollama API
+            full_prompt = f"{system_prompt}\n\n{user_message}"
+
             response = requests.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": self.anthropic_api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json"
-                },
+                f"{self.ollama_url}/api/generate",
                 json={
-                    "model": self.anthropic_model,
-                    "max_tokens": 1024,
-                    "temperature": 0.7,
-                    "system": system_prompt,
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": user_message
-                        }
-                    ]
+                    "model": self.ollama_model,
+                    "prompt": full_prompt,
+                    "stream": False,
+                    "options": {
+                        "temperature": 0.7,
+                        "top_p": 0.9,
+                        "num_predict": 512
+                    }
                 },
-                timeout=30
+                timeout=60
             )
 
             if response.status_code != 200:
-                raise Exception(f"Anthropic API error: {response.status_code} - {response.text}")
+                raise Exception(f"Ollama API error: {response.status_code}")
 
-            ai_response = response.json()["content"][0]["text"]
+            ai_response = response.json().get("response", "")
+            logger.info(f"AI response (first 500 chars): {ai_response[:500]}")
 
             # Parse AI response
             result = self._parse_ai_response(ai_response)
+            logger.info(f"Parsed intent: {result.get('intent')}, context from AI: {result.get('context', {})}")
 
             # Handle different intents
             if result["intent"] == "menu_question":
@@ -192,7 +195,11 @@ class ConversationHandler:
                         "message": "I'm sorry, we don't have a menu set up yet. Please check back later or contact the restaurant directly.",
                         "context": context
                     }
-                return await self._handle_order(result, phone, db, context, account)
+                # Merge AI's context updates with existing context
+                ai_context = result.get("context", {})
+                merged_context = {**context, **ai_context}
+                logger.info(f"Merging contexts: original={context}, AI={ai_context}, merged={merged_context}")
+                return await self._handle_order(result, phone, db, merged_context, account)
 
             elif result["intent"] == "book_table":
                 return await self._handle_booking(result, phone, db, context)
@@ -269,37 +276,62 @@ class ConversationHandler:
                     hours_info += f"Days: {days_str}\n"
                 hours_info += "\nUse ONLY this information when answering questions about operating hours. Do not make up hours.\n"
 
-        return f"""You are a helpful AI assistant for {menu_data.get('business_name', 'our restaurant') if menu_data else 'a restaurant'}. You help with:
+        return f"""You are a friendly, helpful AI assistant for {menu_data.get('business_name', 'our restaurant') if menu_data else 'a restaurant'}.
 
-1. **Operating Hours**: Answer questions about when the restaurant is open (use ONLY the provided operating hours information)
-2. **Menu Questions**: Answer questions about items, prices, dietary options (vegetarian, vegan, halal, etc.)
-3. **Takeout Orders**: Take food orders with customizations (ONLY if menu exists)
-4. **Reservations**: Book tables, check availability, cancel bookings
+Your personality: Warm, conversational, and genuinely helpful. You want customers to have a great experience.
+
+You help with:
+1. **Operating Hours**: Answer when the restaurant is open (use ONLY provided hours)
+2. **Menu Guidance**: Help customers discover menu items, explain dishes, recommend based on preferences
+3. **Takeout Orders**: Take complete orders with all details
+4. **Reservations**: Book tables and check availability
 
 {hours_info}
 {menu_info}
 {customer_info}
 
+**How to help customers order:**
+- If they mention a dish not on the menu, suggest similar items we DO have
+- If they're unsure, ask about their preferences (spicy? vegetarian? protein choice?) and recommend
+- When they order, offer ONE thoughtful add-on (e.g., "Would you like extra chicken for $4?" or "Rice comes with that - want to add naan bread for $3?")
+- Don't be pushy - if they decline, move on cheerfully
+- Always gather: exact item name, quantity, any add-ons, their name, pickup/delivery time
+- Be conversational - "Great choice!" "That's one of our favorites!" "Perfect!"
+
 Current conversation context: {json.dumps(context)}
 
-Respond with JSON in this format:
+**IMPORTANT**: You MUST respond with ONLY valid JSON. No explanation, no markdown, just JSON.
+
+Response format:
 {{
     "intent": "operating_hours|menu_question|place_order|book_table|check_availability|cancel_booking|need_more_info|goodbye",
-    "message": "response to customer",
-    "order_items": [  // For place_order intent
-        {{"item_name": "...", "quantity": 1, "modifiers": ["No tomato", "Extra sauce"], "price_cents": 1200}}
+    "message": "your conversational response to customer",
+    "customer_name": "customer's name if mentioned, otherwise empty string",
+    "order_items": [
+        {{"item_name": "exact menu item name", "quantity": 1, "modifiers": [], "price_cents": 1499}}
     ],
-    "date": "YYYY-MM-DD" (for bookings),
-    "time": "HH:MM:SS" (for bookings, 24-hour format),
-    "party_size": number (for bookings),
-    "customer_name": "name",
-    "special_requests": "any special instructions",
-    "question": "clarifying question" (if need_more_info),
-    "context": {{
-        "payment_method": "card|pay_on_arrival|cash",  // Extract from customer's response
-        "delivery_address": "address if delivery"
-    }} (updated context - merge with existing context)
+    "date": "YYYY-MM-DD",
+    "time": "HH:MM:SS",
+    "party_size": 0,
+    "special_requests": "",
+    "question": "",
+    "context": {{}}
 }}
+
+**For place_order intent**:
+- Match customer's request to exact menu items
+- Use EXACT menu item names from the menu above
+- Calculate price_cents from the menu (multiply dollars by 100)
+- Example: "Butter Chicken" costs $14.99 = 1499 price_cents
+- If context has "pending_order" and customer mentions payment method, use intent="place_order" again with the payment method in context
+
+**CRITICAL - Payment Method Handling**:
+If the context contains a "pending_order", you are waiting for the customer's payment method response.
+When customer says anything like:
+- "pay by card" / "card" / "credit card" → return context: {{"payment_method": "card"}}
+- "pay when I pick up" / "cash" / "pay on pickup" / "pay later" → return context: {{"payment_method": "pickup"}}
+Then return intent="place_order" (NOT "goodbye") so the order can be finalized in the database.
+IMPORTANT: Do NOT copy the pending_order into your response context - only set payment_method.
 
 Today's date: {datetime.now().strftime('%Y-%m-%d')}
 Be conversational, helpful, and accurate about menu items and pricing."""
@@ -617,87 +649,102 @@ Be conversational, helpful, and accurate about menu items and pricing."""
 
         return available_times[:5]  # Return first 5 available slots
 
+    async def _handle_order(
+        self,
+        result: Dict,
+        phone: str,
+        db: Session,
+        context: Dict,
+        account: 'RestaurantAccount'
+        ) -> Dict[str, Any]:
+        """Handle takeout order placement."""
+        import json as json_lib
+        from backend.models import Order, OrderStatus
 
-# Global conversation handler instance
-async def _handle_order(
-    self,
-    result: Dict,
-    phone: str,
-    db: Session,
-    context: Dict,
-    account: 'RestaurantAccount'
-) -> Dict[str, Any]:
-    """Handle takeout order placement."""
-    import json as json_lib
-    from backend.models import Order, OrderStatus
+        # Normalize phone number (ensure + prefix)
+        if phone and not phone.startswith('+'):
+            phone = '+' + phone
 
-    # Get or create customer
-    from backend.models import Customer
-    customer = db.query(Customer).filter(Customer.phone == phone).first()
-    if not customer:
-        customer_name = result.get("customer_name", "Guest")
-        customer = Customer(phone=phone, name=customer_name)
-        db.add(customer)
-        db.flush()
+        # Get or create customer
+        from backend.models import Customer
+        customer = db.query(Customer).filter(Customer.phone == phone).first()
+        if not customer:
+            customer_name = result.get("customer_name") or "Guest"
+            # Ensure name is never None or empty string
+            if not customer_name or not customer_name.strip():
+                customer_name = "Guest"
+            customer = Customer(phone=phone, name=customer_name)
+            db.add(customer)
+            db.flush()
 
-    # Get first restaurant location for this account
-    from backend.models import Restaurant
-    restaurant = db.query(Restaurant).filter(Restaurant.account_id == account.id).first()
-    if not restaurant:
-        return {
-            "type": "error",
-            "message": "Sorry, we're not taking orders at this time."
-        }
+        # Get first restaurant location for this account
+        from backend.models import Restaurant
+        restaurant = db.query(Restaurant).filter(Restaurant.account_id == account.id).first()
+        if not restaurant:
+            return {
+                "type": "error",
+                "message": "Sorry, we're not taking orders at this time."
+            }
 
-    # Parse order items
-    order_items = result.get("order_items", [])
-    if not order_items:
-        return {
-            "type": "gather",
-            "message": "What would you like to order?",
-            "context": context
-        }
+        # Check if we have a pending order (customer responding with payment method)
+        pending_order = context.get("pending_order")
+        payment_method = context.get("payment_method")
+        logger.info(f"Order handling: pending_order={bool(pending_order)}, payment_method={payment_method}")
 
-    # Calculate totals
-    subtotal = sum(item.get("price_cents", 0) * item.get("quantity", 1) for item in order_items)
-    tax = int(subtotal * 0.08)  # 8% tax
-    delivery_fee = 500  # $5 delivery fee
-    total = subtotal + tax + delivery_fee
+        if pending_order and payment_method:
+            # Customer has responded with payment method, use pending order data
+            order_items = pending_order.get("items", [])
+            subtotal = pending_order.get("subtotal", 0)
+            tax = pending_order.get("tax", 0)
+            delivery_fee = pending_order.get("delivery_fee", 0)
+            total = pending_order.get("total", 0)
+        else:
+            # New order or no payment method yet
+            order_items = result.get("order_items", [])
+            if not order_items:
+                return {
+                    "type": "gather",
+                    "message": "What would you like to order?",
+                    "context": context
+                }
 
-    # Check if payment method is specified
-    payment_method = context.get("payment_method")
+            # Calculate totals
+            subtotal = sum(item.get("price_cents", 0) * item.get("quantity", 1) for item in order_items)
+            tax = int(subtotal * 0.08)  # 8% tax
+            delivery_fee = 500  # $5 delivery fee
+            total = subtotal + tax + delivery_fee
 
-    if not payment_method:
-        # Ask how customer wants to pay
-        items_text = "\\n".join([
-            f"- {item.get('quantity', 1)}x {item.get('item_name')}"
-            + (f" ({', '.join(item.get('modifiers', []))})" if item.get('modifiers') else "")
-            for item in order_items
-        ])
+        if not payment_method:
+            # Ask how customer wants to pay
+            items_text = "\\n".join([
+                f"- {item.get('quantity', 1)}x {item.get('item_name')}"
+                + (f" ({', '.join(item.get('modifiers', []))})" if item.get('modifiers') else "")
+                for item in order_items
+            ])
 
-        return {
-            "type": "gather",
-            "message": f"""Perfect! Your order:
+            return {
+                "type": "gather",
+                "message": f"""Perfect! Your order:
 
 {items_text}
 
 Total: ${total / 100:.2f}
 
 Would you like to pay now by card or pay when you pick up?""",
-            "context": {
-                **context,
-                "pending_order": {
-                    "items": order_items,
-                    "subtotal": subtotal,
-                    "tax": tax,
-                    "delivery_fee": delivery_fee,
-                    "total": total
+                "context": {
+                    **context,
+                    "pending_order": {
+                        "items": order_items,
+                        "subtotal": subtotal,
+                        "tax": tax,
+                        "delivery_fee": delivery_fee,
+                        "total": total
+                    }
                 }
             }
-        }
 
-    # Create order with payment info
-    order = Order(
+        # Create order with payment info
+        order = Order(
         restaurant_id=restaurant.id,
         customer_id=customer.id,
         customer_name=customer.name,
@@ -712,20 +759,20 @@ Would you like to pay now by card or pay when you pick up?""",
         status=OrderStatus.PENDING.value,
         payment_method=payment_method,
         payment_status="paid" if payment_method == "card" else "unpaid",
-        special_requests=result.get("special_requests")
-    )
-    db.add(order)
-    db.commit()
-    db.refresh(order)
+        special_instructions=result.get("special_requests")
+        )
+        db.add(order)
+        db.commit()
+        db.refresh(order)
 
-    # Send SMS confirmation
-    try:
-        from backend.services.sms_service import sms_service
-        items_text = ", ".join([
-            f"{item.get('quantity', 1)}x {item.get('item_name')}"
-            for item in order_items
-        ])
-        confirmation_msg = f"""Your order #{order.id} is confirmed!
+        # Send SMS confirmation
+        try:
+            from backend.services.sms_service import sms_service
+            items_text = ", ".join([
+                f"{item.get('quantity', 1)}x {item.get('item_name')}"
+                for item in order_items
+            ])
+            confirmation_msg = f"""Your order #{order.id} is confirmed!
 
 {items_text}
 
@@ -733,43 +780,43 @@ Total: ${total / 100:.2f}
 Payment: {payment_method}
 
 We'll have it ready in 15-20 minutes. Thank you!"""
-        # Use restaurant's Twilio phone number for SMS if available
-        from_number = account.twilio_phone_number if account else None
-        sms_service.send_sms(phone, confirmation_msg, from_number=from_number)
-    except Exception as e:
-        logger.error(f"Failed to send order confirmation SMS: {str(e)}")
+            # Use restaurant's Twilio phone number for SMS if available
+            from_number = account.twilio_phone_number if account else None
+            sms_service.send_sms(phone, confirmation_msg, from_number=from_number)
+        except Exception as e:
+            logger.error(f"Failed to send order confirmation SMS: {str(e)}")
 
-    # Print to kitchen
-    try:
-        from backend.services.kitchen_printer import kitchen_printer
-        order_dict = {
-            "id": order.id,
-            "customer_name": customer.name,
-            "customer_phone": phone,
-            "order_items": json_lib.dumps(order_items),
-            "total": total,
-            "payment_method": payment_method,
-            "payment_status": order.payment_status,
-            "delivery_address": order.delivery_address,
-            "special_requests": result.get("special_requests")
-        }
-        kitchen_printer.print_order(order_dict)
-        logger.info(f"Order #{order.id} printed to kitchen")
-    except Exception as e:
-        logger.error(f"Failed to print order to kitchen: {str(e)}")
+        # Print to kitchen
+        try:
+            from backend.services.kitchen_printer import kitchen_printer
+            order_dict = {
+                "id": order.id,
+                "customer_name": customer.name,
+                "customer_phone": phone,
+                "order_items": json_lib.dumps(order_items),
+                "total": total,
+                "payment_method": payment_method,
+                "payment_status": order.payment_status,
+                "delivery_address": order.delivery_address,
+                "special_requests": result.get("special_requests")
+            }
+            kitchen_printer.print_order(order_dict)
+            logger.info(f"Order #{order.id} printed to kitchen")
+        except Exception as e:
+            logger.error(f"Failed to print order to kitchen: {str(e)}")
 
-    # Build confirmation message
-    message = f"""Great! Your order #{order.id} is confirmed. We'll have it ready in about 15-20 minutes.
+        # Build confirmation message
+        message = f"""Great! Your order #{order.id} is confirmed. We'll have it ready in about 15-20 minutes.
 
-{"Payment will be processed when you pick up." if payment_method == "pay_on_arrival" else "Payment confirmed."}
+{"Payment will be processed when you pick up." if payment_method == "pickup" else "Payment confirmed."}
 
 Is there anything else I can help you with?"""
 
-    return {
-        "type": "gather",
-        "message": message,
-        "context": {"order_id": order.id}
-    }
+        return {
+            "type": "gather",
+            "message": message,
+            "context": {"order_id": order.id}
+        }
 
 
 # Global conversation handler instance

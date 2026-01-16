@@ -63,8 +63,8 @@ export const adminAPI = {
 
 // Restaurant API
 export const restaurantAPI = {
-  getOrders: (restaurantId: number, params?: { status_filter?: string }) =>
-    api.get('/orders', { params: { restaurant_id: restaurantId, ...params } }),
+  getOrders: (accountId: number, params?: { status_filter?: string }) =>
+    api.get('/orders', { params: { account_id: accountId, ...params } }),
   getOrderDetails: (id: number) => api.get(`/orders/${id}`),
   updateOrderStatus: (id: number, status: string) =>
     api.put(`/orders/${id}`, { status }),
@@ -89,6 +89,18 @@ export const restaurantAPI = {
     api.get(`/onboarding/google-maps/place/${placeId}`),
   updateHoursFromGoogle: (accountId: number, placeId: string) =>
     api.post(`/onboarding/accounts/${accountId}/operating-hours-from-google`, { place_id: placeId }),
+
+  // Bookings / Table Reservations
+  getBookings: (accountId: number, params?: { status_filter?: string; date_from?: string }) =>
+    api.get('/bookings', { params: { account_id: accountId, ...params } }),
+  updateBookingStatus: (id: number, status: string) =>
+    api.put(`/bookings/${id}`, { status }),
+
+  // Deliveries
+  getDeliveries: (accountId: number, params?: { status_filter?: string }) =>
+    api.get('/deliveries', { params: { account_id: accountId, ...params } }),
+  updateDeliveryStatus: (id: number, status: string) =>
+    api.put(`/deliveries/${id}`, { status }),
 }
 
 // Stripe Connect API

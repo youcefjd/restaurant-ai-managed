@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 import os
 
 from backend.database import engine, Base
-from backend.api import restaurants, tables, customers, bookings, availability, voice, payments, deliveries, onboarding, platform_admin, stripe_connect, auth, transcripts
+from backend.api import restaurants, tables, customers, bookings, availability, voice, payments, deliveries, onboarding, platform_admin, stripe_connect, auth, transcripts, test_conversation
 from backend.core.exceptions import (
     BusinessLogicError,
     ResourceNotFoundError,
@@ -395,6 +395,13 @@ app.include_router(
     transcripts.router,
     prefix="/api/onboarding",
     tags=["Transcripts"]
+)
+
+# Test endpoint for conversation testing (development only)
+app.include_router(
+    test_conversation.router,
+    prefix="/api/test",
+    tags=["Testing"]
 )
 
 

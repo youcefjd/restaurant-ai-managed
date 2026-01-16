@@ -1,5 +1,5 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
-import { Home, ShoppingBag, BarChart3, Settings, LogOut, MessageSquare } from 'lucide-react'
+import { Home, ShoppingBag, BarChart3, Settings, LogOut, MessageSquare, UtensilsCrossed } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 
 export default function RestaurantLayout() {
@@ -8,6 +8,7 @@ export default function RestaurantLayout() {
   const navItems = [
     { to: '/restaurant/dashboard', icon: Home, label: 'Dashboard' },
     { to: '/restaurant/orders', icon: ShoppingBag, label: 'Orders' },
+    { to: '/restaurant/menu', icon: UtensilsCrossed, label: 'Menu' },
     { to: '/restaurant/transcripts', icon: MessageSquare, label: 'Transcripts' },
     { to: '/restaurant/analytics', icon: BarChart3, label: 'Analytics' },
     { to: '/restaurant/settings', icon: Settings, label: 'Settings' },

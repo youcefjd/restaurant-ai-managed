@@ -23,27 +23,35 @@ class VoiceService:
         if not self.enabled:
             logger.warning("Voice service disabled - Twilio credentials not configured")
 
-    def create_welcome_response(self, restaurant_name: str = "our restaurant") -> VoiceResponse:
+    def create_welcome_response(self, restaurant_name: str = "our restaurant", base_url: str = None) -> VoiceResponse:
         """
         Create initial welcome message when call is received.
 
         Args:
             restaurant_name: Name of the restaurant to include in greeting
+            base_url: Base URL for webhooks (required for absolute URLs)
 
         Returns:
             VoiceResponse with welcome message and speech gathering
         """
         response = VoiceResponse()
 
+        # Use absolute URL if base_url provided, otherwise relative
+        process_url = f"{base_url}/api/voice/process" if base_url else "/api/voice/process"
+        welcome_url = f"{base_url}/api/voice/welcome" if base_url else "/api/voice/welcome"
+
         gather = Gather(
             input='speech',
-            action='/api/voice/process',
+            action=process_url,
             method='POST',
-            timeout=3,
-            speech_timeout='auto',
-            language='en-US'
+            timeout=10,
+            speech_timeout=3,
+            language='en-US',
+            finish_on_key=''
         )
 
+        # Note: bargein doesn't work reliably with speech input in standard Gather
+        # For true conversational AI, need Twilio Media Streams
         gather.say(
             f"Hey, thanks for calling {restaurant_name}. How may I help you?",
             voice='alice',
@@ -53,30 +61,33 @@ class VoiceService:
         response.append(gather)
 
         # If no input, redirect
-        response.redirect('/api/voice/welcome')
+        response.redirect(welcome_url)
 
         return response
 
-    def create_error_response(self, message: str = "I'm sorry, I didn't understand that.") -> VoiceResponse:
+    def create_error_response(self, message: str = "I'm sorry, I didn't understand that.", base_url: str = None) -> VoiceResponse:
         """
         Create error response.
 
         Args:
             message: Error message to speak
+            base_url: Base URL for webhooks
 
         Returns:
             VoiceResponse with error message
         """
         response = VoiceResponse()
         response.say(message, voice='alice', language='en-US')
-        response.redirect('/api/voice/welcome')
+        welcome_url = f"{base_url}/api/voice/welcome" if base_url else "/api/voice/welcome"
+        response.redirect(welcome_url)
         return response
 
     def create_gather_response(
         self,
         prompt: str,
         action: str = '/api/voice/process',
-        timeout: int = 3
+        timeout: int = 3,
+        base_url: str = None
     ) -> VoiceResponse:
         """
         Create response that gathers speech input.
@@ -85,11 +96,16 @@ class VoiceService:
             prompt: What to say to the user
             action: Webhook URL to send speech result
             timeout: Timeout in seconds
+            base_url: Base URL for webhooks
 
         Returns:
             VoiceResponse with gather
         """
         response = VoiceResponse()
+
+        # Make action URL absolute if base_url provided
+        if base_url and not action.startswith('http'):
+            action = f"{base_url}{action}"
 
         gather = Gather(
             input='speech',

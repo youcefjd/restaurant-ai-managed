@@ -26,8 +26,24 @@ logger = logging.getLogger(__name__)
 conversation_state: Dict[str, Dict[str, Any]] = {}
 
 
+def get_base_url(request: Request) -> str:
+    """Extract base URL from request, handling ngrok/proxy headers."""
+    base_url = str(request.base_url).rstrip('/')
+
+    # Check for ngrok/proxy headers
+    if 'x-forwarded-proto' in request.headers:
+        protocol = request.headers['x-forwarded-proto']
+        # ngrok uses the Host header, not X-Forwarded-Host
+        host = request.headers.get('x-forwarded-host') or request.headers.get('host', '')
+        if host and host != 'localhost:8000' and not host.startswith('127.0.0.1'):
+            base_url = f"{protocol}://{host}"
+
+    return base_url
+
+
 @router.post("/welcome")
 async def voice_welcome(
+    request: Request,
     To: Optional[str] = Form(None),
     From: Optional[str] = Form(None),
     db: Session = Depends(get_db)
@@ -37,30 +53,44 @@ async def voice_welcome(
     Returns TwiML with welcome message.
 
     Args:
+        request: FastAPI request object (to get base URL)
         To: Twilio phone number that was called (identifies restaurant)
         From: Caller's phone number
         db: Database session
     """
     logger.info(f"Voice call received from {From} to {To}")
 
+    # Get base URL from request
+    base_url = get_base_url(request)
+    logger.info(f"Using base URL: {base_url}")
+
+    # Normalize phone number (remove spaces, ensure + prefix)
+    to_normalized = To.strip() if To else None
+    if to_normalized and not to_normalized.startswith('+'):
+        to_normalized = '+' + to_normalized
+
     # Look up which restaurant owns this Twilio number
     from backend.models_platform import RestaurantAccount
     restaurant = db.query(RestaurantAccount).filter(
-        RestaurantAccount.twilio_phone_number == To
+        RestaurantAccount.twilio_phone_number == to_normalized
     ).first()
 
     if not restaurant:
         logger.warning(f"No restaurant found for Twilio number {To}")
         response = voice_service.create_error_response(
-            "This number is not configured. Please contact support."
+            "This number is not configured. Please contact support.",
+            base_url=base_url
         )
         return Response(content=str(response), media_type="application/xml")
 
     # Create welcome with restaurant's business name
     response = voice_service.create_welcome_response(
-        restaurant_name=restaurant.business_name
+        restaurant_name=restaurant.business_name,
+        base_url=base_url
     )
-    return Response(content=str(response), media_type="application/xml")
+    twiml_str = str(response)
+    logger.info(f"Returning TwiML: {twiml_str[:200]}")
+    return Response(content=twiml_str, media_type="application/xml")
 
 
 @router.post("/process")
@@ -87,10 +117,15 @@ async def process_speech(
     """
     logger.info(f"Processing speech from {From} to {To}: {SpeechResult}")
 
+    # Normalize phone number (remove spaces, ensure + prefix)
+    to_normalized = To.strip() if To else None
+    if to_normalized and not to_normalized.startswith('+'):
+        to_normalized = '+' + to_normalized
+
     # Look up which restaurant owns this Twilio number
     from backend.models_platform import RestaurantAccount
     restaurant = db.query(RestaurantAccount).filter(
-        RestaurantAccount.twilio_phone_number == To
+        RestaurantAccount.twilio_phone_number == to_normalized
     ).first()
 
     if not restaurant:
@@ -102,8 +137,10 @@ async def process_speech(
 
     # Handle missing speech
     if not SpeechResult:
+        base_url = get_base_url(request)
         response = voice_service.create_error_response(
-            "I didn't catch that. Could you please repeat?"
+            "I didn't catch that. Could you please repeat?",
+            base_url=base_url
         )
         return Response(content=str(response), media_type="application/xml")
 
@@ -177,8 +214,10 @@ async def process_speech(
 
         elif response_type == "gather":
             # Need more information from customer
+            base_url = get_base_url(request)
             response = voice_service.create_gather_response(
-                prompt=result.get("message", "How can I help you?")
+                prompt=result.get("message", "How can I help you?"),
+                base_url=base_url
             )
 
         elif response_type == "goodbye":
@@ -210,8 +249,9 @@ async def process_speech(
 
         else:
             # Default: gather more input
+            base_url = get_base_url(request)
             message = result.get("message", "I'm not sure I understand. Could you rephrase that?")
-            response = voice_service.create_gather_response(prompt=message)
+            response = voice_service.create_gather_response(prompt=message, base_url=base_url)
 
         return Response(content=str(response), media_type="application/xml")
 

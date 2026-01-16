@@ -4,11 +4,13 @@ import { restaurantAPI } from '../../services/api'
 import { Plus, Edit, Leaf, Flame, Trash2 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import CreateMenuModal from '../../components/CreateMenuModal'
+import AddMenuItemModal from '../../components/AddMenuItemModal'
 
 export default function RestaurantMenu() {
   const { user } = useAuth()
   const accountId = user?.id
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+  const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false)
   const queryClient = useQueryClient()
 
   const { data: menuData, isLoading } = useQuery({
@@ -115,6 +117,11 @@ export default function RestaurantMenu() {
     )
   }
 
+  // Get all categories from all menus for the Add Item modal
+  const allCategories = menu?.menus?.flatMap((m: any) =>
+    m.categories.map((cat: any) => ({ id: cat.id, name: cat.name }))
+  ) || []
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -123,8 +130,9 @@ export default function RestaurantMenu() {
           <p className="text-gray-600 mt-1">{menu.business_name}</p>
         </div>
         <button
-          onClick={() => alert('Add item form coming soon!')}
+          onClick={() => setIsAddItemModalOpen(true)}
           className="btn btn-primary"
+          disabled={allCategories.length === 0}
         >
           <Plus className="w-5 h-5 mr-2" /> Add Item
         </button>
@@ -220,6 +228,16 @@ export default function RestaurantMenu() {
           </div>
         )
       })}
+
+      {/* Add Menu Item Modal */}
+      {accountId && allCategories.length > 0 && (
+        <AddMenuItemModal
+          isOpen={isAddItemModalOpen}
+          onClose={() => setIsAddItemModalOpen(false)}
+          accountId={accountId}
+          categories={allCategories}
+        />
+      )}
     </div>
   )
 }

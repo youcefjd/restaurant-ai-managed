@@ -22,22 +22,16 @@ class ConversationHandler:
     """Handles conversation flow using AI to understand intent."""
 
     def __init__(self):
-        """Initialize conversation handler with Ollama."""
-        self.ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434")
-        self.ollama_model = os.getenv("OLLAMA_MODEL", "llama2")
-        self.enabled = True  # Always enabled if Ollama is running
+        """Initialize conversation handler with Anthropic Claude."""
+        self.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
+        self.anthropic_model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
+        self.enabled = bool(self.anthropic_api_key)
 
-        # Test Ollama connection
-        try:
-            response = requests.get(f"{self.ollama_url}/api/tags", timeout=2)
-            if response.status_code == 200:
-                logger.info(f"Ollama connection successful, using model: {self.ollama_model}")
-            else:
-                logger.warning("Ollama server not responding, AI features may be limited")
-                self.enabled = False
-        except Exception as e:
-            logger.warning(f"Could not connect to Ollama at {self.ollama_url}: {str(e)}")
-            self.enabled = False
+        if self.enabled:
+            logger.info(f"Anthropic Claude connection configured, using model: {self.anthropic_model}")
+        else:
+            logger.warning("ANTHROPIC_API_KEY not set, AI features disabled")
+            logger.warning("Set ANTHROPIC_API_KEY environment variable to enable AI features")
 
     async def process_message(
         self,
@@ -84,40 +78,93 @@ class ConversationHandler:
                 }
 
             menu_data = None
-            # Fetch full menu structure for this specific restaurant
+            # Fetch full menu structure for this specific restaurant from database
             import requests
             try:
-                response = requests.get(f"http://localhost:8000/api/onboarding/accounts/{account.id}/menu-full")
-                if response.status_code == 200:
-                    menu_data = response.json()
+                from backend.models_platform import Menu, MenuCategory, MenuItem, MenuModifier
+
+                menus = db.query(Menu).filter(Menu.account_id == account.id).all()
+                menu_data = {
+                    "business_name": account.business_name,
+                    "menus": []
+                }
+
+                for menu in menus:
+                    menu_dict = {
+                        "id": menu.id,
+                        "name": menu.name,
+                        "description": menu.description,
+                        "categories": []
+                    }
+
+                    categories = db.query(MenuCategory).filter(MenuCategory.menu_id == menu.id).all()
+                    for category in categories:
+                        category_dict = {
+                            "id": category.id,
+                            "name": category.name,
+                            "items": []
+                        }
+
+                        items = db.query(MenuItem).filter(MenuItem.category_id == category.id).all()
+                        for item in items:
+                            item_dict = {
+                                "id": item.id,
+                                "name": item.name,
+                                "description": item.description,
+                                "price_cents": item.price_cents,
+                                "dietary_tags": item.dietary_tags or [],
+                                "modifiers": []
+                            }
+
+                            if item.modifiers:
+                                modifiers = db.query(MenuModifier).filter(MenuModifier.item_id == item.id).all()
+                                for mod in modifiers:
+                                    item_dict["modifiers"].append({
+                                        "id": mod.id,
+                                        "name": mod.name,
+                                        "price_adjustment_cents": mod.price_adjustment_cents
+                                    })
+
+                            category_dict["items"].append(item_dict)
+
+                        menu_dict["categories"].append(category_dict)
+
+                    menu_data["menus"].append(menu_dict)
+
             except Exception as e:
                 logger.warning(f"Failed to fetch menu for restaurant {restaurant_id}: {e}")
 
-            # Build prompt for Ollama
-            system_prompt = self._build_system_prompt(context, customer, menu_data)
+            # Build prompt for Claude
+            system_prompt = self._build_system_prompt(context, customer, menu_data, account)
             user_message = self._build_user_message(message, context)
 
-            # Call Ollama API
-            full_prompt = f"{system_prompt}\n\n{user_message}"
-
+            # Call Anthropic Claude API
             response = requests.post(
-                f"{self.ollama_url}/api/generate",
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": self.anthropic_api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json"
+                },
                 json={
-                    "model": self.ollama_model,
-                    "prompt": full_prompt,
-                    "stream": False,
-                    "options": {
-                        "temperature": 0.7,
-                        "top_p": 0.9
-                    }
+                    "model": self.anthropic_model,
+                    "max_tokens": 1024,
+                    "temperature": 0.7,
+                    "system": system_prompt,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": user_message
+                        }
+                    ]
                 },
                 timeout=30
             )
 
             if response.status_code != 200:
-                raise Exception(f"Ollama API error: {response.status_code}")
+                raise Exception(f"Anthropic API error: {response.status_code} - {response.text}")
 
-            ai_response = response.json().get("response", "")
+            ai_response = response.json()["content"][0]["text"]
 
             # Parse AI response
             result = self._parse_ai_response(ai_response)
@@ -183,7 +230,7 @@ class ConversationHandler:
                 "message": "I'm having trouble processing your request. Could you please try again?"
             }
 
-    def _build_system_prompt(self, context: Dict, customer: Optional[Customer], menu_data: Optional[Dict] = None) -> str:
+    def _build_system_prompt(self, context: Dict, customer: Optional[Customer], menu_data: Optional[Dict] = None, account=None) -> str:
         """Build system prompt for Claude with menu awareness."""
         customer_info = ""
         if customer:

@@ -9,6 +9,7 @@ from backend.database import get_db
 from backend.models import Booking, Customer, BookingStatus, Restaurant
 from backend.schemas import BookingCreate, BookingUpdate, Booking as BookingResponse
 from backend.services.sms_service import sms_service
+from backend.services.table_availability import table_availability_service, DEFAULT_RESERVATION_DURATION
 
 router = APIRouter()
 
@@ -35,14 +36,41 @@ async def create_booking(
         db.add(customer)
         db.flush()
 
-    # Create booking (simplified - no table assignment yet)
+    # Find available table using availability service
+    available_table = table_availability_service.find_available_table(
+        db=db,
+        restaurant_id=booking_data.restaurant_id,
+        party_size=booking_data.party_size,
+        booking_date=booking_data.booking_date,
+        booking_time=booking_data.booking_time,
+        duration_minutes=booking_data.duration_minutes or DEFAULT_RESERVATION_DURATION
+    )
+
+    if not available_table:
+        # No tables available - suggest alternative times
+        alternatives = table_availability_service.suggest_alternative_times(
+            db=db,
+            restaurant_id=booking_data.restaurant_id,
+            party_size=booking_data.party_size,
+            booking_date=booking_data.booking_date,
+            requested_time=booking_data.booking_time
+        )
+
+        alt_times_str = ", ".join([t.strftime("%I:%M %p") for t in alternatives[:3]])
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"No tables available for {booking_data.party_size} people at {booking_data.booking_time.strftime('%I:%M %p')}. " +
+                   (f"Try these times: {alt_times_str}" if alternatives else "No availability today.")
+        )
+
+    # Create booking with assigned table
     booking_dict = booking_data.model_dump(exclude={'customer_phone', 'customer_name', 'customer_email', 'duration_minutes'})
     booking = Booking(
         **booking_dict,
         customer_id=customer.id,
-        table_id=1,  # TODO: Implement automatic table assignment
-        duration_minutes=booking_data.duration_minutes or 120,
-        status=BookingStatus.CONFIRMED  # Auto-confirm
+        table_id=available_table.id,  # Automatically assigned based on availability
+        duration_minutes=booking_data.duration_minutes or DEFAULT_RESERVATION_DURATION,
+        status=BookingStatus.CONFIRMED
     )
     db.add(booking)
     db.commit()

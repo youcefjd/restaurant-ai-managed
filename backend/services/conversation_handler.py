@@ -295,7 +295,8 @@ You help with:
 - If they're unsure, ask about their preferences (spicy? vegetarian? protein choice?) and recommend
 - When they order, offer ONE thoughtful add-on (e.g., "Would you like extra chicken for $4?" or "Rice comes with that - want to add naan bread for $3?")
 - Don't be pushy - if they decline, move on cheerfully
-- Always gather: exact item name, quantity, any add-ons, their name, pickup/delivery time
+- **REQUIRED**: Always gather: exact item name, quantity, any add-ons, their name, pickup/delivery time
+- **IMPORTANT**: You MUST ask for the customer's name if they haven't provided it yet. Say something like "May I have your name for the order?" or "What name should I put this under?"
 - Be conversational - "Great choice!" "That's one of our favorites!" "Perfect!"
 
 Current conversation context: {json.dumps(context)}
@@ -669,10 +670,14 @@ Be conversational, helpful, and accurate about menu items and pricing."""
         from backend.models import Customer
         customer = db.query(Customer).filter(Customer.phone == phone).first()
         if not customer:
-            customer_name = result.get("customer_name") or "Guest"
-            # Ensure name is never None or empty string
-            if not customer_name or not customer_name.strip():
-                customer_name = "Guest"
+            customer_name = result.get("customer_name", "").strip()
+            # If no name provided, ask for it before proceeding
+            if not customer_name:
+                return {
+                    "type": "gather",
+                    "message": "May I have your name for the order?",
+                    "context": context
+                }
             customer = Customer(phone=phone, name=customer_name)
             db.add(customer)
             db.flush()

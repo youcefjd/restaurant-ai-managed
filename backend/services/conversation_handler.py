@@ -296,7 +296,10 @@ You help with:
 - When they order, offer ONE thoughtful add-on (e.g., "Would you like extra chicken for $4?" or "Rice comes with that - want to add naan bread for $3?")
 - Don't be pushy - if they decline, move on cheerfully
 - **REQUIRED**: Always gather: exact item name, quantity, any add-ons, their name, pickup/delivery time
-- **IMPORTANT**: You MUST ask for the customer's name if they haven't provided it yet. Say something like "May I have your name for the order?" or "What name should I put this under?"
+- **NAME HANDLING**:
+  - If customer info shows a name (returning customer), confirm it friendly: "Is this still for [Name]?" or "Should I put this under [Name] again?"
+  - If no customer info (new customer), ask for name: "May I have your name for the order?" or "What name should I put this under?"
+  - If customer provides a different name, use the new name in customer_name field
 - Be conversational - "Great choice!" "That's one of our favorites!" "Perfect!"
 
 Current conversation context: {json.dumps(context)}
@@ -669,9 +672,18 @@ Be conversational, helpful, and accurate about menu items and pricing."""
         # Get or create customer
         from backend.models import Customer
         customer = db.query(Customer).filter(Customer.phone == phone).first()
-        if not customer:
+
+        if customer:
+            # Returning customer - check if they provided a new name
+            new_name = result.get("customer_name", "").strip()
+            if new_name and new_name != customer.name:
+                # Customer provided a different name, update it
+                logger.info(f"Updating customer name from '{customer.name}' to '{new_name}' for {phone}")
+                customer.name = new_name
+                db.flush()
+        else:
+            # New customer - name is required
             customer_name = result.get("customer_name", "").strip()
-            # If no name provided, ask for it before proceeding
             if not customer_name:
                 return {
                     "type": "gather",

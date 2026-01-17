@@ -63,6 +63,11 @@ class RestaurantAccountResponse(BaseModel):
         from_attributes = True
 
 
+class MenuUpdate(BaseModel):
+    """Schema for updating a menu."""
+    menu_name: Optional[str] = None
+    menu_description: Optional[str] = None
+
 class MenuItemCreate(BaseModel):
     """Schema for creating a menu item."""
     category_id: int
@@ -386,6 +391,62 @@ async def create_menu(
         "name": menu.name,
         "description": menu.description,
         "is_active": menu.is_active
+    }
+
+
+@router.put("/menus/{menu_id}", status_code=status.HTTP_200_OK)
+async def update_menu(
+    menu_id: int,
+    menu_update: MenuUpdate,
+    db: Session = Depends(get_db)
+):
+    """Update a menu's name and/or description."""
+    menu = db.query(Menu).filter(Menu.id == menu_id).first()
+    if not menu:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Menu not found"
+        )
+
+    if menu_update.menu_name is not None:
+        menu.name = menu_update.menu_name
+    if menu_update.menu_description is not None:
+        menu.description = menu_update.menu_description
+
+    db.commit()
+    db.refresh(menu)
+
+    return {
+        "id": menu.id,
+        "account_id": menu.account_id,
+        "name": menu.name,
+        "description": menu.description,
+        "is_active": menu.is_active
+    }
+
+
+@router.delete("/menus/{menu_id}", status_code=status.HTTP_200_OK)
+async def delete_menu(
+    menu_id: int,
+    db: Session = Depends(get_db)
+):
+    """Delete a menu and all its categories and items."""
+    menu = db.query(Menu).filter(Menu.id == menu_id).first()
+    if not menu:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Menu not found"
+        )
+
+    menu_name = menu.name
+    db.delete(menu)
+    db.commit()
+
+    logger.info(f"Deleted menu {menu_id}: {menu_name}")
+    
+    return {
+        "message": f"Menu '{menu_name}' has been deleted",
+        "menu_id": menu_id
     }
 
 

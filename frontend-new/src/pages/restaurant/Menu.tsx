@@ -1,88 +1,68 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { restaurantAPI } from '../../services/api'
-import { Plus, Edit, Leaf, Flame, Trash2 } from 'lucide-react'
+import { Plus, Edit, Trash2, Sparkles, ChevronDown, ChevronUp } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import CreateMenuModal from '../../components/CreateMenuModal'
-import AddMenuItemModal from '../../components/AddMenuItemModal'
+import EditMenuModal from '../../components/EditMenuModal'
 
 export default function RestaurantMenu() {
   const { user } = useAuth()
   const accountId = user?.id
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
-  const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false)
+  const [createModalStep, setCreateModalStep] = useState<'create-name' | 'auto-generate'>('create-name')
+  const [editingMenu, setEditingMenu] = useState<{ id: number; name: string; description?: string } | null>(null)
+  const [expandedMenuIds, setExpandedMenuIds] = useState<Set<number>>(new Set())
+
   const queryClient = useQueryClient()
 
   const { data: menuData, isLoading } = useQuery({
     queryKey: ['menu', accountId],
     queryFn: () => restaurantAPI.getMenu(accountId!),
     enabled: !!accountId,
+    placeholderData: (previousData) => previousData, // Keep previous data while refetching
+    refetchOnMount: 'always', // Refetch on mount but keep previous data visible
   })
 
   const menu = menuData?.data
 
-  // Mutation to delete a single menu item
-  const deleteItemMutation = useMutation({
-    mutationFn: (itemId: number) => restaurantAPI.deleteMenuItem(itemId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['menu', accountId] })
+  const deleteMenuMutation = useMutation({
+    mutationFn: (menuId: number) => restaurantAPI.deleteMenu(menuId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['menu', accountId] })
+      await queryClient.refetchQueries({ queryKey: ['menu', accountId] })
     },
   })
 
-  // Mutation to delete all menu items
-  const deleteAllItemsMutation = useMutation({
-    mutationFn: ({ accountId, menuId }: { accountId: number; menuId: number }) =>
-      restaurantAPI.deleteAllMenuItems(accountId, menuId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['menu', accountId] })
-    },
-  })
-
-  const handleDeleteItem = (itemId: number, itemName: string) => {
-    if (window.confirm(`Are you sure you want to delete "${itemName}"? This action cannot be undone.`)) {
-      deleteItemMutation.mutate(itemId)
+  const handleDeleteMenu = (menuId: number, menuName: string) => {
+    if (window.confirm(`Are you sure you want to delete "${menuName}"? This action cannot be undone and will delete all categories and items in this menu.`)) {
+      deleteMenuMutation.mutate(menuId)
     }
   }
 
-  const handleDeleteAllItems = (menuId: number, menuName: string) => {
-    if (window.confirm(`Are you sure you want to delete ALL items from "${menuName}"? This action cannot be undone.`)) {
-      if (accountId) {
-        deleteAllItemsMutation.mutate({ accountId, menuId })
+  const handleEditMenu = (menuObj: any) => {
+    setEditingMenu({
+      id: menuObj.id,
+      name: menuObj.name,
+      description: menuObj.description || '',
+    })
+  }
+
+  const toggleMenuExpansion = (menuId: number, e: React.MouseEvent) => {
+    // Prevent expansion when clicking edit/delete buttons
+    if ((e.target as HTMLElement).closest('button')) {
+      return
+    }
+    
+    setExpandedMenuIds(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(menuId)) {
+        newSet.delete(menuId)
+      } else {
+        newSet.add(menuId)
       }
-    }
-  }
-
-  const getDietaryBadge = (tags: string[]) => {
-    const badges = []
-    if (tags?.includes('vegetarian')) {
-      badges.push(
-        <span key="veg" className="inline-flex items-center gap-1 text-xs px-2 py-1 bg-green-100 text-green-700 rounded">
-          <Leaf className="w-3 h-3" /> Vegetarian
-        </span>
-      )
-    }
-    if (tags?.includes('vegan')) {
-      badges.push(
-        <span key="vegan" className="inline-flex items-center gap-1 text-xs px-2 py-1 bg-green-100 text-green-700 rounded">
-          <Leaf className="w-3 h-3" /> Vegan
-        </span>
-      )
-    }
-    if (tags?.includes('halal')) {
-      badges.push(
-        <span key="halal" className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded">
-          Halal
-        </span>
-      )
-    }
-    if (tags?.includes('spicy')) {
-      badges.push(
-        <span key="spicy" className="inline-flex items-center gap-1 text-xs px-2 py-1 bg-red-100 text-red-700 rounded">
-          <Flame className="w-3 h-3" /> Spicy
-        </span>
-      )
-    }
-    return badges
+      return newSet
+    })
   }
 
   if (isLoading) {
@@ -98,12 +78,29 @@ export default function RestaurantMenu() {
               <h1 className="text-2xl font-bold">Menu</h1>
               <p className="text-gray-600 mt-1">Manage your restaurant menu</p>
             </div>
-            <button onClick={() => setIsCreateModalOpen(true)} className="btn btn-primary">
-              <Plus className="w-5 h-5 mr-2" /> Create Menu
-            </button>
+            <div className="flex gap-3">
+              <button 
+                onClick={() => {
+                  setCreateModalStep('create-name')
+                  setIsCreateModalOpen(true)
+                }} 
+                className="btn btn-primary"
+              >
+                <Plus className="w-5 h-5 mr-2" /> Create New Menu
+              </button>
+              <button 
+                onClick={() => {
+                  setCreateModalStep('auto-generate')
+                  setIsCreateModalOpen(true)
+                }} 
+                className="btn btn-secondary"
+              >
+                <Sparkles className="w-5 h-5 mr-2" /> Auto-Generate Menu
+              </button>
+            </div>
           </div>
           <div className="card text-center py-12">
-            <p className="text-gray-500">No menu created yet. Start by creating your first menu.</p>
+            <p className="text-gray-500">No menus created yet. Create your first menu to get started.</p>
           </div>
         </div>
         {accountId && (
@@ -111,16 +108,12 @@ export default function RestaurantMenu() {
             isOpen={isCreateModalOpen}
             onClose={() => setIsCreateModalOpen(false)}
             accountId={accountId}
+            initialStep={createModalStep}
           />
         )}
       </>
     )
   }
-
-  // Get all categories from all menus for the Add Item modal
-  const allCategories = menu?.menus?.flatMap((m: any) =>
-    m.categories.map((cat: any) => ({ id: cat.id, name: cat.name }))
-  ) || []
 
   return (
     <div className="space-y-6">
@@ -129,113 +122,161 @@ export default function RestaurantMenu() {
           <h1 className="text-2xl font-bold">Menu</h1>
           <p className="text-gray-600 mt-1">{menu.business_name}</p>
         </div>
-        <button
-          onClick={() => setIsAddItemModalOpen(true)}
-          className="btn btn-primary"
-          disabled={allCategories.length === 0}
-        >
-          <Plus className="w-5 h-5 mr-2" /> Add Item
-        </button>
+        <div className="flex gap-3">
+          <button 
+            onClick={() => {
+              setCreateModalStep('create-name')
+              setIsCreateModalOpen(true)
+            }} 
+            className="btn btn-primary"
+          >
+            <Plus className="w-5 h-5 mr-2" /> Create New Menu
+          </button>
+          <button 
+            onClick={() => {
+              setCreateModalStep('auto-generate')
+              setIsCreateModalOpen(true)
+            }} 
+            className="btn btn-secondary"
+          >
+            <Sparkles className="w-5 h-5 mr-2" /> Auto-Generate Menu
+          </button>
+        </div>
       </div>
 
-      {menu.menus.map((menuObj: any) => {
-        const totalItems = menuObj.categories.reduce((sum: number, cat: any) => sum + (cat.items?.length || 0), 0)
-        return (
-          <div key={menuObj.id} className="mb-8">
-            <div className="flex items-center justify-between mb-4 p-4 bg-gray-50 rounded-lg">
-              <div>
-                <h2 className="text-xl font-bold">{menuObj.name}</h2>
-                <p className="text-sm text-gray-500 mt-1">{totalItems} item(s) total</p>
-              </div>
-              {totalItems > 0 && (
-                <button
-                  onClick={() => handleDeleteAllItems(menuObj.id, menuObj.name)}
-                  disabled={deleteAllItemsMutation.isPending}
-                  className="px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg font-medium hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  {deleteAllItemsMutation.isPending ? 'Deleting...' : 'Delete All Items'}
-                </button>
-              )}
-            </div>
-            {menuObj.categories.map((category: any) => (
-              <div key={category.id} className="mb-8">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-xl font-bold">{category.name}</h2>
-                  <button className="text-sm text-primary-600 hover:text-primary-700">
-                    Edit Category
+      <div className="space-y-3">
+        {menu.menus.map((menuObj: any) => {
+          const isExpanded = expandedMenuIds.has(menuObj.id)
+          const allItems = menuObj.categories?.flatMap((cat: any) => 
+            cat.items?.map((item: any) => ({ ...item, categoryName: cat.name, categoryId: cat.id })) || []
+          ) || []
+          
+          return (
+            <div
+              key={menuObj.id}
+              className="card overflow-hidden transition-all"
+            >
+              {/* Menu Header - Clickable */}
+              <div
+                onClick={(e) => toggleMenuExpansion(menuObj.id, e)}
+                className="flex items-center justify-between p-4 hover:bg-gray-50 cursor-pointer transition-colors"
+              >
+                <div className="flex items-center gap-3 flex-1">
+                  {isExpanded ? (
+                    <ChevronUp className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                  ) : (
+                    <ChevronDown className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                  )}
+                  <div className="flex-1">
+                    <h3 className="text-lg font-semibold">{menuObj.name}</h3>
+                    {menuObj.description && (
+                      <p className="text-sm text-gray-500 mt-1">{menuObj.description}</p>
+                    )}
+                    {!isExpanded && allItems.length > 0 && (
+                      <p className="text-xs text-gray-400 mt-1">{allItems.length} item(s)</p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    onClick={() => handleEditMenu(menuObj)}
+                    className="px-4 py-2 text-primary-600 border border-primary-200 rounded-lg hover:bg-primary-50 transition-colors flex items-center gap-2"
+                  >
+                    <Edit className="w-4 h-4" />
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDeleteMenu(menuObj.id, menuObj.name)}
+                    disabled={deleteMenuMutation.isPending}
+                    className="px-4 py-2 text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    {deleteMenuMutation.isPending ? 'Deleting...' : 'Delete'}
                   </button>
                 </div>
+              </div>
 
-              <div className="grid gap-4">
-                {category.items.map((item: any) => (
-                  <div key={item.id} className="card hover:shadow-md transition-shadow">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <h3 className="font-semibold text-lg">{item.name}</h3>
-                            <p className="text-sm text-gray-600 mt-1">{item.description}</p>
-                          </div>
-                          <p className="text-xl font-bold text-primary-600 ml-4">
-                            ${(item.price_cents / 100).toFixed(2)}
-                          </p>
-                        </div>
+              {/* Expanded Content - Menu Items */}
+              {isExpanded && (
+                <div className="border-t border-gray-200 p-4 bg-gray-50">
+                  {allItems.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      <p>No menu items yet. Click "Edit" to add items to this menu.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      {menuObj.categories?.map((category: any) => {
+                        const categoryItems = category.items || []
+                        if (categoryItems.length === 0) return null
 
-                        {item.dietary_tags && item.dietary_tags.length > 0 && (
-                          <div className="flex gap-2 mt-3">
-                            {getDietaryBadge(item.dietary_tags)}
-                          </div>
-                        )}
-
-                        {item.modifiers && item.modifiers.length > 0 && (
-                          <div className="mt-3 pt-3 border-t border-gray-200">
-                            <p className="text-xs font-medium text-gray-700 mb-2">Customizations:</p>
-                            <div className="flex flex-wrap gap-2">
-                              {item.modifiers.map((mod: any) => (
-                                <span
-                                  key={mod.id}
-                                  className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded"
+                        return (
+                          <div key={category.id} className="space-y-3">
+                            <h4 className="text-md font-semibold text-gray-800 border-b border-gray-300 pb-2">
+                              {category.name}
+                            </h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                              {categoryItems.map((item: any) => (
+                                <div
+                                  key={item.id}
+                                  className="bg-white rounded-lg p-4 border border-gray-200 hover:shadow-md transition-shadow"
                                 >
-                                  {mod.name}
-                                  {mod.price_cents > 0 && ` (+$${(mod.price_cents / 100).toFixed(2)})`}
-                                </span>
+                                  <div className="flex items-start justify-between mb-2">
+                                    <div className="flex-1">
+                                      <h5 className="font-semibold text-gray-900">{item.name}</h5>
+                                      {item.description && (
+                                        <p className="text-sm text-gray-600 mt-1 line-clamp-2">
+                                          {item.description}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <p className="text-lg font-bold text-primary-600 ml-3">
+                                      ${((item.price_cents || 0) / 100).toFixed(2)}
+                                    </p>
+                                  </div>
+                                  {item.dietary_tags && item.dietary_tags.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mt-2">
+                                      {item.dietary_tags.map((tag: string) => (
+                                        <span
+                                          key={tag}
+                                          className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded"
+                                        >
+                                          {tag}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
                               ))}
                             </div>
                           </div>
-                        )}
-                      </div>
-
-                      <div className="ml-4 flex gap-2">
-                        <button className="p-2 text-gray-400 hover:text-gray-600">
-                          <Edit className="w-5 h-5" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteItem(item.id, item.name)}
-                          disabled={deleteItemMutation.isPending}
-                          className="p-2 text-red-400 hover:text-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                          title="Delete item"
-                        >
-                          <Trash2 className="w-5 h-5" />
-                        </button>
-                      </div>
+                        )
+                      })}
                     </div>
-                  </div>
-                ))}
-              </div>
+                  )}
+                </div>
+              )}
             </div>
-          ))}
-          </div>
-        )
-      })}
+          )
+        })}
+      </div>
 
-      {/* Add Menu Item Modal */}
-      {accountId && allCategories.length > 0 && (
-        <AddMenuItemModal
-          isOpen={isAddItemModalOpen}
-          onClose={() => setIsAddItemModalOpen(false)}
+      {/* Create Menu Modal */}
+      {accountId && (
+        <CreateMenuModal
+          isOpen={isCreateModalOpen}
+          onClose={() => setIsCreateModalOpen(false)}
           accountId={accountId}
-          categories={allCategories}
+          initialStep={createModalStep}
+        />
+      )}
+
+      {/* Edit Menu Modal */}
+      {accountId && editingMenu && (
+        <EditMenuModal
+          isOpen={!!editingMenu}
+          onClose={() => setEditingMenu(null)}
+          accountId={accountId}
+          menu={editingMenu}
         />
       )}
     </div>

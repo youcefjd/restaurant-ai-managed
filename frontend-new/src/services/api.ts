@@ -71,6 +71,24 @@ export const restaurantAPI = {
   getMenu: (accountId: number) => api.get(`/onboarding/accounts/${accountId}/menu-full`),
   importMenu: (accountId: number, formData: FormData) => 
     api.post(`/onboarding/accounts/${accountId}/menus/import`, formData),
+  createMenu: (accountId: number, data: { menu_name?: string; menu_description?: string }) =>
+    api.post(`/onboarding/accounts/${accountId}/menus`, null, {
+      params: {
+        menu_name: data.menu_name || '',
+        ...(data.menu_description && { menu_description: data.menu_description }),
+      }
+    }),
+  createCategory: (menuId: number, data: { name: string; description?: string; display_order?: number }) =>
+    api.post(`/onboarding/menus/${menuId}/categories`, null, {
+      params: {
+        category_name: data.name,
+        category_description: data.description,
+        display_order: data.display_order || 0,
+      }
+    }),
+  updateMenu: (menuId: number, data: { menu_name?: string; menu_description?: string }) =>
+    api.put(`/onboarding/menus/${menuId}`, data),
+  deleteMenu: (menuId: number) => api.delete(`/onboarding/menus/${menuId}`),
   createMenuItem: (data: any) => api.post('/onboarding/items', data),
   deleteMenuItem: (itemId: number) => api.delete(`/onboarding/items/${itemId}`),
   deleteAllMenuItems: (accountId: number, menuId: number) =>

@@ -1,10 +1,9 @@
-import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { Outlet, NavLink } from 'react-router-dom'
 import { Home, ShoppingBag, BarChart3, Settings, LogOut, MessageSquare, UtensilsCrossed } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 
 export default function RestaurantLayout() {
   const { user, logout } = useAuth()
-  const navigate = useNavigate()
   const navItems = [
     { to: '/restaurant/dashboard', icon: Home, label: 'Dashboard' },
     { to: '/restaurant/orders', icon: ShoppingBag, label: 'Orders' },
@@ -66,9 +65,6 @@ export default function RestaurantLayout() {
         <header className="bg-white border-b border-gray-200 px-8 py-4">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-semibold">Welcome back!</h2>
-            <div className="flex items-center gap-4">
-              <button onClick={() => navigate('/restaurant/orders')} className="btn btn-primary">New Order</button>
-            </div>
           </div>
         </header>
 

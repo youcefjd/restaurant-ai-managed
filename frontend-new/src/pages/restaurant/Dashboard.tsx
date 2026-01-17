@@ -17,7 +17,8 @@ export default function RestaurantDashboard() {
     queryFn: () => restaurantAPI.getOrders(restaurantId!),
     enabled: !!restaurantId,
     refetchInterval: 5000, // Refetch every 5 seconds for real-time updates
-    staleTime: 0, // Always consider data stale to ensure fresh data
+    placeholderData: (previousData) => previousData, // Keep previous data while refetching
+    staleTime: 1000, // Consider data fresh for 1 second to prevent unnecessary refetches
   })
 
   // Fetch account details to check for phone number and menu
@@ -38,11 +39,14 @@ export default function RestaurantDashboard() {
       return response.data
     },
     enabled: !!restaurantId,
+    placeholderData: (previousData) => previousData, // Keep previous data while refetching
+    refetchOnMount: 'always', // Refetch on mount but keep previous data visible
   })
 
   // Check for missing setup
   const hasPhoneNumber = account?.twilio_phone_number
-  const hasMenu = menuData?.menus && menuData.menus.length > 0 && 
+  const hasMenus = menuData?.menus && menuData.menus.length > 0
+  const hasMenuItems = hasMenus && 
     menuData.menus.some((menu: any) => 
       menu.categories && menu.categories.some((cat: any) => 
         cat.items && cat.items.length > 0
@@ -152,7 +156,7 @@ export default function RestaurantDashboard() {
   return (
     <div className="space-y-6 animate-fade-in pb-8">
       {/* Setup Warnings */}
-      {(!hasPhoneNumber || !hasMenu) && (
+      {(!hasPhoneNumber || !hasMenuItems) && (
         <div className="bg-yellow-50 border-2 border-yellow-200 rounded-2xl p-6 shadow-lg">
           <div className="flex items-start gap-4">
             <AlertTriangle className="w-6 h-6 text-yellow-600 flex-shrink-0 mt-0.5" />
@@ -176,20 +180,26 @@ export default function RestaurantDashboard() {
                     </button>
                   </div>
                 )}
-                {!hasMenu && (
+                {!hasMenuItems && (
                   <div className="flex items-center justify-between bg-white rounded-lg p-4 border border-yellow-200">
                     <div className="flex items-center gap-3">
                       <MenuIcon className="w-5 h-5 text-yellow-600" />
                       <div>
-                        <p className="font-semibold text-gray-900">No Menu Items</p>
-                        <p className="text-sm text-gray-600">Add menu items so customers can place orders via phone or online.</p>
+                        <p className="font-semibold text-gray-900">
+                          {hasMenus ? 'No Menu Items Yet' : 'No Menu Items'}
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          {hasMenus 
+                            ? 'Your menus exist but need items. Add menu items so customers can place orders.'
+                            : 'Add menu items so customers can place orders via phone or online.'}
+                        </p>
                       </div>
                     </div>
                     <button
                       onClick={() => navigate('/restaurant/menu')}
                       className="px-4 py-2 bg-yellow-600 text-white rounded-lg font-semibold hover:bg-yellow-700 transition-colors"
                     >
-                      Add Menu
+                      {hasMenus ? 'Add Items' : 'Create Menu'}
                     </button>
                   </div>
                 )}

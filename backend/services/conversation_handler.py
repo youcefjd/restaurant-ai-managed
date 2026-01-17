@@ -11,9 +11,10 @@ import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime, date, time, timedelta
 from sqlalchemy.orm import Session
-import requests
+from pathlib import Path
 
 from backend.models import Restaurant, Table, Customer, Booking, BookingStatus
+from backend.services.openai_service import llm_service
 
 logger = logging.getLogger(__name__)
 
@@ -22,22 +23,36 @@ class ConversationHandler:
     """Handles conversation flow using AI to understand intent."""
 
     def __init__(self):
-        """Initialize conversation handler with Ollama."""
-        self.ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434")
-        self.ollama_model = os.getenv("OLLAMA_MODEL", "gemma3:4b")
-        self.enabled = True  # Always enabled if Ollama is running
-
-        # Test Ollama connection
+        """Initialize conversation handler with LLM service."""
+        self.llm_service = llm_service
+        self.enabled = llm_service.is_enabled()
+        
+        # Load system prompt template
+        self.system_prompt_template = self._load_system_prompt_template()
+        
+        if self.enabled:
+            logger.info(f"Conversation handler initialized with LLM provider: {llm_service.get_provider()}")
+        else:
+            logger.warning("LLM service not available - conversation handler disabled")
+    
+    def _load_system_prompt_template(self) -> str:
+        """Load system prompt template from markdown file."""
         try:
-            response = requests.get(f"{self.ollama_url}/api/tags", timeout=2)
-            if response.status_code == 200:
-                logger.info(f"Ollama connection successful, using model: {self.ollama_model}")
+            # Get the project root directory
+            current_dir = Path(__file__).parent.parent.parent
+            template_path = current_dir / "VOICE_AGENT_SYSTEM_PROMPT.md"
+            
+            if template_path.exists():
+                with open(template_path, 'r', encoding='utf-8') as f:
+                    template = f.read()
+                logger.info(f"Loaded system prompt template from {template_path}")
+                return template
             else:
-                logger.warning("Ollama server not responding, AI features may be limited")
-                self.enabled = False
+                logger.warning(f"System prompt template not found at {template_path}, using default")
+                return ""  # Will fall back to old prompt building
         except Exception as e:
-            logger.warning(f"Could not connect to Ollama at {self.ollama_url}: {str(e)}")
-            self.enabled = False
+            logger.error(f"Failed to load system prompt template: {str(e)}")
+            return ""
 
     async def process_message(
         self,
@@ -140,32 +155,23 @@ class ConversationHandler:
             except Exception as e:
                 logger.warning(f"Failed to fetch menu for restaurant {restaurant_id}: {e}")
 
-            # Build prompt for Ollama
-            system_prompt = self._build_system_prompt(context, customer, menu_data, account)
+            # Build system prompt (using template if available, otherwise legacy method)
+            if self.system_prompt_template:
+                system_prompt = self._build_system_prompt_from_template(context, customer, menu_data, account)
+            else:
+                system_prompt = self._build_system_prompt(context, customer, menu_data, account)
+            
             user_message = self._build_user_message(message, context)
 
-            # Call Ollama API
-            full_prompt = f"{system_prompt}\n\n{user_message}"
-
-            response = requests.post(
-                f"{self.ollama_url}/api/generate",
-                json={
-                    "model": self.ollama_model,
-                    "prompt": full_prompt,
-                    "stream": False,
-                    "options": {
-                        "temperature": 0.7,
-                        "top_p": 0.9,
-                        "num_predict": 512
-                    }
-                },
-                timeout=60
+            # Call LLM service (non-streaming for now - voice handler handles streaming separately)
+            ai_response = await self.llm_service.generate_complete_response(
+                system_prompt=system_prompt,
+                user_message=user_message,
+                conversation_history=None,  # Could add conversation history here
+                temperature=0.7,
+                max_tokens=512
             )
-
-            if response.status_code != 200:
-                raise Exception(f"Ollama API error: {response.status_code}")
-
-            ai_response = response.json().get("response", "")
+            
             logger.info(f"AI response (first 500 chars): {ai_response[:500]}")
 
             # Parse AI response
@@ -339,6 +345,83 @@ IMPORTANT: Do NOT copy the pending_order into your response context - only set p
 
 Today's date: {datetime.now().strftime('%Y-%m-%d')}
 Be conversational, helpful, and accurate about menu items and pricing."""
+
+    def _build_system_prompt_from_template(
+        self, 
+        context: Dict, 
+        customer: Optional[Customer], 
+        menu_data: Optional[Dict] = None, 
+        account=None
+    ) -> str:
+        """Build system prompt from markdown template with placeholders."""
+        if not self.system_prompt_template:
+            # Fallback to old method
+            return self._build_system_prompt(context, customer, menu_data, account)
+        
+        try:
+            prompt = self.system_prompt_template
+            
+            # Replace placeholders
+            prompt = prompt.replace("{{now}}", datetime.now().isoformat())
+            prompt = prompt.replace("{{current_date}}", datetime.now().strftime('%Y-%m-%d'))
+            
+            if account:
+                prompt = prompt.replace("{{restaurant_name}}", account.business_name or "our restaurant")
+                prompt = prompt.replace("{{opening_time}}", account.opening_time or "N/A")
+                prompt = prompt.replace("{{closing_time}}", account.closing_time or "N/A")
+                
+                # Format operating days
+                if account.operating_days:
+                    day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+                    days_str = ", ".join([day_names[d] for d in sorted(account.operating_days)])
+                else:
+                    days_str = "Not specified"
+                prompt = prompt.replace("{{operating_days}}", days_str)
+            else:
+                prompt = prompt.replace("{{restaurant_name}}", "our restaurant")
+                prompt = prompt.replace("{{opening_time}}", "N/A")
+                prompt = prompt.replace("{{closing_time}}", "N/A")
+                prompt = prompt.replace("{{operating_days}}", "Not specified")
+            
+            # Format menu data
+            menu_str = ""
+            if menu_data and menu_data.get("menus"):
+                menu_str = "\n\nRESTAURANT MENU:\n"
+                for menu in menu_data["menus"]:
+                    menu_str += f"\n{menu['name']}: {menu.get('description', '')}\n"
+                    for category in menu["categories"]:
+                        menu_str += f"\n  {category['name']}:\n"
+                        for item in category["items"]:
+                            menu_str += f"    - {item['name']} (${item['price_cents']/100:.2f})"
+                            if item.get('dietary_tags'):
+                                menu_str += f" [{', '.join(item['dietary_tags'])}]"
+                            menu_str += f"\n      {item['description']}\n"
+                            if item.get('modifiers'):
+                                menu_str += "      Customizations:\n"
+                                for mod in item['modifiers']:
+                                    price_str = f" (+${mod['price_adjustment_cents']/100:.2f})" if mod['price_adjustment_cents'] > 0 else ""
+                                    menu_str += f"        • {mod['name']}{price_str}\n"
+            else:
+                menu_str = "\n\nRESTAURANT MENU:\nNo menu items available.\n"
+            
+            prompt = prompt.replace("{{menu_data}}", menu_str)
+            
+            # Add current context
+            context_json = json.dumps(context)
+            prompt = prompt.replace("{{context}}", context_json)
+            
+            # Customer info
+            customer_info = ""
+            if customer:
+                customer_info = f"\nCustomer name: {customer.name}\nPrevious orders: {customer.total_bookings}"
+            prompt = prompt.replace("{{customer_info}}", customer_info)
+            
+            return prompt
+            
+        except Exception as e:
+            logger.error(f"Error building prompt from template: {str(e)}")
+            # Fallback to old method
+            return self._build_system_prompt(context, customer, menu_data, account)
 
     def _build_user_message(self, message: str, context: Dict) -> str:
         """Build user message with context."""

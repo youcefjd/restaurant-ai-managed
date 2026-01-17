@@ -1,16 +1,19 @@
 """
 Voice call webhook endpoints for Twilio Voice API.
 
-Handles incoming calls, processes speech-to-text, and manages
-the conversation flow for making reservations.
+Handles incoming calls via Twilio Media Streams (WebSocket) for real-time
+audio streaming, processes speech-to-text, and manages conversation flow.
 """
 
+import os
+import asyncio
 import logging
 from typing import Dict, Any, Optional
 from datetime import datetime, date, time, timedelta
-from fastapi import APIRouter, Depends, Request, Form
+from fastapi import APIRouter, Depends, Request, Form, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
+from twilio.twiml.voice_response import VoiceResponse, Start, Stream
 
 from backend.database import get_db
 from backend.models import Restaurant, Table, Customer, Booking, BookingStatus
@@ -18,6 +21,10 @@ from backend.services.voice_service import voice_service
 from backend.services.sms_service import sms_service
 from backend.services.conversation_handler import conversation_handler
 from backend.services.transcript_service import transcript_service
+from backend.services.deepgram_service import deepgram_service
+from backend.services.openai_service import llm_service
+from backend.services.elevenlabs_service import elevenlabs_service
+from backend.services.media_streams_service import media_streams_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -46,23 +53,31 @@ async def voice_welcome(
     request: Request,
     To: Optional[str] = Form(None),
     From: Optional[str] = Form(None),
+    CallSid: Optional[str] = Form(None),
     db: Session = Depends(get_db)
 ):
     """
     Initial webhook when call is received.
-    Returns TwiML with welcome message.
+    Returns TwiML with Media Streams Start instruction.
 
     Args:
         request: FastAPI request object (to get base URL)
         To: Twilio phone number that was called (identifies restaurant)
         From: Caller's phone number
+        CallSid: Unique call identifier
         db: Database session
     """
-    logger.info(f"Voice call received from {From} to {To}")
+    logger.info(f"Voice call received from {From} to {To}, CallSid: {CallSid}")
 
-    # Get base URL from request
+    # Get base URL from request (for WebSocket URL)
     base_url = get_base_url(request)
-    logger.info(f"Using base URL: {base_url}")
+    
+    # Convert HTTP(S) to WS(S) for WebSocket URL
+    ws_protocol = "wss" if base_url.startswith("https") else "ws"
+    ws_base = base_url.replace("https://", "").replace("http://", "")
+    ws_url = f"{ws_protocol}://{ws_base}/api/voice/stream"
+    
+    logger.info(f"Using WebSocket URL: {ws_url}")
 
     # Normalize phone number (remove spaces, ensure + prefix)
     to_normalized = To.strip() if To else None
@@ -77,20 +92,399 @@ async def voice_welcome(
 
     if not restaurant:
         logger.warning(f"No restaurant found for Twilio number {To}")
-        response = voice_service.create_error_response(
+        response = VoiceResponse()
+        response.say(
             "This number is not configured. Please contact support.",
-            base_url=base_url
+            voice='alice',
+            language='en-US'
         )
+        response.hangup()
         return Response(content=str(response), media_type="application/xml")
 
-    # Create welcome with restaurant's business name
-    response = voice_service.create_welcome_response(
-        restaurant_name=restaurant.business_name,
-        base_url=base_url
+    # Check if voice services are available (health check)
+    services_available = (
+        deepgram_service.is_enabled() and
+        llm_service.is_enabled() and
+        elevenlabs_service.is_enabled()
     )
+
+    if not services_available:
+        logger.warning("Voice services not available - sending SMS fallback")
+        # Send SMS fallback
+        try:
+            sms_message = (
+                f"Sorry, we're not currently handling voice orders. "
+                f"Please text us your order or call back later. "
+                f"You can also visit our website. - {restaurant.business_name}"
+            )
+            sms_service.send_sms(
+                to=From or "",
+                message=sms_message,
+                from_number=restaurant.twilio_phone_number
+            )
+        except Exception as e:
+            logger.error(f"Failed to send SMS fallback: {str(e)}")
+        
+        # Return error TwiML
+        response = VoiceResponse()
+        response.say(
+            "Sorry, we're not currently handling voice orders. "
+            "Please text us your order or call back later. Thank you.",
+            voice='alice',
+            language='en-US'
+        )
+        response.hangup()
+        return Response(content=str(response), media_type="application/xml")
+
+    # Create TwiML response with Media Streams
+    response = VoiceResponse()
+    
+    # Start Media Streams
+    start = Start()
+    stream = Stream(
+        url=ws_url,
+        track='both_tracks'  # Track both incoming and outgoing audio
+    )
+    start.stream(stream)
+    response.append(start)
+    
+    # Optional: Say something while stream connects
+    response.say(
+        f"Hi, thanks for calling {restaurant.business_name}. How can I help you?",
+        voice='alice',
+        language='en-US'
+    )
+    
+    # Keep call alive (hangup will be sent from WebSocket handler)
+    
     twiml_str = str(response)
-    logger.info(f"Returning TwiML: {twiml_str[:200]}")
+    logger.info(f"Returning Media Streams TwiML: {twiml_str[:300]}")
     return Response(content=twiml_str, media_type="application/xml")
+
+
+@router.websocket("/stream")
+async def media_streams_websocket(websocket: WebSocket):
+    """
+    WebSocket endpoint for Twilio Media Streams.
+    
+    Handles bidirectional audio streaming:
+    1. Receives audio from Twilio
+    2. Sends to Deepgram for STT
+    3. Processes transcripts with LLM
+    4. Generates TTS with ElevenLabs
+    5. Sends audio back to Twilio
+    
+    Args:
+        websocket: WebSocket connection
+        db: Database session
+    """
+    await websocket.accept()
+    logger.info("Media Streams WebSocket connection accepted")
+    
+    # State tracking
+    stream_sid = None
+    call_sid = None
+    from_number = None
+    to_number = None
+    restaurant_id = None
+    restaurant_name = None
+    audio_format = None
+    
+    # Deepgram connection
+    deepgram_connection = None
+    current_transcript = ""
+    is_speaking = False
+    is_listening = False  # Whether we're listening for user input
+    
+    # Conversation state
+    conversation_context = {}
+    conversation_messages = []
+    
+    try:
+        # Initialize Deepgram connection
+        transcript_buffer = []
+        final_transcript = ""
+        
+        async def on_deepgram_message(text: str, is_final: bool):
+            """Handle transcription from Deepgram."""
+            nonlocal current_transcript, final_transcript, is_listening
+            
+            if is_final:
+                final_transcript = text.strip()
+                if final_transcript:
+                    logger.info(f"Final transcript: {final_transcript}")
+                    transcript_buffer.append({"text": final_transcript, "final": True})
+                    current_transcript = ""
+                    # Process with LLM
+                    asyncio.create_task(process_transcript_with_llm(final_transcript))
+            else:
+                current_transcript = text.strip()
+                if current_transcript:
+                    # User is speaking - stop TTS if playing
+                    is_listening = True
+                    logger.debug(f"Interim transcript: {current_transcript}")
+        
+        async def on_deepgram_error(error: Exception):
+            """Handle Deepgram errors."""
+            logger.error(f"Deepgram error: {str(error)}")
+            await send_sms_fallback()
+            await websocket.close()
+        
+        async def on_deepgram_close():
+            """Handle Deepgram connection close."""
+            logger.info("Deepgram connection closed")
+        
+        # Create Deepgram connection
+        if deepgram_service.is_enabled():
+            deepgram_connection = await deepgram_service.create_live_transcription(
+                on_message=on_deepgram_message,
+                on_error=on_deepgram_error,
+                on_close=on_deepgram_close
+            )
+        
+        if not deepgram_connection:
+            logger.error("Failed to create Deepgram connection - sending SMS fallback")
+            await send_sms_fallback()
+            await websocket.close()
+            return
+        
+        async def process_transcript_with_llm(transcript: str):
+            """Process transcript with LLM and generate response."""
+            nonlocal is_listening, conversation_context, conversation_messages
+            
+            try:
+                from backend.database import SessionLocal
+                from backend.models_platform import RestaurantAccount
+                db = SessionLocal()
+                try:
+                    # Get restaurant account for menu/hours
+                    restaurant = db.query(RestaurantAccount).filter(
+                        RestaurantAccount.id == restaurant_id
+                    ).first()
+                    
+                    if not restaurant:
+                        logger.error(f"Restaurant not found: {restaurant_id}")
+                        return
+                    
+                    # Process with conversation handler
+                    result = await conversation_handler.process_message(
+                        message=transcript,
+                        phone=from_number or "",
+                        restaurant_id=restaurant_id,
+                        context=conversation_context,
+                        db=db
+                    )
+                finally:
+                    db.close()
+                
+                # Update conversation state
+                conversation_context = result.get("context", {})
+                conversation_messages.append({"role": "user", "content": transcript})
+                conversation_messages.append({"role": "assistant", "content": result.get("message", "")})
+                
+                # Get response message
+                response_message = result.get("message", "I'm sorry, I didn't understand that.")
+                
+                # Generate TTS and send to Twilio
+                await generate_and_send_tts(response_message)
+                
+            except Exception as e:
+                logger.error(f"Error processing transcript with LLM: {str(e)}", exc_info=True)
+                await send_sms_fallback()
+        
+        async def generate_and_send_tts(text: str):
+            """Generate TTS audio and send to Twilio."""
+            nonlocal is_listening
+            
+            try:
+                if not elevenlabs_service.is_enabled():
+                    logger.error("ElevenLabs not available")
+                    return
+                
+                is_listening = False  # We're speaking now
+                
+                # Generate TTS audio
+                async for audio_chunk in elevenlabs_service.text_to_speech_stream(text):
+                    # Send audio to Twilio via Media Streams
+                    if stream_sid and audio_chunk:
+                        # Convert to format Twilio expects (mulaw or linear16)
+                        # For now, assume Twilio expects the format we're sending
+                        media_message = media_streams_service.create_media_message(
+                            audio_bytes=audio_chunk,
+                            stream_sid=stream_sid
+                        )
+                        await websocket.send_text(media_message)
+                
+                is_listening = True  # Done speaking, ready to listen
+                
+            except Exception as e:
+                logger.error(f"Error generating/sending TTS: {str(e)}", exc_info=True)
+        
+        async def send_sms_fallback():
+            """Send SMS fallback when voice fails."""
+            try:
+                from backend.database import SessionLocal
+                from backend.models_platform import RestaurantAccount
+                db = SessionLocal()
+                try:
+                    restaurant = db.query(RestaurantAccount).filter(
+                        RestaurantAccount.id == restaurant_id
+                    ).first()
+                    
+                    if restaurant and from_number:
+                        sms_message = (
+                            f"Sorry, we're not currently handling voice orders. "
+                            f"Please text us your order or call back later. "
+                            f"You can also visit our website. - {restaurant.business_name}"
+                        )
+                        sms_service.send_sms(
+                            to=from_number,
+                            message=sms_message,
+                            from_number=restaurant.twilio_phone_number
+                        )
+                finally:
+                    db.close()
+            except Exception as e:
+                logger.error(f"Failed to send SMS fallback: {str(e)}")
+        
+        # Main message loop
+        while True:
+            try:
+                # Receive message from Twilio
+                message = await websocket.receive_text()
+                
+                # Parse Media Streams message
+                parsed = media_streams_service.parse_message(message)
+                if not parsed:
+                    continue
+                
+                event_type = parsed.get("type")
+                event_data = parsed.get("data", {})
+                
+                if event_type == "connected":
+                    logger.info("Media Streams connected")
+                
+                elif event_type == "start":
+                    stream_sid = parsed.get("stream_sid")
+                    call_sid = parsed.get("call_sid")
+                    
+                    # Extract phone numbers from start event
+                    # Twilio sends these in the start event metadata
+                    custom_params = event_data.get("customParameters", {})
+                    from_number = custom_params.get("from") or event_data.get("from")
+                    to_number = custom_params.get("to") or event_data.get("to")
+                    
+                    # Get audio format
+                    audio_format = media_streams_service.get_audio_format(parsed)
+                    logger.info(f"Stream started: {stream_sid}, format: {audio_format}")
+                    
+                    # Look up restaurant
+                    if to_number:
+                        from backend.database import SessionLocal
+                        from backend.models_platform import RestaurantAccount
+                        db = SessionLocal()
+                        try:
+                            to_normalized = to_number.strip()
+                            if not to_normalized.startswith('+'):
+                                to_normalized = '+' + to_normalized
+                            
+                            restaurant = db.query(RestaurantAccount).filter(
+                                RestaurantAccount.twilio_phone_number == to_normalized
+                            ).first()
+                            
+                            if restaurant:
+                                restaurant_id = restaurant.id
+                                restaurant_name = restaurant.business_name
+                                logger.info(f"Restaurant identified: {restaurant.business_name}")
+                            else:
+                                logger.warning(f"Restaurant not found for: {to_number}")
+                                await websocket.close()
+                                return
+                        finally:
+                            db.close()
+                    
+                    # Initialize conversation
+                    conversation_messages = []
+                    conversation_context = {}
+                
+                elif event_type == "media":
+                    # Extract audio from media message
+                    audio_bytes = media_streams_service.extract_audio_from_media(parsed)
+                    
+                    if audio_bytes and deepgram_connection:
+                        # Convert audio format if needed
+                        if audio_format == "mulaw":
+                            # Convert mulaw to linear16 for Deepgram
+                            linear16_bytes = media_streams_service.mulaw_to_linear16(audio_bytes)
+                        else:
+                            linear16_bytes = audio_bytes
+                        
+                        # Send to Deepgram
+                        await deepgram_service.send_audio(deepgram_connection, linear16_bytes)
+                
+                elif event_type == "stop":
+                    logger.info("Media Streams stopped")
+                    
+                    # Save transcript
+                    try:
+                        from backend.database import SessionLocal
+                        from backend.models_platform import RestaurantAccount
+                        db = SessionLocal()
+                        try:
+                            restaurant = db.query(RestaurantAccount).filter(
+                                RestaurantAccount.id == restaurant_id
+                            ).first()
+                            
+                            if restaurant and conversation_messages:
+                                transcript_service.save_transcript(
+                                    db=db,
+                                    account_id=restaurant_id,
+                                    transcript_type="voice",
+                                    customer_phone=from_number or "",
+                                    conversation_id=call_sid or "",
+                                    messages=conversation_messages,
+                                    twilio_phone=to_number,
+                                    outcome=None
+                                )
+                        finally:
+                            db.close()
+                    except Exception as e:
+                        logger.error(f"Failed to save transcript: {str(e)}")
+                    
+                    # Close Deepgram connection
+                    if deepgram_connection:
+                        await deepgram_service.close_connection(deepgram_connection)
+                    
+                    await websocket.close()
+                    break
+                
+                elif event_type == "error":
+                    error_msg = event_data.get("message", "Unknown error")
+                    logger.error(f"Media Streams error: {error_msg}")
+                    await send_sms_fallback()
+                    await websocket.close()
+                    break
+            
+            except WebSocketDisconnect:
+                logger.info("WebSocket disconnected")
+                break
+            except Exception as e:
+                logger.error(f"Error in Media Streams handler: {str(e)}", exc_info=True)
+                await send_sms_fallback()
+                await websocket.close()
+                break
+    
+    except Exception as e:
+        logger.error(f"Error in Media Streams WebSocket: {str(e)}", exc_info=True)
+        await send_sms_fallback()
+    finally:
+        # Cleanup
+        if deepgram_connection:
+            await deepgram_service.close_connection(deepgram_connection)
+        try:
+            await websocket.close()
+        except:
+            pass
 
 
 @router.post("/process")

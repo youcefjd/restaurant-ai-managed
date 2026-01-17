@@ -9,8 +9,16 @@ import json
 import base64
 import struct
 import logging
+import io
 from typing import Optional, Dict, Any, Callable, BinaryIO
 from enum import Enum
+
+try:
+    from pydub import AudioSegment
+    PYDUB_AVAILABLE = True
+except ImportError:
+    PYDUB_AVAILABLE = False
+    AudioSegment = None
 
 from backend.core.logging import setup_logging
 
@@ -46,12 +54,19 @@ class MediaStreamService:
         try:
             data = json.loads(message)
             event_type = data.get("event")
+            
+            # For start events, callSid and streamSid are nested in the "start" object
+            start_data = data.get("start", {})
+            stream_sid = data.get("streamSid") or start_data.get("streamSid")
+            call_sid = data.get("callSid") or start_data.get("callSid")
+            account_sid = data.get("accountSid") or start_data.get("accountSid")
+            
             return {
                 "type": event_type,
                 "data": data,
-                "stream_sid": data.get("streamSid"),
-                "account_sid": data.get("accountSid"),
-                "call_sid": data.get("callSid"),
+                "stream_sid": stream_sid,
+                "account_sid": account_sid,
+                "call_sid": call_sid,
             }
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse Media Streams message: {str(e)}")
@@ -93,22 +108,41 @@ class MediaStreamService:
             Audio format string (e.g., "mulaw", "linear16"), or None
         """
         try:
-            media_format = message.get("data", {}).get("mediaFormat", {})
-            return media_format.get("encoding", None)
+            data = message.get("data", {})
+            # Check both top-level and nested in "start" object
+            media_format = data.get("mediaFormat") or data.get("start", {}).get("mediaFormat", {})
+            if isinstance(media_format, dict):
+                encoding = media_format.get("encoding", "")
+                # Extract format from encoding string (e.g., "audio/x-mulaw" -> "mulaw")
+                if encoding:
+                    if "mulaw" in encoding.lower():
+                        return "mulaw"
+                    elif "linear16" in encoding.lower() or "pcm" in encoding.lower():
+                        return "linear16"
+                    return encoding
+            elif isinstance(media_format, str):
+                return media_format
+            return None
         except Exception as e:
             logger.error(f"Failed to get audio format: {str(e)}")
             return None
 
-    def mulaw_to_linear16(self, mulaw_bytes: bytes) -> bytes:
+    def mulaw_to_linear16(self, mulaw_bytes: bytes, sample_rate: int = 8000) -> bytes:
         """
         Convert mu-law audio to linear16 PCM.
+        
+        Twilio Media Streams uses 8kHz sample rate for telephony.
 
         Args:
             mulaw_bytes: Mu-law encoded audio bytes
+            sample_rate: Sample rate in Hz (default 8000 for telephony)
 
         Returns:
-            Linear16 PCM audio bytes
+            Linear16 PCM audio bytes (16-bit, little-endian, mono)
         """
+        if not mulaw_bytes:
+            return b''
+        
         linear16_samples = []
         mulaw_table = [
             -32124, -31100, -30076, -29052, -28028, -27004, -25980, -24956,
@@ -146,6 +180,9 @@ class MediaStreamService:
         ]
 
         for byte in mulaw_bytes:
+            if byte > 255:
+                logger.warning(f"Invalid mulaw byte value: {byte}, skipping")
+                continue
             linear_sample = mulaw_table[byte]
             linear16_samples.append(struct.pack('<h', linear_sample))
 
@@ -238,6 +275,95 @@ class MediaStreamService:
             "streamSid": stream_sid
         }
         return json.dumps(message)
+
+    def mp3_to_mulaw(self, mp3_bytes: bytes, sample_rate: int = 8000) -> bytes:
+        """
+        Convert MP3 audio to mulaw format for Twilio Media Streams.
+        
+        Twilio expects 8kHz mono mulaw PCM audio.
+
+        Args:
+            mp3_bytes: MP3 encoded audio bytes
+            sample_rate: Target sample rate in Hz (default 8000 for telephony)
+
+        Returns:
+            Mu-law encoded audio bytes
+        """
+        if not PYDUB_AVAILABLE:
+            logger.error("pydub not available - cannot convert MP3 to mulaw")
+            raise ImportError("pydub is required for MP3 to mulaw conversion. Install with: pip install pydub")
+        
+        if not mp3_bytes:
+            return b''
+        
+        # Check if ffprobe/ffmpeg is available
+        import shutil
+        ffprobe_path = shutil.which("ffprobe") or shutil.which("ffmpeg")
+        if not ffprobe_path:
+            error_msg = (
+                "ffprobe/ffmpeg not found. pydub requires ffmpeg to convert MP3 audio. "
+                "Please install ffmpeg:\n"
+                "  macOS: brew install ffmpeg\n"
+                "  Linux: sudo apt-get install ffmpeg (or use your package manager)\n"
+                "  Windows: Download from https://ffmpeg.org/download.html"
+            )
+            logger.error(error_msg)
+            raise FileNotFoundError(error_msg)
+        
+        try:
+            # Load MP3 from bytes
+            audio = AudioSegment.from_mp3(io.BytesIO(mp3_bytes))
+            
+            # Convert to mono if stereo
+            if audio.channels > 1:
+                audio = audio.set_channels(1)
+            
+            # Resample to target sample rate (8kHz for telephony)
+            if audio.frame_rate != sample_rate:
+                audio = audio.set_frame_rate(sample_rate)
+            
+            # Convert to raw PCM16 (16-bit signed integer, little-endian)
+            raw_audio = audio.raw_data
+            
+            # Convert PCM16 to mulaw
+            mulaw_audio = self.linear16_to_mulaw(raw_audio)
+            
+            return mulaw_audio
+            
+        except Exception as e:
+            logger.error(f"Failed to convert MP3 to mulaw: {str(e)}", exc_info=True)
+            raise
+
+    def validate_audio_format(self, audio_bytes: bytes, expected_format: str = "mulaw") -> bool:
+        """
+        Validate audio format and basic properties.
+
+        Args:
+            audio_bytes: Audio bytes to validate
+            expected_format: Expected format ("mulaw", "linear16", "mp3")
+
+        Returns:
+            True if format appears valid, False otherwise
+        """
+        if not audio_bytes:
+            return False
+        
+        if expected_format == "mulaw":
+            # Mulaw should be single bytes (0-255)
+            if len(audio_bytes) == 0:
+                return False
+            # Check that bytes are in valid range
+            return all(0 <= b <= 255 for b in audio_bytes[:100])  # Check first 100 bytes
+        
+        elif expected_format == "linear16":
+            # Linear16 should be even number of bytes (16-bit samples)
+            return len(audio_bytes) % 2 == 0
+        
+        elif expected_format == "mp3":
+            # MP3 should start with ID3 tag or MP3 sync word (0xFF 0xFB or 0xFF 0xF3)
+            return audio_bytes[:2] in [b'\xff\xfb', b'\xff\xf3', b'ID']
+        
+        return True
 
 
 # Global Media Streams service instance

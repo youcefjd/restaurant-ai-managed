@@ -70,7 +70,6 @@ class DeepgramService:
                 smart_format="true",
                 interim_results="true",  # Get partial results
                 punctuate="true",
-                utterances="true",
                 endpointing="300",  # Endpoint after 300ms of silence
             )
             

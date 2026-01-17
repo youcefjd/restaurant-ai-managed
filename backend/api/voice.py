@@ -22,7 +22,7 @@ from backend.services.sms_service import sms_service
 from backend.services.conversation_handler import conversation_handler
 from backend.services.transcript_service import transcript_service
 from backend.services.deepgram_service import deepgram_service
-from backend.services.openai_service import llm_service
+from backend.services.llm_service import llm_service
 from backend.services.elevenlabs_service import elevenlabs_service
 from backend.services.media_streams_service import media_streams_service
 

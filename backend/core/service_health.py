@@ -11,7 +11,7 @@ from twilio.rest import Client
 import httpx
 
 from backend.core.logging import setup_logging
-from backend.services.openai_service import llm_service
+from backend.services.llm_service import llm_service
 from backend.services.voice_service import voice_service
 from backend.services.sms_service import sms_service
 from backend.services.deepgram_service import deepgram_service
@@ -53,7 +53,14 @@ class ServiceHealthChecker:
                 timeout=10.0
             )
             
-            if response:
+            # Check if response is an error message (generate_complete_response returns error strings instead of raising)
+            if response and response.startswith("Error:"):
+                return {
+                    "service": "Gemini LLM",
+                    "status": "failed",
+                    "error": response.replace("Error: ", "").strip()
+                }
+            elif response:
                 model = llm_service.gemini_model
                 return {
                     "service": "Gemini LLM",
@@ -104,7 +111,14 @@ class ServiceHealthChecker:
                 timeout=10.0
             )
             
-            if response:
+            # Check if response is an error message (generate_complete_response returns error strings instead of raising)
+            if response and response.startswith("Error:"):
+                return {
+                    "service": "OpenAI LLM",
+                    "status": "failed",
+                    "error": response.replace("Error: ", "").strip()
+                }
+            elif response:
                 model = llm_service.openai_model
                 return {
                     "service": "OpenAI LLM",
@@ -134,53 +148,46 @@ class ServiceHealthChecker:
         """
         Check Twilio API connectivity by validating account credentials.
         
+        Note: This check is primarily for SMS service functionality, which requires
+        Twilio REST API access to send messages. Voice service works via webhooks
+        (Twilio calls the backend) and doesn't require active API calls for incoming calls.
+        
         Returns:
             Dict with service name, status, and optional error message
         """
-        if not voice_service.enabled and not sms_service.enabled:
+        # SMS service requires Twilio API access, voice service does not
+        # (voice works via webhooks from Twilio to the backend)
+        if not sms_service.enabled:
             return {
-                "service": "Twilio Voice/SMS",
+                "service": "Twilio SMS",
                 "status": "disabled",
-                "error": "Account SID or Auth Token not set"
+                "error": "Account SID or Auth Token not set (SMS requires API access)"
             }
         
         try:
-            # Use SMS service client if available, otherwise create temporary one
+            # Use SMS service client (SMS requires API access to send messages)
             if sms_service.enabled and sms_service.client:
                 client = sms_service.client
-            elif voice_service.enabled:
-                # Create temporary client for testing
-                import os
-                account_sid = os.getenv("TWILIO_ACCOUNT_SID")
-                auth_token = os.getenv("TWILIO_AUTH_TOKEN")
-                if account_sid and auth_token:
-                    client = Client(account_sid, auth_token)
-                else:
-                    return {
-                        "service": "Twilio Voice/SMS",
-                        "status": "disabled",
-                        "error": "Credentials not configured"
-                    }
             else:
                 return {
-                    "service": "Twilio Voice/SMS",
+                    "service": "Twilio SMS",
                     "status": "disabled",
                     "error": "No client available"
                 }
             
-            # Make actual API call to fetch account info
+            # Make actual API call to fetch account info (validates credentials)
             account = client.api.accounts(client.account_sid).fetch()
             
             if account:
                 account_sid_short = str(account.sid)[:10] + "..." if len(str(account.sid)) > 10 else str(account.sid)
                 return {
-                    "service": "Twilio Voice/SMS",
+                    "service": "Twilio SMS",
                     "status": "healthy",
-                    "details": f"account: {account_sid_short}"
+                    "details": f"account: {account_sid_short} (SMS requires API access; Voice works via webhooks)"
                 }
             else:
                 return {
-                    "service": "Twilio Voice/SMS",
+                    "service": "Twilio SMS",
                     "status": "failed",
                     "error": "Unable to fetch account info"
                 }
@@ -190,7 +197,7 @@ class ServiceHealthChecker:
             if "authenticate" in error_msg.lower() or "401" in error_msg:
                 error_msg = "Authentication failed - invalid credentials"
             return {
-                "service": "Twilio Voice/SMS",
+                "service": "Twilio SMS",
                 "status": "failed",
                 "error": error_msg
             }
@@ -311,10 +318,14 @@ class ServiceHealthChecker:
 
     async def check_all_critical(self) -> Dict[str, Dict[str, Optional[str]]]:
         """
-        Check all critical services (Gemini/OpenAI, Twilio, Deepgram, ElevenLabs).
+        Check all critical services (Gemini/OpenAI, Twilio SMS, Deepgram, ElevenLabs).
         
         These are all required for the voice agent to work with Media Streams.
         Without them, the voice agent will fail and fall back to SMS only.
+        
+        Note: Twilio check here is for SMS service (requires API access to send messages).
+        Voice calls work via webhooks (Twilio calls the backend) and don't require
+        the backend to have Twilio API access for incoming calls.
         
         Returns:
             Dict mapping service names to their health check results
@@ -418,6 +429,8 @@ class ServiceHealthChecker:
         optional_failed = 0
         
         # All services needed for voice agent are critical
+        # Note: "twilio" here refers to SMS functionality (requires API access)
+        # Voice calls work via webhooks and don't require Twilio API access
         critical_services = {"gemini", "openai", "twilio", "deepgram", "elevenlabs"}
         
         for service_name, result in results.items():

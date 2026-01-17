@@ -86,9 +86,37 @@ async def lifespan(app: FastAPI):
         logger.info(f"  Optional: {summary['optional_healthy']}/{summary['optional_total']} healthy")
         
         # Check if any critical services failed
+        # Special handling for LLM services: allow startup if at least one LLM provider is healthy
+        # (since the service has fallback logic built in)
         failed_critical = []
+        gemini_result = critical_results.get("gemini", {})
+        openai_result = critical_results.get("openai", {})
+        gemini_status = gemini_result.get("status")
+        openai_status = openai_result.get("status")
+        
+        gemini_healthy = gemini_status == "healthy"
+        openai_healthy = openai_status == "healthy"
+        gemini_failed = gemini_status == "failed"
+        openai_failed = openai_status == "failed"
+        
+        # Check if we have at least one working LLM provider
+        has_working_llm = gemini_healthy or openai_healthy
+        
+        # If both LLM providers failed, that's a critical failure
+        if gemini_failed and openai_failed:
+            failed_critical.append("LLM (both Gemini and OpenAI failed)")
+        # If one LLM provider failed but the other is healthy, log a warning but don't fail
+        elif gemini_failed or openai_failed:
+            failed_provider = "Gemini" if gemini_failed else "OpenAI"
+            working_provider = "OpenAI" if gemini_failed else "Gemini"
+            logger.warning(
+                f"{failed_provider} LLM health check failed, but {working_provider} is healthy. "
+                f"Server will use {working_provider} as fallback."
+            )
+        
+        # Check other critical services (non-LLM)
         for service_name, result in critical_results.items():
-            if result.get("status") == "failed":
+            if service_name not in ["gemini", "openai"] and result.get("status") == "failed":
                 failed_critical.append(result.get("service", service_name))
         
         if failed_critical:
@@ -99,7 +127,10 @@ async def lifespan(app: FastAPI):
             logger.error(error_msg)
             raise RuntimeError(error_msg)
         
-        logger.info("All critical services healthy. Server ready to accept requests.")
+        if has_working_llm:
+            logger.info("All critical services healthy. Server ready to accept requests.")
+        else:
+            logger.info("Server ready to accept requests (with degraded LLM service).")
         
     except RuntimeError:
         # Re-raise RuntimeError (critical service failures)

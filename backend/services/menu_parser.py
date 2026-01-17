@@ -41,7 +41,7 @@ class MenuParser:
     def __init__(self):
         """Initialize the menu parser with Google Gemini."""
         self.gemini_api_key = os.getenv("GOOGLE_AI_API_KEY")
-        self.gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp")
+        self.gemini_model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
         self.enabled = False
         self.gemini_client = None
 
@@ -55,7 +55,7 @@ class MenuParser:
             return
 
         try:
-            genai.configure(api_key=self.gemini_api_key)
+            # New google-genai SDK uses Client() directly, no configure() needed
             self.gemini_client = genai.Client(api_key=self.gemini_api_key)
             self.enabled = True
             logger.info(f"Gemini menu parser initialized with model: {self.gemini_model}")

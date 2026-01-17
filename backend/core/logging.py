@@ -32,5 +32,7 @@ def setup_logging(name: str) -> logging.Logger:
     # Add handler to logger
     if not logger.handlers:
         logger.addHandler(handler)
+        # Prevent propagation to root logger to avoid duplicate log messages
+        logger.propagate = False
 
     return logger

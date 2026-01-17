@@ -1,7 +1,7 @@
 """
 AI-powered conversation handler for voice and text interactions.
 
-Uses Gemini or OpenAI via openai_service to understand customer intent and extract booking information
+Uses Gemini or OpenAI via llm_service to understand customer intent and extract booking information
 from natural language conversations.
 """
 
@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from pathlib import Path
 
 from backend.models import Restaurant, Table, Customer, Booking, BookingStatus
-from backend.services.openai_service import llm_service
+from backend.services.llm_service import llm_service
 
 logger = logging.getLogger(__name__)
 

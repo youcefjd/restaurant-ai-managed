@@ -83,6 +83,21 @@ class MenuItemCreate(BaseModel):
         from_attributes = True
 
 
+class MenuItemUpdate(BaseModel):
+    """Schema for updating a menu item."""
+    category_id: Optional[int] = None
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    description: Optional[str] = None
+    price_cents: Optional[int] = Field(None, ge=0)
+    dietary_tags: Optional[List[str]] = None
+    is_available: Optional[bool] = None
+    preparation_time_minutes: Optional[int] = None
+    display_order: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+
+
 class MenuItemResponse(BaseModel):
     """Schema for menu item response."""
     id: int
@@ -508,6 +523,44 @@ async def create_menu_item(
     db.commit()
     db.refresh(item)
 
+    return item
+
+
+@router.put("/items/{item_id}", response_model=MenuItemResponse)
+async def update_menu_item(
+    item_id: int,
+    item_data: MenuItemUpdate,
+    db: Session = Depends(get_db)
+):
+    """Update a menu item."""
+    # Find the item
+    item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
+    if not item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Menu item not found"
+        )
+
+    # If category_id is being updated, verify the category exists
+    if item_data.category_id is not None and item_data.category_id != item.category_id:
+        category = db.query(MenuCategory).filter(MenuCategory.id == item_data.category_id).first()
+        if not category:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Category not found"
+            )
+        item.category_id = item_data.category_id
+
+    # Update fields that are provided
+    update_data = item_data.model_dump(exclude_unset=True, exclude={'category_id'})
+    for field, value in update_data.items():
+        if value is not None:
+            setattr(item, field, value)
+
+    db.commit()
+    db.refresh(item)
+
+    logger.info(f"Updated menu item {item_id}: {item.name}")
     return item
 
 

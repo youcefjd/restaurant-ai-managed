@@ -90,6 +90,7 @@ export const restaurantAPI = {
     api.put(`/onboarding/menus/${menuId}`, data),
   deleteMenu: (menuId: number) => api.delete(`/onboarding/menus/${menuId}`),
   createMenuItem: (data: any) => api.post('/onboarding/items', data),
+  updateMenuItem: (itemId: number, data: any) => api.put(`/onboarding/items/${itemId}`, data),
   deleteMenuItem: (itemId: number) => api.delete(`/onboarding/items/${itemId}`),
   deleteAllMenuItems: (accountId: number, menuId: number) =>
     api.delete(`/onboarding/accounts/${accountId}/menus/${menuId}/items`),

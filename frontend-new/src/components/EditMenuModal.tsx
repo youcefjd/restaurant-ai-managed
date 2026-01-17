@@ -20,6 +20,7 @@ export default function EditMenuModal({ isOpen, onClose, accountId, menu }: Edit
   const [menuName, setMenuName] = useState(menu.name)
   const [menuDescription, setMenuDescription] = useState(menu.description || '')
   const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false)
+  const [editingItem, setEditingItem] = useState<any | null>(null)
 
   // Fetch full menu data to get items
   const { data: menuData } = useQuery({
@@ -172,10 +173,7 @@ export default function EditMenuModal({ isOpen, onClose, accountId, menu }: Edit
 
                       <div className="flex gap-2 mt-3 pt-3 border-t">
                         <button
-                          onClick={() => {
-                            // TODO: Implement edit item functionality
-                            alert('Edit item functionality coming soon')
-                          }}
+                          onClick={() => setEditingItem(item)}
                           className="flex-1 px-3 py-2 text-sm text-primary-600 border border-primary-200 rounded-lg hover:bg-primary-50 transition-colors flex items-center justify-center gap-2"
                         >
                           <Edit className="w-4 h-4" />
@@ -219,6 +217,33 @@ export default function EditMenuModal({ isOpen, onClose, accountId, menu }: Edit
           menus={allMenus}
           keepOpenAfterAdd={false}
           onItemAdded={handleItemAdded}
+        />
+      )}
+
+      {/* Edit Menu Item Modal */}
+      {editingItem && (
+        <AddMenuItemModal
+          isOpen={!!editingItem}
+          onClose={() => setEditingItem(null)}
+          accountId={accountId}
+          categories={allCategories}
+          menus={allMenus}
+          editingItem={{
+            id: editingItem.id,
+            name: editingItem.name,
+            description: editingItem.description,
+            price_cents: editingItem.price_cents || 0,
+            category_id: editingItem.categoryId || editingItem.category_id,
+            category_name: editingItem.categoryName,
+            dietary_tags: editingItem.dietary_tags || [],
+            is_available: editingItem.is_available ?? true,
+            preparation_time_minutes: editingItem.preparation_time_minutes,
+            display_order: editingItem.display_order || 0,
+          }}
+          onItemAdded={() => {
+            setEditingItem(null)
+            handleItemAdded()
+          }}
         />
       )}
     </>

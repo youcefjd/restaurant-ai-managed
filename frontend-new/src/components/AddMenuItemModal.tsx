@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { restaurantAPI } from '../services/api'
@@ -12,6 +12,18 @@ interface AddMenuItemModalProps {
   keepOpenAfterAdd?: boolean
   onItemAdded?: () => void
   hideModalWrapper?: boolean
+  editingItem?: {
+    id: number
+    name: string
+    description?: string
+    price_cents: number
+    category_id: number
+    category_name?: string
+    dietary_tags?: string[]
+    is_available: boolean
+    preparation_time_minutes?: number
+    display_order?: number
+  } | null
 }
 
 const PREDEFINED_CATEGORIES = ['Appetizer', 'Main', 'Dessert', 'Drinks', 'Sides'] as const
@@ -24,9 +36,16 @@ export default function AddMenuItemModal({
   menus = [], 
   keepOpenAfterAdd = false,
   onItemAdded,
-  hideModalWrapper = false
+  hideModalWrapper = false,
+  editingItem = null
 }: AddMenuItemModalProps) {
   const queryClient = useQueryClient()
+  const isEditing = !!editingItem
+  
+  // Find the category name for the editing item
+  const editingCategoryName = editingItem?.category_name || 
+    categories.find(cat => cat.id === editingItem?.category_id)?.name || ''
+  
   const [selectedCategoryName, setSelectedCategoryName] = useState<string>('')
   const [selectedMenuId, setSelectedMenuId] = useState(menus[0]?.id || 0)
   const [formData, setFormData] = useState({
@@ -40,11 +59,51 @@ export default function AddMenuItemModal({
     display_order: 0,
   })
 
+  // Initialize form data when editing
+  useEffect(() => {
+    if (editingItem && isOpen) {
+      const categoryName = editingItem.category_name || 
+        categories.find(cat => cat.id === editingItem.category_id)?.name || ''
+      
+      setSelectedCategoryName(categoryName)
+      setFormData({
+        category_id: editingItem.category_id,
+        name: editingItem.name,
+        description: editingItem.description || '',
+        price: ((editingItem.price_cents || 0) / 100).toFixed(2),
+        dietary_tags: editingItem.dietary_tags || [],
+        is_available: editingItem.is_available ?? true,
+        preparation_time_minutes: editingItem.preparation_time_minutes?.toString() || '',
+        display_order: editingItem.display_order || 0,
+      })
+      
+      // Set menu ID from category
+      const category = categories.find(cat => cat.id === editingItem.category_id)
+      if (category?.menu_id) {
+        setSelectedMenuId(category.menu_id)
+      }
+    } else if (!editingItem && isOpen) {
+      // Reset form when opening for new item
+      setSelectedCategoryName('')
+      setSelectedMenuId(menus[0]?.id || 0)
+      setFormData({
+        category_id: 0,
+        name: '',
+        description: '',
+        price: '',
+        dietary_tags: [],
+        is_available: true,
+        preparation_time_minutes: '',
+        display_order: 0,
+      })
+    }
+  }, [editingItem, isOpen, categories, menus])
+
   const createCategoryMutation = useMutation({
     mutationFn: (data: { menu_id: number; name: string; description?: string }) =>
       restaurantAPI.createCategory(data.menu_id, { name: data.name, description: data.description }),
     onSuccess: (response) => {
-      // After creating category, create the menu item with the new category_id
+      // After creating category, create or update the menu item with the new category_id
       const newCategoryId = response.data.id
       const price_cents = Math.round(parseFloat(formData.price) * 100)
       if (isNaN(price_cents) || price_cents < 0) {
@@ -52,20 +111,37 @@ export default function AddMenuItemModal({
         return
       }
 
-      const itemData = {
-        category_id: newCategoryId,
-        name: formData.name.trim(),
-        description: formData.description.trim() || undefined,
-        price_cents,
-        dietary_tags: formData.dietary_tags.length > 0 ? formData.dietary_tags : undefined,
-        is_available: formData.is_available,
-        preparation_time_minutes: formData.preparation_time_minutes
-          ? parseInt(formData.preparation_time_minutes)
-          : undefined,
-        display_order: formData.display_order,
+      if (isEditing) {
+        // Update existing item with new category
+        const updateData: any = {
+          category_id: newCategoryId,
+          name: formData.name.trim(),
+          description: formData.description.trim() || undefined,
+          price_cents,
+          dietary_tags: formData.dietary_tags.length > 0 ? formData.dietary_tags : undefined,
+          is_available: formData.is_available,
+          preparation_time_minutes: formData.preparation_time_minutes
+            ? parseInt(formData.preparation_time_minutes)
+            : undefined,
+          display_order: formData.display_order,
+        }
+        updateMenuItemMutation.mutate(updateData)
+      } else {
+        // Create new item with new category
+        const itemData = {
+          category_id: newCategoryId,
+          name: formData.name.trim(),
+          description: formData.description.trim() || undefined,
+          price_cents,
+          dietary_tags: formData.dietary_tags.length > 0 ? formData.dietary_tags : undefined,
+          is_available: formData.is_available,
+          preparation_time_minutes: formData.preparation_time_minutes
+            ? parseInt(formData.preparation_time_minutes)
+            : undefined,
+          display_order: formData.display_order,
+        }
+        createMenuItemMutation.mutate(itemData)
       }
-
-      createMenuItemMutation.mutate(itemData)
     },
   })
 
@@ -97,6 +173,21 @@ export default function AddMenuItemModal({
       if (!keepOpenAfterAdd) {
         onClose()
       }
+    },
+  })
+
+  const updateMenuItemMutation = useMutation({
+    mutationFn: (data: any) => restaurantAPI.updateMenuItem(editingItem!.id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['menu', accountId] })
+      
+      // Call callback if provided
+      if (onItemAdded) {
+        onItemAdded()
+      }
+      
+      // Close modal after update
+      onClose()
     },
   })
 
@@ -133,6 +224,42 @@ export default function AddMenuItemModal({
              (cat.menu_id === selectedMenuId || !cat.menu_id)
     )
 
+    if (isEditing) {
+      // Update existing item
+      const data: any = {
+        name: formData.name.trim(),
+        description: formData.description.trim() || undefined,
+        price_cents,
+        dietary_tags: formData.dietary_tags.length > 0 ? formData.dietary_tags : undefined,
+        is_available: formData.is_available,
+        preparation_time_minutes: formData.preparation_time_minutes
+          ? parseInt(formData.preparation_time_minutes)
+          : undefined,
+        display_order: formData.display_order,
+      }
+      
+      // Only update category if it changed
+      const existingCategory = categories.find(
+        cat => cat.name.toLowerCase() === selectedCategoryName.toLowerCase() && 
+               (cat.menu_id === selectedMenuId || !cat.menu_id)
+      )
+      
+      if (existingCategory && existingCategory.id !== editingItem?.category_id) {
+        data.category_id = existingCategory.id
+      } else if (!existingCategory && selectedCategoryName !== editingCategoryName) {
+        // New category selected - need to create it first
+        createCategoryMutation.mutate({
+          menu_id: selectedMenuId,
+          name: selectedCategoryName,
+        })
+        return
+      }
+      
+      updateMenuItemMutation.mutate(data)
+      return
+    }
+
+    // Create new item
     if (existingCategory) {
       categoryId = existingCategory.id
       // Create item with existing category
@@ -173,7 +300,7 @@ export default function AddMenuItemModal({
     <>
       {!hideModalWrapper && (
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-bold">Add Menu Item</h2>
+          <h2 className="text-2xl font-bold">{isEditing ? 'Edit Menu Item' : 'Add Menu Item'}</h2>
           <button
             onClick={onClose}
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
@@ -323,12 +450,12 @@ export default function AddMenuItemModal({
           <div className="flex gap-3 pt-4">
             <button
               type="submit"
-              disabled={createMenuItemMutation.isPending || createCategoryMutation.isPending}
+              disabled={createMenuItemMutation.isPending || createCategoryMutation.isPending || updateMenuItemMutation.isPending}
               className={`btn btn-primary ${hideModalWrapper ? 'w-full' : 'flex-1'}`}
             >
-              {createMenuItemMutation.isPending || createCategoryMutation.isPending
-                ? 'Adding...'
-                : 'Add Menu Item'}
+              {createMenuItemMutation.isPending || createCategoryMutation.isPending || updateMenuItemMutation.isPending
+                ? (isEditing ? 'Updating...' : 'Adding...')
+                : (isEditing ? 'Update Menu Item' : 'Add Menu Item')}
             </button>
             {!hideModalWrapper && (
               <button

@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import text
 import uvicorn
 from dotenv import load_dotenv
 import os
@@ -57,6 +58,56 @@ async def lifespan(app: FastAPI):
     except SQLAlchemyError as e:
         logger.error(f"Failed to create database tables: {str(e)}")
         raise
+    
+    # Run service health checks (after services are initialized)
+    from backend.core.service_health import service_health_checker
+    
+    try:
+        # Check critical services
+        critical_results = await service_health_checker.check_all_critical()
+        
+        # Check optional services
+        optional_results = await service_health_checker.check_all_optional()
+        
+        # Combine results
+        all_results = {**critical_results, **optional_results}
+        
+        # Log results
+        logger.info("Service health check results:")
+        formatted_results = service_health_checker.format_results(all_results)
+        logger.info(formatted_results)
+        
+        # Get summary
+        summary = service_health_checker.get_summary(all_results)
+        
+        # Log summary
+        logger.info("Service Health Summary:")
+        logger.info(f"  Critical: {summary['critical_healthy']}/{summary['critical_total']} healthy")
+        logger.info(f"  Optional: {summary['optional_healthy']}/{summary['optional_total']} healthy")
+        
+        # Check if any critical services failed
+        failed_critical = []
+        for service_name, result in critical_results.items():
+            if result.get("status") == "failed":
+                failed_critical.append(result.get("service", service_name))
+        
+        if failed_critical:
+            error_msg = (
+                f"ERROR: Critical services failed health check. Server cannot start.\n"
+                f"Failed services: {', '.join(failed_critical)}"
+            )
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
+        
+        logger.info("All critical services healthy. Server ready to accept requests.")
+        
+    except RuntimeError:
+        # Re-raise RuntimeError (critical service failures)
+        raise
+    except Exception as e:
+        # Log other errors but don't fail startup
+        logger.warning(f"Service health check encountered an error: {str(e)}")
+        logger.warning("Continuing startup despite health check error...")
     
     yield
     
@@ -299,7 +350,7 @@ async def health_check() -> Dict[str, Any]:
         # Test database connection
         from backend.database import SessionLocal
         db = SessionLocal()
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         db.close()
         db_status = "healthy"
     except Exception as e:

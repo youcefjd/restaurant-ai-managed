@@ -23,9 +23,12 @@ class VoiceService:
         if not self.enabled:
             logger.warning("Voice service disabled - Twilio credentials not configured")
 
-    def create_welcome_response(self) -> VoiceResponse:
+    def create_welcome_response(self, base_url: str = "") -> VoiceResponse:
         """
         Create initial welcome message when call is received.
+
+        Args:
+            base_url: Base URL for webhooks (e.g., ngrok URL)
 
         Returns:
             VoiceResponse with welcome message and speech gathering
@@ -34,7 +37,7 @@ class VoiceService:
 
         gather = Gather(
             input='speech',
-            action='/api/voice/process',
+            action=f'{base_url}/api/voice/process',
             method='POST',
             timeout=3,
             speech_timeout='auto',
@@ -54,30 +57,32 @@ class VoiceService:
         response.append(gather)
 
         # If no input, redirect
-        response.redirect('/api/voice/welcome')
+        response.redirect(f'{base_url}/api/voice/welcome')
 
         return response
 
-    def create_error_response(self, message: str = "I'm sorry, I didn't understand that.") -> VoiceResponse:
+    def create_error_response(self, message: str = "I'm sorry, I didn't understand that.", base_url: str = "") -> VoiceResponse:
         """
         Create error response.
 
         Args:
             message: Error message to speak
+            base_url: Base URL for webhooks
 
         Returns:
             VoiceResponse with error message
         """
         response = VoiceResponse()
         response.say(message, voice='alice', language='en-US')
-        response.redirect('/api/voice/welcome')
+        response.redirect(f'{base_url}/api/voice/welcome')
         return response
 
     def create_gather_response(
         self,
         prompt: str,
         action: str = '/api/voice/process',
-        timeout: int = 3
+        timeout: int = 3,
+        base_url: str = ""
     ) -> VoiceResponse:
         """
         Create response that gathers speech input.
@@ -86,15 +91,19 @@ class VoiceService:
             prompt: What to say to the user
             action: Webhook URL to send speech result
             timeout: Timeout in seconds
+            base_url: Base URL for webhooks
 
         Returns:
             VoiceResponse with gather
         """
         response = VoiceResponse()
 
+        # Prepend base_url if action is a relative path
+        full_action = f'{base_url}{action}' if action.startswith('/') else action
+
         gather = Gather(
             input='speech',
-            action=action,
+            action=full_action,
             method='POST',
             timeout=timeout,
             speech_timeout='auto',
@@ -103,7 +112,7 @@ class VoiceService:
 
         gather.say(prompt, voice='alice', language='en-US')
         response.append(gather)
-        response.redirect('/api/voice/welcome')
+        response.redirect(f'{base_url}/api/voice/welcome')
 
         return response
 
@@ -114,7 +123,8 @@ class VoiceService:
         booking_time: time,
         party_size: int,
         customer_name: str,
-        confirmation_id: int
+        confirmation_id: int,
+        base_url: str = ""
     ) -> VoiceResponse:
         """
         Create booking confirmation response.
@@ -126,6 +136,7 @@ class VoiceService:
             party_size: Number of guests
             customer_name: Customer name
             confirmation_id: Booking confirmation ID
+            base_url: Base URL for webhooks
 
         Returns:
             VoiceResponse with confirmation message
@@ -149,7 +160,7 @@ class VoiceService:
         # Give them option to do more or hang up
         gather = Gather(
             input='speech',
-            action='/api/voice/process',
+            action=f'{base_url}/api/voice/process',
             method='POST',
             timeout=3,
             speech_timeout='auto',
@@ -168,7 +179,8 @@ class VoiceService:
         self,
         available_times: list,
         requested_date: date,
-        party_size: int
+        party_size: int,
+        base_url: str = ""
     ) -> VoiceResponse:
         """
         Create availability check response.
@@ -177,6 +189,7 @@ class VoiceService:
             available_times: List of available time slots
             requested_date: Requested date
             party_size: Number of guests
+            base_url: Base URL for webhooks
 
         Returns:
             VoiceResponse with availability information
@@ -203,7 +216,7 @@ class VoiceService:
 
         gather = Gather(
             input='speech',
-            action='/api/voice/process',
+            action=f'{base_url}/api/voice/process',
             method='POST',
             timeout=3,
             speech_timeout='auto',
@@ -212,7 +225,7 @@ class VoiceService:
         gather.say("Please tell me your choice.", voice='alice', language='en-US')
         response.append(gather)
 
-        response.redirect('/api/voice/welcome')
+        response.redirect(f'{base_url}/api/voice/welcome')
 
         return response
 

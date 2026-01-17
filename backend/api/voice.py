@@ -5,6 +5,7 @@ Handles incoming calls, processes speech-to-text, and manages
 the conversation flow for making reservations.
 """
 
+import os
 import logging
 from typing import Dict, Any, Optional
 from datetime import datetime, date, time, timedelta
@@ -21,18 +22,36 @@ from backend.services.conversation_handler import conversation_handler
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+# Base URL for webhooks (set via env var for ngrok/production)
+BASE_URL = os.getenv("BASE_URL", "")
+
 # Store conversation state (in production, use Redis or similar)
 conversation_state: Dict[str, Dict[str, Any]] = {}
 
 
 @router.post("/welcome")
-async def voice_welcome():
+async def voice_welcome(
+    request: Request,
+    From: Optional[str] = Form(None),
+    To: Optional[str] = Form(None),
+    CallSid: Optional[str] = Form(None)
+):
     """
     Initial webhook when call is received.
     Returns TwiML with welcome message.
     """
-    logger.info("Voice call received - sending welcome message")
-    response = voice_service.create_welcome_response()
+    logger.info(f"Voice call received - From: {From}, To: {To}, CallSid: {CallSid}")
+
+    # Store Twilio number in conversation state for multi-tenancy
+    if CallSid:
+        conversation_state[CallSid] = {
+            "phone": From,
+            "twilio_number": To,  # The restaurant's Twilio number
+            "context": {},
+            "step": "initial"
+        }
+
+    response = voice_service.create_welcome_response(base_url=BASE_URL)
     return Response(content=str(response), media_type="application/xml")
 
 
@@ -42,6 +61,7 @@ async def process_speech(
     SpeechResult: Optional[str] = Form(None),
     CallSid: Optional[str] = Form(None),
     From: Optional[str] = Form(None),
+    To: Optional[str] = Form(None),
     db: Session = Depends(get_db)
 ):
     """
@@ -51,6 +71,7 @@ async def process_speech(
         SpeechResult: Transcribed speech from Twilio
         CallSid: Unique call identifier
         From: Caller's phone number
+        To: Twilio phone number (restaurant's number)
         db: Database session
 
     Returns:
@@ -61,7 +82,8 @@ async def process_speech(
     # Handle missing speech
     if not SpeechResult:
         response = voice_service.create_error_response(
-            "I didn't catch that. Could you please repeat?"
+            "I didn't catch that. Could you please repeat?",
+            base_url=BASE_URL
         )
         return Response(content=str(response), media_type="application/xml")
 
@@ -69,11 +91,14 @@ async def process_speech(
     if CallSid not in conversation_state:
         conversation_state[CallSid] = {
             "phone": From,
+            "twilio_number": To,
             "context": {},
             "step": "initial"
         }
 
     state = conversation_state[CallSid]
+    # Get Twilio number from state (may have been set in welcome) or use current To
+    twilio_number = state.get("twilio_number") or To
 
     try:
         # Process the speech with AI conversation handler
@@ -81,7 +106,8 @@ async def process_speech(
             message=SpeechResult,
             phone=From,
             context=state["context"],
-            db=db
+            db=db,
+            twilio_number=twilio_number
         )
 
         # Update state
@@ -100,7 +126,8 @@ async def process_speech(
                 booking_time=booking_data["booking_time"],
                 party_size=booking_data["party_size"],
                 customer_name=booking_data["customer_name"],
-                confirmation_id=booking_data["confirmation_id"]
+                confirmation_id=booking_data["confirmation_id"],
+                base_url=BASE_URL
             )
 
         elif response_type == "availability":
@@ -108,13 +135,15 @@ async def process_speech(
             response = voice_service.create_availability_response(
                 available_times=result.get("available_times", []),
                 requested_date=result.get("requested_date"),
-                party_size=result.get("party_size")
+                party_size=result.get("party_size"),
+                base_url=BASE_URL
             )
 
         elif response_type == "gather":
             # Need more information from customer
             response = voice_service.create_gather_response(
-                prompt=result.get("message", "How can I help you?")
+                prompt=result.get("message", "How can I help you?"),
+                base_url=BASE_URL
             )
 
         elif response_type == "goodbye":
@@ -127,14 +156,15 @@ async def process_speech(
         else:
             # Default: gather more input
             message = result.get("message", "I'm not sure I understand. Could you rephrase that?")
-            response = voice_service.create_gather_response(prompt=message)
+            response = voice_service.create_gather_response(prompt=message, base_url=BASE_URL)
 
         return Response(content=str(response), media_type="application/xml")
 
     except Exception as e:
         logger.error(f"Error processing speech: {str(e)}", exc_info=True)
         response = voice_service.create_error_response(
-            "I'm sorry, I encountered an error. Let me transfer you to our main menu."
+            "I'm sorry, I encountered an error. Let me transfer you to our main menu.",
+            base_url=BASE_URL
         )
         return Response(content=str(response), media_type="application/xml")
 

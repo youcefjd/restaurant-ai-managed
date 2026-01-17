@@ -11,9 +11,10 @@ import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime, date, time, timedelta
 from sqlalchemy.orm import Session
-import requests
+import httpx
 
 from backend.models import Restaurant, Table, Customer, Booking, BookingStatus
+from backend.models_platform import RestaurantAccount, Menu, MenuCategory, MenuItem, MenuModifier
 
 logger = logging.getLogger(__name__)
 
@@ -26,25 +27,140 @@ class ConversationHandler:
         self.ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434")
         self.ollama_model = os.getenv("OLLAMA_MODEL", "llama2")
         self.enabled = True  # Always enabled if Ollama is running
+        self._http_client = None
 
-        # Test Ollama connection
+        # Test Ollama connection (sync for init)
         try:
-            response = requests.get(f"{self.ollama_url}/api/tags", timeout=2)
-            if response.status_code == 200:
-                logger.info(f"Ollama connection successful, using model: {self.ollama_model}")
-            else:
-                logger.warning("Ollama server not responding, AI features may be limited")
-                self.enabled = False
+            with httpx.Client(timeout=2.0) as client:
+                response = client.get(f"{self.ollama_url}/api/tags")
+                if response.status_code == 200:
+                    logger.info(f"Ollama connection successful, using model: {self.ollama_model}")
+                else:
+                    logger.warning("Ollama server not responding, AI features may be limited")
+                    self.enabled = False
         except Exception as e:
             logger.warning(f"Could not connect to Ollama at {self.ollama_url}: {str(e)}")
             self.enabled = False
+
+    def _get_menu_data_from_db(self, account: RestaurantAccount, db: Session) -> Optional[Dict]:
+        """
+        Fetch menu data directly from database instead of HTTP call.
+
+        Args:
+            account: Restaurant account
+            db: Database session
+
+        Returns:
+            Menu data dictionary or None
+        """
+        try:
+            menus = db.query(Menu).filter(
+                Menu.account_id == account.id,
+                Menu.is_active == True
+            ).all()
+
+            if not menus:
+                return None
+
+            menu_data = {
+                "business_name": account.business_name,
+                "menus": []
+            }
+
+            for menu in menus:
+                menu_dict = {
+                    "name": menu.name,
+                    "description": menu.description,
+                    "categories": []
+                }
+
+                categories = db.query(MenuCategory).filter(
+                    MenuCategory.menu_id == menu.id
+                ).order_by(MenuCategory.display_order).all()
+
+                for category in categories:
+                    cat_dict = {
+                        "name": category.name,
+                        "items": []
+                    }
+
+                    items = db.query(MenuItem).filter(
+                        MenuItem.category_id == category.id,
+                        MenuItem.is_available == True
+                    ).order_by(MenuItem.display_order).all()
+
+                    for item in items:
+                        item_dict = {
+                            "name": item.name,
+                            "description": item.description,
+                            "price_cents": item.price_cents,
+                            "dietary_tags": item.dietary_tags or [],
+                            "modifiers": []
+                        }
+
+                        modifiers = db.query(MenuModifier).filter(
+                            MenuModifier.item_id == item.id
+                        ).all()
+
+                        for mod in modifiers:
+                            item_dict["modifiers"].append({
+                                "name": mod.name,
+                                "price_adjustment_cents": mod.price_adjustment_cents
+                            })
+
+                        cat_dict["items"].append(item_dict)
+
+                    menu_dict["categories"].append(cat_dict)
+
+                menu_data["menus"].append(menu_dict)
+
+            return menu_data
+
+        except Exception as e:
+            logger.error(f"Error fetching menu from database: {str(e)}")
+            return None
+
+    def get_account_by_twilio_number(self, twilio_number: str, db: Session) -> Optional[RestaurantAccount]:
+        """
+        Look up restaurant account by Twilio phone number.
+
+        Args:
+            twilio_number: The Twilio phone number (To field from call)
+            db: Database session
+
+        Returns:
+            RestaurantAccount or None
+        """
+        if not twilio_number:
+            return None
+
+        # Normalize phone number (remove spaces, ensure +1 prefix)
+        normalized = twilio_number.strip().replace(" ", "").replace("-", "")
+        if not normalized.startswith("+"):
+            normalized = "+" + normalized
+
+        account = db.query(RestaurantAccount).filter(
+            RestaurantAccount.twilio_phone_number == normalized,
+            RestaurantAccount.is_active == True
+        ).first()
+
+        if not account:
+            # Try without country code
+            if normalized.startswith("+1"):
+                account = db.query(RestaurantAccount).filter(
+                    RestaurantAccount.twilio_phone_number == normalized[2:],
+                    RestaurantAccount.is_active == True
+                ).first()
+
+        return account
 
     async def process_message(
         self,
         message: str,
         phone: str,
         context: Dict[str, Any],
-        db: Session
+        db: Session,
+        twilio_number: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Process customer message and determine response.
@@ -54,6 +170,7 @@ class ConversationHandler:
             phone: Customer's phone number
             context: Conversation context (previous exchanges, gathered data)
             db: Database session
+            twilio_number: The Twilio number that received the call (for multi-tenancy)
 
         Returns:
             Response dict with type, message, and next steps
@@ -68,42 +185,42 @@ class ConversationHandler:
             # Get or create customer
             customer = db.query(Customer).filter(Customer.phone == phone).first()
 
-            # Get menu data for menu-aware responses
-            # TODO: Associate phone number with restaurant account
-            # For now, get the first restaurant account's menu
-            from backend.models_platform import RestaurantAccount
-            account = db.query(RestaurantAccount).first()
+            # Look up restaurant account by Twilio phone number (multi-tenancy)
+            account = None
+            if twilio_number:
+                account = self.get_account_by_twilio_number(twilio_number, db)
+
+            # Fallback to first account if no Twilio number match (backward compatibility)
+            if not account:
+                account = db.query(RestaurantAccount).filter(
+                    RestaurantAccount.is_active == True
+                ).first()
+
+            # Get menu data directly from database (no HTTP call)
             menu_data = None
             if account:
-                # Fetch full menu structure
-                import requests
-                try:
-                    response = requests.get(f"http://localhost:8000/api/onboarding/accounts/{account.id}/menu-full")
-                    if response.status_code == 200:
-                        menu_data = response.json()
-                except:
-                    pass
+                menu_data = self._get_menu_data_from_db(account, db)
 
             # Build prompt for Ollama
             system_prompt = self._build_system_prompt(context, customer, menu_data)
             user_message = self._build_user_message(message, context)
 
-            # Call Ollama API
+            # Call Ollama API using async httpx
             full_prompt = f"{system_prompt}\n\n{user_message}"
 
-            response = requests.post(
-                f"{self.ollama_url}/api/generate",
-                json={
-                    "model": self.ollama_model,
-                    "prompt": full_prompt,
-                    "stream": False,
-                    "options": {
-                        "temperature": 0.7,
-                        "top_p": 0.9
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    f"{self.ollama_url}/api/generate",
+                    json={
+                        "model": self.ollama_model,
+                        "prompt": full_prompt,
+                        "stream": False,
+                        "options": {
+                            "temperature": 0.7,
+                            "top_p": 0.9
+                        }
                     }
-                },
-                timeout=30
-            )
+                )
 
             if response.status_code != 200:
                 raise Exception(f"Ollama API error: {response.status_code}")
@@ -500,157 +617,139 @@ Be conversational, helpful, and accurate about menu items and pricing."""
 
         return available_times[:5]  # Return first 5 available slots
 
+    async def _handle_order(
+        self,
+        result: Dict,
+        phone: str,
+        db: Session,
+        context: Dict,
+        account: 'RestaurantAccount'
+    ) -> Dict[str, Any]:
+        """Handle takeout order placement."""
+        import json as json_lib
+        from backend.models import Order, OrderStatus
 
-# Global conversation handler instance
-async def _handle_order(
-    self,
-    result: Dict,
-    phone: str,
-    db: Session,
-    context: Dict,
-    account: 'RestaurantAccount'
-) -> Dict[str, Any]:
-    """Handle takeout order placement."""
-    import json as json_lib
-    from backend.models import Order, OrderStatus
+        # Get or create customer
+        from backend.models import Customer
+        customer = db.query(Customer).filter(Customer.phone == phone).first()
+        if not customer:
+            customer_name = result.get("customer_name", "Guest")
+            customer = Customer(phone=phone, name=customer_name)
+            db.add(customer)
+            db.flush()
 
-    # Get or create customer
-    from backend.models import Customer
-    customer = db.query(Customer).filter(Customer.phone == phone).first()
-    if not customer:
-        customer_name = result.get("customer_name", "Guest")
-        customer = Customer(phone=phone, name=customer_name)
-        db.add(customer)
-        db.flush()
+        # Get first restaurant location for this account
+        from backend.models import Restaurant
+        restaurant = db.query(Restaurant).filter(Restaurant.account_id == account.id).first()
+        if not restaurant:
+            return {
+                "type": "error",
+                "message": "Sorry, we're not taking orders at this time."
+            }
 
-    # Get first restaurant location for this account
-    from backend.models import Restaurant
-    restaurant = db.query(Restaurant).filter(Restaurant.account_id == account.id).first()
-    if not restaurant:
-        return {
-            "type": "error",
-            "message": "Sorry, we're not taking orders at this time."
-        }
+        # Parse order items
+        order_items = result.get("order_items", [])
+        if not order_items:
+            return {
+                "type": "gather",
+                "message": "What would you like to order?",
+                "context": context
+            }
 
-    # Parse order items
-    order_items = result.get("order_items", [])
-    if not order_items:
-        return {
-            "type": "gather",
-            "message": "What would you like to order?",
-            "context": context
-        }
+        # Calculate totals
+        subtotal = sum(item.get("price_cents", 0) * item.get("quantity", 1) for item in order_items)
+        tax = int(subtotal * 0.08)  # 8% tax
+        delivery_fee = 500  # $5 delivery fee
+        total = subtotal + tax + delivery_fee
 
-    # Calculate totals
-    subtotal = sum(item.get("price_cents", 0) * item.get("quantity", 1) for item in order_items)
-    tax = int(subtotal * 0.08)  # 8% tax
-    delivery_fee = 500  # $5 delivery fee
-    total = subtotal + tax + delivery_fee
+        # Check if payment method is specified
+        payment_method = context.get("payment_method")
 
-    # Check if payment method is specified
-    payment_method = context.get("payment_method")
+        if not payment_method:
+            # Ask how customer wants to pay
+            items_text = "\n".join([
+                f"- {item.get('quantity', 1)}x {item.get('item_name')}"
+                + (f" ({', '.join(item.get('modifiers', []))})" if item.get('modifiers') else "")
+                for item in order_items
+            ])
 
-    if not payment_method:
-        # Ask how customer wants to pay
-        items_text = "\\n".join([
-            f"- {item.get('quantity', 1)}x {item.get('item_name')}"
-            + (f" ({', '.join(item.get('modifiers', []))})" if item.get('modifiers') else "")
-            for item in order_items
-        ])
-
-        return {
-            "type": "gather",
-            "message": f"""Perfect! Your order:
-
-{items_text}
-
-Total: ${total / 100:.2f}
-
-Would you like to pay now by card or pay when you pick up?""",
-            "context": {
-                **context,
-                "pending_order": {
-                    "items": order_items,
-                    "subtotal": subtotal,
-                    "tax": tax,
-                    "delivery_fee": delivery_fee,
-                    "total": total
+            return {
+                "type": "gather",
+                "message": f"Perfect! Your order:\n\n{items_text}\n\nTotal: ${total / 100:.2f}\n\nWould you like to pay now by card or pay when you pick up?",
+                "context": {
+                    **context,
+                    "pending_order": {
+                        "items": order_items,
+                        "subtotal": subtotal,
+                        "tax": tax,
+                        "delivery_fee": delivery_fee,
+                        "total": total
+                    }
                 }
             }
+
+        # Create order with payment info
+        order = Order(
+            restaurant_id=restaurant.id,
+            customer_id=customer.id,
+            customer_name=customer.name,
+            customer_phone=phone,
+            order_date=datetime.now(),
+            delivery_address=context.get("delivery_address", "Pickup"),
+            order_items=json_lib.dumps(order_items),
+            subtotal=subtotal,
+            tax=tax,
+            delivery_fee=delivery_fee if context.get("delivery_address") else 0,
+            total=total,
+            status=OrderStatus.PENDING.value,
+            payment_method=payment_method,
+            payment_status="paid" if payment_method == "card" else "unpaid",
+            special_requests=result.get("special_requests")
+        )
+        db.add(order)
+        db.commit()
+        db.refresh(order)
+
+        # Send SMS confirmation
+        try:
+            from backend.services.sms_service import sms_service
+            items_text = ", ".join([
+                f"{item.get('quantity', 1)}x {item.get('item_name')}"
+                for item in order_items
+            ])
+            confirmation_msg = f"Your order #{order.id} is confirmed!\n\n{items_text}\n\nTotal: ${total / 100:.2f}\nPayment: {payment_method}\n\nWe'll have it ready in 15-20 minutes. Thank you!"
+            sms_service.send_sms(phone, confirmation_msg)
+        except Exception as e:
+            logger.error(f"Failed to send order confirmation SMS: {str(e)}")
+
+        # Print to kitchen
+        try:
+            from backend.services.kitchen_printer import kitchen_printer
+            order_dict = {
+                "id": order.id,
+                "customer_name": customer.name,
+                "customer_phone": phone,
+                "order_items": json_lib.dumps(order_items),
+                "total": total,
+                "payment_method": payment_method,
+                "payment_status": order.payment_status,
+                "delivery_address": order.delivery_address,
+                "special_requests": result.get("special_requests")
+            }
+            kitchen_printer.print_order(order_dict)
+            logger.info(f"Order #{order.id} printed to kitchen")
+        except Exception as e:
+            logger.error(f"Failed to print order to kitchen: {str(e)}")
+
+        # Build confirmation message
+        pay_msg = "Payment will be processed when you pick up." if payment_method == "pay_on_arrival" else "Payment confirmed."
+        message = f"Great! Your order #{order.id} is confirmed. We'll have it ready in about 15-20 minutes.\n\n{pay_msg}\n\nIs there anything else I can help you with?"
+
+        return {
+            "type": "gather",
+            "message": message,
+            "context": {"order_id": order.id}
         }
-
-    # Create order with payment info
-    order = Order(
-        restaurant_id=restaurant.id,
-        customer_id=customer.id,
-        customer_name=customer.name,
-        customer_phone=phone,
-        order_date=datetime.now(),
-        delivery_address=context.get("delivery_address", "Pickup"),
-        order_items=json_lib.dumps(order_items),
-        subtotal=subtotal,
-        tax=tax,
-        delivery_fee=delivery_fee if context.get("delivery_address") else 0,
-        total=total,
-        status=OrderStatus.PENDING.value,
-        payment_method=payment_method,
-        payment_status="paid" if payment_method == "card" else "unpaid",
-        special_requests=result.get("special_requests")
-    )
-    db.add(order)
-    db.commit()
-    db.refresh(order)
-
-    # Send SMS confirmation
-    try:
-        from backend.services.sms_service import sms_service
-        items_text = ", ".join([
-            f"{item.get('quantity', 1)}x {item.get('item_name')}"
-            for item in order_items
-        ])
-        confirmation_msg = f"""Your order #{order.id} is confirmed!
-
-{items_text}
-
-Total: ${total / 100:.2f}
-Payment: {payment_method}
-
-We'll have it ready in 15-20 minutes. Thank you!"""
-        sms_service.send_sms(phone, confirmation_msg)
-    except Exception as e:
-        logger.error(f"Failed to send order confirmation SMS: {str(e)}")
-
-    # Print to kitchen
-    try:
-        from backend.services.kitchen_printer import kitchen_printer
-        order_dict = {
-            "id": order.id,
-            "customer_name": customer.name,
-            "customer_phone": phone,
-            "order_items": json_lib.dumps(order_items),
-            "total": total,
-            "payment_method": payment_method,
-            "payment_status": order.payment_status,
-            "delivery_address": order.delivery_address,
-            "special_requests": result.get("special_requests")
-        }
-        kitchen_printer.print_order(order_dict)
-        logger.info(f"Order #{order.id} printed to kitchen")
-    except Exception as e:
-        logger.error(f"Failed to print order to kitchen: {str(e)}")
-
-    # Build confirmation message
-    message = f"""Great! Your order #{order.id} is confirmed. We'll have it ready in about 15-20 minutes.
-
-{"Payment will be processed when you pick up." if payment_method == "pay_on_arrival" else "Payment confirmed."}
-
-Is there anything else I can help you with?"""
-
-    return {
-        "type": "gather",
-        "message": message,
-        "context": {"order_id": order.id}
-    }
 
 
 # Global conversation handler instance

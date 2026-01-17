@@ -40,6 +40,25 @@ class MediaStreamService:
     def __init__(self):
         """Initialize Media Streams service."""
         self.logger = logger
+        self.ffmpeg_available = self._check_ffmpeg()
+        if not self.ffmpeg_available:
+            logger.warning(
+                "ffmpeg not found - TTS audio conversion will fail. "
+                "Install ffmpeg: brew install ffmpeg (macOS) or apt-get install ffmpeg (Linux)"
+            )
+        else:
+            logger.info("ffmpeg is available for audio conversion")
+
+    def _check_ffmpeg(self) -> bool:
+        """Check if ffmpeg/ffprobe is available on the system."""
+        import shutil
+        ffprobe = shutil.which("ffprobe")
+        ffmpeg = shutil.which("ffmpeg")
+        return bool(ffprobe or ffmpeg)
+
+    def is_ffmpeg_available(self) -> bool:
+        """Return whether ffmpeg is available for audio conversion."""
+        return self.ffmpeg_available
 
     def parse_message(self, message: str) -> Optional[Dict[str, Any]]:
         """
@@ -79,6 +98,9 @@ class MediaStreamService:
         """
         Extract audio payload from Media Streams media message.
 
+        Twilio Media Streams sends audio in the format:
+        {"event": "media", "media": {"payload": "base64..."}, ...}
+
         Args:
             message: Parsed media message dictionary
 
@@ -86,10 +108,18 @@ class MediaStreamService:
             Audio bytes (mulaw or linear16), or None if invalid
         """
         try:
-            media_payload = message.get("data", {}).get("payload", "")
+            data = message.get("data", {})
+            # Twilio sends audio in data.media.payload (not data.payload)
+            media_obj = data.get("media", {})
+            media_payload = media_obj.get("payload", "")
+
+            # Fallback: check if payload is directly in data (legacy format)
+            if not media_payload:
+                media_payload = data.get("payload", "")
+
             if not media_payload:
                 return None
-            
+
             # Decode base64 audio payload
             audio_bytes = base64.b64decode(media_payload)
             return audio_bytes
@@ -279,7 +309,7 @@ class MediaStreamService:
     def mp3_to_mulaw(self, mp3_bytes: bytes, sample_rate: int = 8000) -> bytes:
         """
         Convert MP3 audio to mulaw format for Twilio Media Streams.
-        
+
         Twilio expects 8kHz mono mulaw PCM audio.
 
         Args:
@@ -292,20 +322,15 @@ class MediaStreamService:
         if not PYDUB_AVAILABLE:
             logger.error("pydub not available - cannot convert MP3 to mulaw")
             raise ImportError("pydub is required for MP3 to mulaw conversion. Install with: pip install pydub")
-        
+
         if not mp3_bytes:
             return b''
-        
-        # Check if ffprobe/ffmpeg is available
-        import shutil
-        ffprobe_path = shutil.which("ffprobe") or shutil.which("ffmpeg")
-        if not ffprobe_path:
+
+        # Use cached ffmpeg check instead of checking every time
+        if not self.ffmpeg_available:
             error_msg = (
                 "ffprobe/ffmpeg not found. pydub requires ffmpeg to convert MP3 audio. "
-                "Please install ffmpeg:\n"
-                "  macOS: brew install ffmpeg\n"
-                "  Linux: sudo apt-get install ffmpeg (or use your package manager)\n"
-                "  Windows: Download from https://ffmpeg.org/download.html"
+                "Please install ffmpeg: brew install ffmpeg (macOS) or apt-get install ffmpeg (Linux)"
             )
             logger.error(error_msg)
             raise FileNotFoundError(error_msg)

@@ -19,18 +19,9 @@ except ImportError:
     AsyncOpenAI = None
 
 try:
-    # #region agent log
-    import json; _log_f = open('/Users/simon/Documents/code/.cursor/debug.log', 'a'); _log_f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'migration-v2', 'hypothesisId': 'A', 'location': 'llm_service.py:21', 'message': 'Before google.genai import', 'data': {}, 'timestamp': __import__('time').time() * 1000}) + '\n'); _log_f.close()
-    # #endregion
     from google import genai
-    # #region agent log
-    _log_f = open('/Users/simon/Documents/code/.cursor/debug.log', 'a'); _log_f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'migration-v2', 'hypothesisId': 'A', 'location': 'llm_service.py:25', 'message': 'Import success, checking Client class', 'data': {'has_client': hasattr(genai, 'Client'), 'has_configure': hasattr(genai, 'configure'), 'has_generative_model': hasattr(genai, 'GenerativeModel')}, 'timestamp': __import__('time').time() * 1000}) + '\n'); _log_f.close()
-    # #endregion
     GEMINI_AVAILABLE = True
 except ImportError as e:
-    # #region agent log
-    _log_f = open('/Users/simon/Documents/code/.cursor/debug.log', 'a'); _log_f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'migration-v2', 'hypothesisId': 'A', 'location': 'llm_service.py:30', 'message': 'Import failed', 'data': {'error': str(e)}, 'timestamp': __import__('time').time() * 1000}) + '\n'); _log_f.close()
-    # #endregion
     GEMINI_AVAILABLE = False
     genai = None
 
@@ -60,27 +51,11 @@ class LLMService:
         # Try to initialize Gemini (primary/default)
         if GEMINI_AVAILABLE and self.gemini_api_key:
             try:
-                # Log API key info (first 10 chars + last 4 for debugging without exposing full key)
-                api_key_preview = f"{self.gemini_api_key[:10]}...{self.gemini_api_key[-4:]}" if len(self.gemini_api_key) > 14 else "***"
-                logger.info(f"Initializing Gemini client with API key: {api_key_preview}, requested model: {self.gemini_model}")
-                
-                # #region agent log
-                _log_f = open('/Users/simon/Documents/code/.cursor/debug.log', 'a'); _log_f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'migration-v2', 'hypothesisId': 'B', 'location': 'llm_service.py:52', 'message': 'Before Client initialization', 'data': {'model': self.gemini_model}, 'timestamp': __import__('time').time() * 1000}) + '\n'); _log_f.close()
-                # #endregion
+                logger.info(f"Initializing Gemini client with model: {self.gemini_model}")
                 self.gemini_client = genai.Client(api_key=self.gemini_api_key)
-                # #region agent log
-                _log_f = open('/Users/simon/Documents/code/.cursor/debug.log', 'a'); _log_f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'migration-v2', 'hypothesisId': 'B', 'location': 'llm_service.py:56', 'message': 'After Client init', 'data': {'client_type': type(self.gemini_client).__name__, 'has_models': hasattr(self.gemini_client, 'models')}, 'timestamp': __import__('time').time() * 1000}) + '\n'); _log_f.close()
-                # #endregion
-                
-                # Auto-select best available model if not explicitly set or if default might not exist
-                # This happens asynchronously after initialization, so we'll defer model selection
-                # For now, mark as enabled and we'll validate/update the model when needed
                 self.gemini_enabled = True
-                logger.info(f"Gemini LLM service initialized with model: {self.gemini_model} (will auto-validate on first use)")
+                logger.info(f"Gemini LLM service initialized with model: {self.gemini_model}")
             except Exception as e:
-                # #region agent log
-                _log_f = open('/Users/simon/Documents/code/.cursor/debug.log', 'a'); _log_f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'migration-v2', 'hypothesisId': 'B', 'location': 'llm_service.py:62', 'message': 'Client init exception', 'data': {'error': str(e), 'error_type': type(e).__name__}, 'timestamp': __import__('time').time() * 1000}) + '\n'); _log_f.close()
-                # #endregion
                 logger.warning(f"Failed to initialize Gemini client: {str(e)}")
                 self.gemini_enabled = False
 
@@ -273,10 +248,6 @@ class LLMService:
                     full_prompt += f"{role}: {msg.get('content', '')}\n\n"
             
             full_prompt += f"User: {user_message}\nAssistant:"
-
-            # #region agent log
-            _log_f = open('/Users/simon/Documents/code/.cursor/debug.log', 'a'); _log_f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'migration-v2', 'hypothesisId': 'C', 'location': 'llm_service.py:228', 'message': 'Before generate_content', 'data': {'has_models': hasattr(self.gemini_client, 'models'), 'has_generate_content': hasattr(self.gemini_client.models if hasattr(self.gemini_client, 'models') else None, 'generate_content') if self.gemini_client else False}, 'timestamp': __import__('time').time() * 1000}) + '\n'); _log_f.close()
-            # #endregion
 
             # Stream response from Gemini using new client API
             # Note: The new API handles streaming through iterable responses
@@ -603,10 +574,6 @@ class LLMService:
                 logger.warning(f"No text extracted from Gemini response. Response type: {type(response)}")
 
         except Exception as e:
-            # #region agent log
-            _log_f = open('/Users/simon/Documents/code/.cursor/debug.log', 'a'); _log_f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'migration-v2', 'hypothesisId': 'C', 'location': 'llm_service.py:268', 'message': 'Gemini generate_content exception', 'data': {'error': str(e), 'error_type': type(e).__name__}, 'timestamp': __import__('time').time() * 1000}) + '\n'); _log_f.close()
-            # #endregion
-            
             # Check if it's a 404 (model not found) - try auto-selecting a different model
             error_str = str(e)
             is_404 = "404" in error_str or "NOT_FOUND" in error_str or "not found" in error_str.lower()

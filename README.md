@@ -6,7 +6,7 @@
 [![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Latest-009688.svg)](https://fastapi.tiangolo.com/)
 [![React](https://img.shields.io/badge/React-18-61DAFB.svg)](https://reactjs.org/)
-[![Ollama](https://img.shields.io/badge/AI-Ollama-purple.svg)](https://ollama.ai/)
+[![Gemini](https://img.shields.io/badge/AI-Gemini-blue.svg)](https://ai.google.dev/)
 
 ---
 
@@ -19,7 +19,7 @@
 - User management and access control
 
 **For Restaurant Owners:**
-- **AI Phone Assistant** - Automated call handling and order taking (Twilio + Ollama)
+- **AI Phone Assistant** - Automated call handling and order taking (Twilio + Gemini)
 - **Menu Management** - Interactive menu with real-time availability toggles
 - **Table Reservations** - Automatic booking and table assignment
 - **Order Management** - Takeout, delivery, and dine-in orders
@@ -37,12 +37,11 @@
 
 ## ✨ Key Features
 
-### 🤖 Local AI with Ollama (No Cloud Required!)
-- Runs completely on your server
-- No API keys or subscriptions needed
+### 🤖 AI with Google Gemini
+- Powered by Google Gemini Flash/Exp models
 - Understands menu questions, takes orders, makes reservations
-- Uses Llama2, Mistral, or CodeLlama models
 - Fast response times (1-3 seconds)
+- Requires GOOGLE_AI_API_KEY (free tier available)
 
 ### 📞 AI Phone Assistant (Twilio Integration)
 - Answers calls automatically
@@ -95,9 +94,8 @@ curl https://ollama.ai/install.sh | sh
 git clone https://github.com/youcefjd/restaurant-ai-managed.git
 cd restaurant-ai-managed
 
-# 3. Setup Ollama
-ollama serve &
-ollama pull llama2
+# 3. Setup environment variables
+# Create .env file with GOOGLE_AI_API_KEY (see .env.example)
 
 # 4. Setup backend
 python3 -m venv venv
@@ -197,7 +195,7 @@ sudo systemctl restart restaurant-backend
            │                  │
            ▼                  ▼
     ┌─────────────┐   ┌──────────────┐
-    │   Ollama    │   │   Database   │
+    │   Gemini    │   │   Database   │
     │  (AI LLM)   │   │   (SQLite/   │
     │ Port 11434  │   │  PostgreSQL) │
     └─────────────┘   └──────────────┘
@@ -210,7 +208,7 @@ sudo systemctl restart restaurant-backend
 - **Database:** SQLite (development) / PostgreSQL (production)
 - **ORM:** SQLAlchemy
 - **Authentication:** JWT tokens
-- **AI:** Ollama (local LLM)
+- **AI:** Google Gemini (with OpenAI fallback)
 - **Payments:** Stripe Connect
 - **Voice:** Twilio Voice + Whisper (speech-to-text)
 
@@ -239,9 +237,9 @@ Create `.env` file in project root:
 DATABASE_URL=sqlite:///./restaurant_reservations.db
 # Production: postgresql://user:pass@localhost/restaurant_ai
 
-# Ollama AI (Local LLM)
-OLLAMA_URL=http://localhost:11434
-OLLAMA_MODEL=llama2
+# Google Gemini AI (Required for conversation handling and menu parsing)
+GOOGLE_AI_API_KEY=your_google_ai_api_key_here
+GEMINI_MODEL=gemini-2.0-flash-exp  # Optional, defaults to gemini-2.0-flash-exp
 
 # Twilio (Required for AI phone assistant and SMS)
 # Note: Each restaurant sets their own phone number in Settings
@@ -285,7 +283,8 @@ restaurant-ai-managed/
 │   ├── schemas.py         # Pydantic schemas
 │   ├── database.py        # Database connection
 │   ├── services/          # Business logic
-│   │   ├── conversation_handler.py  # Ollama AI integration
+│   │   ├── conversation_handler.py  # Gemini/OpenAI AI integration
+│   │   ├── menu_parser.py           # Gemini-powered menu parsing
 │   │   └── voice_service.py         # Twilio TwiML generation
 │   └── main.py            # FastAPI application
 │
@@ -366,7 +365,7 @@ See [`END_TO_END_TEST_REPORT.md`](END_TO_END_TEST_REPORT.md) for complete test c
 - ✅ Kitchen display
 - ✅ Real-time availability
 - ✅ Menu item toggles
-- ⚠️ AI conversations (requires Ollama)
+- ⚠️ AI conversations (requires GOOGLE_AI_API_KEY)
 - ⚠️ Phone system (requires Twilio)
 - ⚠️ Payments (requires Stripe)
 
@@ -379,7 +378,7 @@ pytest
 cd frontend-new
 npm test
 
-# Test Ollama integration
+# Test AI integration
 python3 test_ai_conversation.py
 
 # Test API endpoints
@@ -464,7 +463,7 @@ sudo certbot --nginx -d myrestaurant.com
 ## 📱 Multi-Device Usage
 
 ### Server Computer
-- Runs backend, frontend, Ollama
+- Runs backend and frontend (requires GOOGLE_AI_API_KEY)
 - Always on and connected to internet
 - Can be any Mac/Linux computer with 8GB+ RAM
 
@@ -595,7 +594,7 @@ Proprietary - All rights reserved
 - ✅ Table and reservation system
 - ✅ Order management (takeout/delivery/dine-in)
 - ✅ Kitchen display
-- ✅ AI conversation handling (Ollama)
+- ✅ AI conversation handling (Gemini)
 - ✅ Voice assistant (Twilio + Whisper)
 - ✅ Payment processing (Stripe Connect)
 - ✅ JWT authentication

@@ -6,14 +6,12 @@ Supports parsing menus from:
 - Plain text
 - Images (menu photos)
 
-Uses Ollama for LLM processing.
+Uses Google Gemini for LLM processing.
 """
 
 import os
 import json
-import base64
 import logging
-import requests
 from typing import Dict, Any, List, Optional
 from io import BytesIO
 
@@ -24,29 +22,45 @@ except ImportError:
     PDF_SUPPORT = False
     logging.warning("PyPDF2 not installed, PDF support disabled")
 
+try:
+    from google import genai
+    from google.genai.types import Part
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+    genai = None
+    Part = None
+    logging.warning("google-genai not installed, menu parsing may not work")
+
 logger = logging.getLogger(__name__)
 
 
 class MenuParser:
-    """Service for parsing menu data from various input formats using Ollama."""
+    """Service for parsing menu data from various input formats using Google Gemini."""
 
     def __init__(self):
-        """Initialize the menu parser with Ollama."""
-        self.ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434")
-        self.ollama_model = os.getenv("OLLAMA_MODEL", "llama3.2")
-        self.ollama_vision_model = os.getenv("OLLAMA_VISION_MODEL", "llava")
-        self.enabled = True
+        """Initialize the menu parser with Google Gemini."""
+        self.gemini_api_key = os.getenv("GOOGLE_AI_API_KEY")
+        self.gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp")
+        self.enabled = False
+        self.gemini_client = None
 
-        # Test Ollama connection
+        # Initialize Gemini client
+        if not GEMINI_AVAILABLE:
+            logger.warning("google-genai package not available, menu parsing disabled")
+            return
+
+        if not self.gemini_api_key:
+            logger.warning("GOOGLE_AI_API_KEY not set, menu parsing disabled")
+            return
+
         try:
-            response = requests.get(f"{self.ollama_url}/api/tags", timeout=2)
-            if response.status_code == 200:
-                logger.info(f"Ollama connection successful, using model: {self.ollama_model} for text, {self.ollama_vision_model} for images")
-            else:
-                logger.warning("Ollama server not responding, menu parsing may not work")
-                self.enabled = False
+            genai.configure(api_key=self.gemini_api_key)
+            self.gemini_client = genai.Client(api_key=self.gemini_api_key)
+            self.enabled = True
+            logger.info(f"Gemini menu parser initialized with model: {self.gemini_model}")
         except Exception as e:
-            logger.warning(f"Could not connect to Ollama at {self.ollama_url}: {str(e)}")
+            logger.warning(f"Failed to initialize Gemini client: {str(e)}")
             self.enabled = False
 
     async def parse_menu(
@@ -95,16 +109,16 @@ class MenuParser:
         if image_list and len(image_list) > 0:
             if not self.enabled:
                 raise ValueError(
-                    f"Ollama is not available at {self.ollama_url}. "
-                    "Please ensure Ollama is running and accessible."
+                    "Gemini is not available. "
+                    "Please ensure GOOGLE_AI_API_KEY is set and google-genai package is installed."
                 )
             return await self._parse_menu_from_multiple_images(image_list, image_types or [])
 
         # Use LLM to parse text or single image
         if not self.enabled and (input_data or image_data):
             raise ValueError(
-                f"Ollama is not available at {self.ollama_url}. "
-                "Please ensure Ollama is running and accessible."
+                "Gemini is not available. "
+                "Please ensure GOOGLE_AI_API_KEY is set and google-genai package is installed."
             )
 
         try:
@@ -172,7 +186,7 @@ class MenuParser:
         return normalized
 
     async def _parse_menu_from_text(self, text: str) -> Dict[str, Any]:
-        """Parse menu from plain text using Ollama."""
+        """Parse menu from plain text using Google Gemini."""
         system_prompt = """You are a menu parsing expert. Extract menu information from the provided text and return a structured JSON format.
 
 The output must be valid JSON with this structure:
@@ -214,25 +228,28 @@ Return the structured JSON format as specified."""
         full_prompt = f"{system_prompt}\n\n{user_message}"
 
         try:
-            response = requests.post(
-                f"{self.ollama_url}/api/generate",
-                json={
-                    "model": self.ollama_model,
-                    "prompt": full_prompt,
-                    "stream": False,
-                    "options": {
-                        "temperature": 0.3,  # Lower temperature for more consistent JSON
-                    }
-                },
-                timeout=60
+            response = self.gemini_client.models.generate_content(
+                model=self.gemini_model,
+                contents=full_prompt,
+                config={
+                    "temperature": 0.3,  # Lower temperature for more consistent JSON
+                    "max_output_tokens": 4096,
+                }
             )
 
-            if response.status_code != 200:
-                raise Exception(f"Ollama API error: {response.status_code} - {response.text}")
+            # Extract text from response
+            if hasattr(response, 'text'):
+                ai_response = response.text
+            elif hasattr(response, 'content') and hasattr(response.content, 'text'):
+                ai_response = response.content.text
+            elif isinstance(response, str):
+                ai_response = response
+            else:
+                # Try to get text from response object
+                ai_response = str(response)
 
-            ai_response = response.json().get("response", "")
             if not ai_response:
-                raise ValueError("Empty response from Ollama")
+                raise ValueError("Empty response from Gemini")
 
             # Extract JSON from response
             json_text = self._extract_json_from_response(ai_response)
@@ -240,17 +257,14 @@ Return the structured JSON format as specified."""
             return self._normalize_json_menu(menu_data)
 
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse JSON from Ollama response: {str(e)}")
+            logger.error(f"Failed to parse JSON from Gemini response: {str(e)}")
             raise ValueError(f"Failed to parse menu JSON: {str(e)}")
         except Exception as e:
             logger.error(f"Error parsing menu from text: {str(e)}")
             raise ValueError(f"Failed to parse menu from text: {str(e)}")
 
     async def _parse_menu_from_image(self, image_data: bytes, image_type: str) -> Dict[str, Any]:
-        """Parse menu from image using Ollama vision model."""
-        # Convert image to base64
-        base64_image = base64.b64encode(image_data).decode('utf-8')
-
+        """Parse menu from image using Google Gemini vision capabilities."""
         system_prompt = """You are a menu parsing expert. Analyze the menu image and extract all menu information, including items, prices, categories, and descriptions.
 
 The output must be valid JSON with this structure:
@@ -287,32 +301,39 @@ Important rules:
         user_message = "Please analyze this menu image and extract all menu items, prices, categories, and descriptions. Return the structured JSON format as specified."
 
         try:
-            # Use /api/chat endpoint for vision models
-            response = requests.post(
-                f"{self.ollama_url}/api/chat",
-                json={
-                    "model": self.ollama_vision_model,
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": user_message,
-                            "images": [base64_image]
-                        }
-                    ],
-                    "stream": False,
-                    "options": {
-                        "temperature": 0.3,  # Lower temperature for more consistent JSON
-                    }
-                },
-                timeout=120  # Longer timeout for vision processing
+            # Create image part for Gemini multimodal input
+            image_part = Part.from_bytes(data=image_data, mime_type=image_type)
+            
+            # Build full prompt with system instructions and user message
+            full_prompt = f"{system_prompt}\n\n{user_message}"
+
+            # Use Gemini with multimodal input (text + image)
+            # Pass text and image parts together for vision processing
+            response = self.gemini_client.models.generate_content(
+                model=self.gemini_model,
+                contents=[
+                    full_prompt,
+                    image_part
+                ],
+                config={
+                    "temperature": 0.3,  # Lower temperature for more consistent JSON
+                    "max_output_tokens": 4096,
+                }
             )
 
-            if response.status_code != 200:
-                raise Exception(f"Ollama API error: {response.status_code} - {response.text}")
+            # Extract text from response
+            if hasattr(response, 'text'):
+                ai_response = response.text
+            elif hasattr(response, 'content') and hasattr(response.content, 'text'):
+                ai_response = response.content.text
+            elif isinstance(response, str):
+                ai_response = response
+            else:
+                # Try to get text from response object
+                ai_response = str(response)
 
-            ai_response = response.json().get("message", {}).get("content", "")
             if not ai_response:
-                raise ValueError("Empty response from Ollama")
+                raise ValueError("Empty response from Gemini")
 
             # Extract JSON from response
             json_text = self._extract_json_from_response(ai_response)
@@ -320,7 +341,7 @@ Important rules:
             return self._normalize_json_menu(menu_data)
 
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse JSON from Ollama response: {str(e)}")
+            logger.error(f"Failed to parse JSON from Gemini response: {str(e)}")
             raise ValueError(f"Failed to parse menu JSON: {str(e)}")
         except Exception as e:
             logger.error(f"Error parsing menu from image: {str(e)}")

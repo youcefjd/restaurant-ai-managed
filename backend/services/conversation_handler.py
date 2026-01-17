@@ -1,7 +1,7 @@
 """
 AI-powered conversation handler for voice and text interactions.
 
-Uses local Ollama LLM to understand customer intent and extract booking information
+Uses Gemini or OpenAI via openai_service to understand customer intent and extract booking information
 from natural language conversations.
 """
 

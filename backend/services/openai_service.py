@@ -19,9 +19,18 @@ except ImportError:
     AsyncOpenAI = None
 
 try:
-    import google.generativeai as genai
+    # #region agent log
+    import json; _log_f = open('/Users/simon/Documents/code/.cursor/debug.log', 'a'); _log_f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'migration-v2', 'hypothesisId': 'A', 'location': 'openai_service.py:21', 'message': 'Before google.genai import', 'data': {}, 'timestamp': __import__('time').time() * 1000}) + '\n'); _log_f.close()
+    # #endregion
+    from google import genai
+    # #region agent log
+    _log_f = open('/Users/simon/Documents/code/.cursor/debug.log', 'a'); _log_f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'migration-v2', 'hypothesisId': 'A', 'location': 'openai_service.py:25', 'message': 'Import success, checking Client class', 'data': {'has_client': hasattr(genai, 'Client'), 'has_configure': hasattr(genai, 'configure'), 'has_generative_model': hasattr(genai, 'GenerativeModel')}, 'timestamp': __import__('time').time() * 1000}) + '\n'); _log_f.close()
+    # #endregion
     GEMINI_AVAILABLE = True
-except ImportError:
+except ImportError as e:
+    # #region agent log
+    _log_f = open('/Users/simon/Documents/code/.cursor/debug.log', 'a'); _log_f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'migration-v2', 'hypothesisId': 'A', 'location': 'openai_service.py:30', 'message': 'Import failed', 'data': {'error': str(e)}, 'timestamp': __import__('time').time() * 1000}) + '\n'); _log_f.close()
+    # #endregion
     GEMINI_AVAILABLE = False
     genai = None
 
@@ -51,11 +60,19 @@ class LLMService:
         # Try to initialize Gemini (primary/default)
         if GEMINI_AVAILABLE and self.gemini_api_key:
             try:
-                genai.configure(api_key=self.gemini_api_key)
-                self.gemini_client = genai.GenerativeModel(self.gemini_model)
+                # #region agent log
+                _log_f = open('/Users/simon/Documents/code/.cursor/debug.log', 'a'); _log_f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'migration-v2', 'hypothesisId': 'B', 'location': 'openai_service.py:52', 'message': 'Before Client initialization', 'data': {'model': self.gemini_model}, 'timestamp': __import__('time').time() * 1000}) + '\n'); _log_f.close()
+                # #endregion
+                self.gemini_client = genai.Client(api_key=self.gemini_api_key)
+                # #region agent log
+                _log_f = open('/Users/simon/Documents/code/.cursor/debug.log', 'a'); _log_f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'migration-v2', 'hypothesisId': 'B', 'location': 'openai_service.py:56', 'message': 'After Client init', 'data': {'client_type': type(self.gemini_client).__name__, 'has_models': hasattr(self.gemini_client, 'models')}, 'timestamp': __import__('time').time() * 1000}) + '\n'); _log_f.close()
+                # #endregion
                 self.gemini_enabled = True
                 logger.info(f"Gemini LLM service initialized with model: {self.gemini_model} (default)")
             except Exception as e:
+                # #region agent log
+                _log_f = open('/Users/simon/Documents/code/.cursor/debug.log', 'a'); _log_f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'migration-v2', 'hypothesisId': 'B', 'location': 'openai_service.py:62', 'message': 'Client init exception', 'data': {'error': str(e), 'error_type': type(e).__name__}, 'timestamp': __import__('time').time() * 1000}) + '\n'); _log_f.close()
+                # #endregion
                 logger.warning(f"Failed to initialize Gemini client: {str(e)}")
                 self.gemini_enabled = False
 
@@ -221,21 +238,51 @@ class LLMService:
             
             full_prompt += f"User: {user_message}\nAssistant:"
 
-            # Stream response from Gemini
-            response = await self.gemini_client.generate_content_async(
-                full_prompt,
-                generation_config={
+            # #region agent log
+            _log_f = open('/Users/simon/Documents/code/.cursor/debug.log', 'a'); _log_f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'migration-v2', 'hypothesisId': 'C', 'location': 'openai_service.py:228', 'message': 'Before generate_content', 'data': {'has_models': hasattr(self.gemini_client, 'models'), 'has_generate_content': hasattr(self.gemini_client.models if hasattr(self.gemini_client, 'models') else None, 'generate_content') if self.gemini_client else False}, 'timestamp': __import__('time').time() * 1000}) + '\n'); _log_f.close()
+            # #endregion
+
+            # Stream response from Gemini using new client API
+            # Note: The new API may have different streaming support
+            # Check if generate_content supports stream parameter
+            response = self.gemini_client.models.generate_content(
+                model=self.gemini_model,
+                contents=full_prompt,
+                config={
                     "temperature": temperature,
                     "max_output_tokens": max_tokens,
                 },
                 stream=True
             )
 
-            async for chunk in response:
-                if chunk.text:
-                    yield chunk.text
+            # #region agent log
+            _log_f = open('/Users/simon/Documents/code/.cursor/debug.log', 'a'); _log_f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'migration-v2', 'hypothesisId': 'C', 'location': 'openai_service.py:246', 'message': 'After generate_content', 'data': {'response_type': type(response).__name__, 'is_iterable': hasattr(response, '__iter__'), 'is_async_iterable': hasattr(response, '__aiter__')}, 'timestamp': __import__('time').time() * 1000}) + '\n'); _log_f.close()
+            # #endregion
+
+            # Handle streaming response - try both sync and async iteration
+            if hasattr(response, '__aiter__'):
+                async for chunk in response:
+                    if hasattr(chunk, 'text') and chunk.text:
+                        yield chunk.text
+                    elif isinstance(chunk, str):
+                        yield chunk
+            elif hasattr(response, '__iter__'):
+                for chunk in response:
+                    if hasattr(chunk, 'text') and chunk.text:
+                        yield chunk.text
+                    elif isinstance(chunk, str):
+                        yield chunk
+            else:
+                # Non-streaming response
+                if hasattr(response, 'text') and response.text:
+                    yield response.text
+                elif isinstance(response, str):
+                    yield response
 
         except Exception as e:
+            # #region agent log
+            _log_f = open('/Users/simon/Documents/code/.cursor/debug.log', 'a'); _log_f.write(json.dumps({'sessionId': 'debug-session', 'runId': 'migration-v2', 'hypothesisId': 'C', 'location': 'openai_service.py:268', 'message': 'Gemini generate_content exception', 'data': {'error': str(e), 'error_type': type(e).__name__}, 'timestamp': __import__('time').time() * 1000}) + '\n'); _log_f.close()
+            # #endregion
             logger.error(f"Gemini API error: {str(e)}", exc_info=True)
             yield f"Error: Gemini API error - {str(e)}"
 

@@ -79,7 +79,7 @@ AI: ✅ Order #1234 confirmed!
    ↓
 4. Loads restaurant's menu from database
    ↓
-5. Sends message + menu context to Ollama AI
+5. Sends message + menu context to Gemini AI
    ↓
 6. AI generates intelligent response
    ↓

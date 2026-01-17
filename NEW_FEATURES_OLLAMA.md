@@ -1,49 +1,45 @@
-# 🚀 New Features - Ollama Integration & Interactive Management
+# 🚀 New Features - Gemini Integration & Interactive Management
 
-**Date:** January 12, 2026
-**Version:** 2.0
+**Date:** Updated - Migration from Ollama to Gemini
+**Version:** 2.1
 
 ---
 
-## ✅ Features Implemented
+## ⚠️ **DEPRECATED: This document describes the old Ollama integration**
 
-### 1. 🤖 Local AI with Ollama (No API Keys Required!)
+**As of the latest update, the system has been migrated from Ollama to Google Gemini for better performance and reliability.**
 
-**What Changed:**
-- Replaced Anthropic Claude API with local Ollama LLM
-- No more API key requirements or costs
-- Runs completely on your local machine
+**Current Status:**
+- ✅ Conversation handling uses Google Gemini (or OpenAI as fallback)
+- ✅ Menu parsing uses Google Gemini for text and image processing
+- ❌ Ollama is no longer used in the application
 
-**Why:**
-- Queries are simple enough for local models
-- No external dependencies
-- No API costs
-- Full privacy - data never leaves your server
+---
 
-**Configuration:**
+## ✅ Features Implemented (Legacy - Ollama)
+
+### 1. 🤖 ~~Local AI with Ollama~~ → **Now uses Google Gemini**
+
+**What Changed (Historical):**
+- ~~Replaced Anthropic Claude API with local Ollama LLM~~
+- **Current:** Uses Google Gemini via `GOOGLE_AI_API_KEY`
+- Better performance and reliability with cloud-based AI
+
+**Current Configuration:**
 ```bash
-# .env file (optional - these are the defaults)
-OLLAMA_URL=http://localhost:11434
-OLLAMA_MODEL=llama2
+# .env file (REQUIRED)
+GOOGLE_AI_API_KEY=your_google_ai_api_key_here
+GEMINI_MODEL=gemini-2.0-flash-exp  # Optional, defaults to gemini-2.0-flash-exp
 ```
 
-**Setup Ollama:**
+**Setup Gemini:**
 ```bash
-# Install Ollama
-curl https://ollama.ai/install.sh | sh
+# Get API key from: https://ai.google.dev/
+# Add to .env file:
+GOOGLE_AI_API_KEY=your_key_here
 
-# Pull a model (recommended models)
-ollama pull llama2          # Fast, good for restaurant queries
-ollama pull mistral         # Better reasoning
-ollama pull codellama       # If you need technical support
-
-# Start Ollama (runs automatically)
-ollama serve
-```
-
-**Test Ollama:**
-```bash
-curl http://localhost:11434/api/tags
+# Test the integration:
+python test_menu_parser.py
 ```
 
 **What It Handles:**
@@ -413,10 +409,11 @@ tail -f ~/.ollama/logs/server.log
 
 ---
 
-**Summary:**
-✅ AI runs locally with Ollama (no API keys!)
+**Summary (Updated):**
+✅ AI runs with Google Gemini (requires GOOGLE_AI_API_KEY)
 ✅ Real-time table availability display
 ✅ Interactive menu item management
 ✅ Simplified table setup
+✅ Menu parsing now uses Gemini for text and image processing
 
-**All features tested and working!** 🎉
+**Note:** This document has been archived. For current setup, see README.md

@@ -19,6 +19,15 @@ import uvicorn
 from dotenv import load_dotenv
 import os
 
+# Load environment variables FIRST before any imports that need them
+# Calculate absolute path to .env file to ensure it's found regardless of CWD
+_project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_env_path = os.path.join(_project_root, '.env')
+
+# Load .env file from project root (important for uvicorn --reload and different CWDs)
+# override=True ensures .env values override any existing environment variables
+load_dotenv(_env_path, override=True)
+
 from backend.database import engine, Base
 from backend.api import restaurants, tables, customers, bookings, availability, voice, payments, deliveries, onboarding, platform_admin, stripe_connect, auth, transcripts, test_conversation, table_management
 from backend.core.exceptions import (
@@ -28,9 +37,6 @@ from backend.core.exceptions import (
     ConflictError
 )
 from backend.core.logging import setup_logging
-
-# Load environment variables
-load_dotenv()
 
 # Setup logging
 logger = setup_logging(__name__)

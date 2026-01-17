@@ -36,12 +36,12 @@ Twilio Whisper converts speech → text
 Twilio sends webhook to: /api/voice/process
    with: SpeechResult="I want to order a pizza"
         ↓
-Backend sends to Ollama AI:
+Backend sends to Gemini AI:
    - Customer message
    - Restaurant's full menu
    - Conversation context
         ↓
-Ollama AI understands intent and responds
+Gemini AI understands intent and responds
         ↓
 Backend creates order/reservation in database
         ↓
@@ -68,7 +68,7 @@ restaurant = db.query(RestaurantAccount).filter(
 
 ### 3. **AI Capabilities**
 
-The AI (via Ollama) can handle:
+The AI (via Gemini) can handle:
 
 **Menu Questions:**
 - "What vegetarian options do you have?"
@@ -199,7 +199,7 @@ For the voice AI to work, you need:
    - Voice: `https://your-domain.com/api/voice/welcome`
    - SMS: `https://your-domain.com/api/voice/sms/incoming`
 5. ❌ **Database Phone Number** - **MISSING**: No way to set `twilio_phone_number` in database
-6. ✅ **Ollama Running** - Local AI server on port 11434
+6. ✅ **Gemini API Key** - GOOGLE_AI_API_KEY configured in .env
 7. ✅ **Menu Created** - Restaurant must have menu items
 
 ---

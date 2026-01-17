@@ -16,6 +16,8 @@ export default function RestaurantDashboard() {
     queryKey: ['orders', restaurantId],
     queryFn: () => restaurantAPI.getOrders(restaurantId!),
     enabled: !!restaurantId,
+    refetchInterval: 5000, // Refetch every 5 seconds for real-time updates
+    staleTime: 0, // Always consider data stale to ensure fresh data
   })
 
   // Fetch account details to check for phone number and menu

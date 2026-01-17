@@ -18,6 +18,8 @@ export default function RestaurantOrders() {
       return restaurantAPI.getOrders(accountId!, params)
     },
     enabled: !!accountId,
+    refetchInterval: 5000, // Refetch every 5 seconds for real-time updates
+    staleTime: 0, // Always consider data stale to ensure fresh data
   })
 
   const updateStatusMutation = useMutation({

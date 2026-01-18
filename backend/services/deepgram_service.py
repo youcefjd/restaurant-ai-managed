@@ -126,23 +126,40 @@ class DeepgramService:
             listener_thread.start()
             logger.info("Deepgram live transcription started")
 
-            # Create a wrapper object to store both the socket client and context manager
+            # Create a wrapper object to store socket client, context manager, and thread
             class ConnectionWrapper:
-                def __init__(self, socket_client, context_manager):
+                def __init__(self, socket_client, context_manager, listener_thread):
                     self.socket_client = socket_client
                     self.context_manager = context_manager
-                    
+                    self.listener_thread = listener_thread
+                    self._closed = False
+
                 def send_media(self, data: bytes):
+                    if self._closed:
+                        return False
                     return self.socket_client.send_media(data)
-                
+
+                def is_healthy(self) -> bool:
+                    """Check if the connection is still healthy."""
+                    if self._closed:
+                        return False
+                    # Check if listener thread is still alive
+                    if self.listener_thread and not self.listener_thread.is_alive():
+                        logger.warning("Deepgram listener thread has died")
+                        return False
+                    return True
+
                 def finish(self):
-                    # Exit the context manager to close the connection
+                    """Close the connection gracefully."""
+                    if self._closed:
+                        return
+                    self._closed = True
                     try:
                         self.context_manager.__exit__(None, None, None)
                     except Exception:
                         pass
 
-            wrapper = ConnectionWrapper(socket_client, connection_context)
+            wrapper = ConnectionWrapper(socket_client, connection_context, listener_thread)
             return wrapper
 
         except Exception as e:
@@ -166,8 +183,16 @@ class DeepgramService:
             logger.error("No Deepgram connection provided")
             return False
 
+        # Check connection health before sending
+        if hasattr(connection, 'is_healthy') and not connection.is_healthy():
+            logger.error("Deepgram connection is unhealthy")
+            return False
+
         try:
-            connection.send_media(audio_data)
+            result = connection.send_media(audio_data)
+            # send_media returns False if connection is closed
+            if result is False:
+                return False
             return True
         except Exception as e:
             logger.error(f"Failed to send audio to Deepgram: {str(e)}")

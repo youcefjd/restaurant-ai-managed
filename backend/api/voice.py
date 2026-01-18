@@ -132,14 +132,26 @@ async def voice_welcome(
         return Response(content=str(response), media_type="application/xml")
 
     # Check if voice services are available (health check)
+    # Include ffmpeg check since it's required for TTS audio conversion
+    ffmpeg_available = media_streams_service.is_ffmpeg_available()
     services_available = (
         deepgram_service.is_enabled() and
         llm_service.is_enabled() and
-        elevenlabs_service.is_enabled()
+        elevenlabs_service.is_enabled() and
+        ffmpeg_available
     )
 
     if not services_available:
-        logger.warning("Voice services not available - sending SMS fallback")
+        missing = []
+        if not deepgram_service.is_enabled():
+            missing.append("Deepgram (STT)")
+        if not llm_service.is_enabled():
+            missing.append("LLM")
+        if not elevenlabs_service.is_enabled():
+            missing.append("ElevenLabs (TTS)")
+        if not ffmpeg_available:
+            missing.append("ffmpeg (audio conversion)")
+        logger.warning(f"Voice services not available - missing: {', '.join(missing)}")
         # Send SMS fallback
         try:
             sms_message = (
@@ -312,20 +324,24 @@ async def media_streams_websocket(websocket: WebSocket):
             else:
                 current_transcript = text.strip()
                 if current_transcript:
-                    # User is speaking - detect barge-in and stop TTS if playing
+                    # Capture current state BEFORE modifying
+                    was_listening = is_listening
+
+                    # User is speaking
                     is_speaking = True
-                    is_listening = True  # User is speaking, so we should be listening
-                    
-                    # Barge-in detection: if TTS is playing, stop it immediately
-                    if not is_listening:  # This means TTS was playing
+
+                    # Barge-in detection: if TTS was playing (is_listening=False), stop it
+                    if not was_listening:
                         logger.info(f"Barge-in detected: User started speaking during TTS playback")
                         # Schedule async task to clear audio buffer
                         try:
-                            loop = asyncio.get_running_loop()
                             asyncio.create_task(clear_audio_buffer_on_bargein())
                         except RuntimeError:
                             pass
-                    
+
+                    # Now set listening state
+                    is_listening = True
+
                     logger.debug(f"Interim transcript: {current_transcript}")
         
         async def clear_audio_buffer_on_bargein():
@@ -605,17 +621,26 @@ async def media_streams_websocket(websocket: WebSocket):
         async def generate_and_send_tts(text: str):
             """Generate TTS audio and send to Twilio."""
             nonlocal is_listening, stream_sid
-            
+
             tts_start_time = time.time()
             try:
                 if not elevenlabs_service.is_enabled():
                     logger.error("ElevenLabs not available")
+                    if call_sid:
+                        voice_monitoring.add_error(call_sid, "ElevenLabs TTS not available")
                     return
-                
+
                 if not stream_sid:
                     logger.warning("No stream_sid available, cannot send TTS")
                     return
-                
+
+                # Early check for ffmpeg - fail fast if not available
+                if not media_streams_service.is_ffmpeg_available():
+                    logger.error("ffmpeg not available - cannot convert TTS audio")
+                    if call_sid:
+                        voice_monitoring.add_error(call_sid, "ffmpeg not available for audio conversion")
+                    return
+
                 is_listening = False  # We're speaking now
                 
                 logger.info(f"Starting TTS generation for text: {text[:50]}...")
@@ -1288,11 +1313,24 @@ async def call_status(
 
 @router.get("/health")
 async def voice_health():
-    """Health check for voice service."""
+    """Health check for voice service with all component statuses."""
+    deepgram_ok = deepgram_service.is_enabled()
+    llm_ok = llm_service.is_enabled()
+    elevenlabs_ok = elevenlabs_service.is_enabled()
+    ffmpeg_ok = media_streams_service.is_ffmpeg_available()
+
+    all_ok = deepgram_ok and llm_ok and elevenlabs_ok and ffmpeg_ok
+
     return {
         "service": "voice",
-        "enabled": voice_service.enabled,
-        "status": "healthy" if voice_service.enabled else "disabled"
+        "status": "healthy" if all_ok else "degraded",
+        "components": {
+            "deepgram_stt": "ok" if deepgram_ok else "unavailable",
+            "llm": "ok" if llm_ok else "unavailable",
+            "elevenlabs_tts": "ok" if elevenlabs_ok else "unavailable",
+            "ffmpeg": "ok" if ffmpeg_ok else "unavailable",
+        },
+        "llm_provider": llm_service.get_provider() if llm_ok else None,
     }
 
 

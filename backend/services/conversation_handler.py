@@ -183,7 +183,7 @@ class ConversationHandler:
                 user_message=user_message,
                 conversation_history=recent_history,
                 temperature=0.5,  # Lower temperature for faster, more consistent responses
-                max_tokens=512  # Shorter responses for lower latency
+                max_tokens=1024  # Enough for JSON response
             )
             
             logger.info(f"AI response (first 500 chars): {ai_response[:500]}")

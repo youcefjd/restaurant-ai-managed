@@ -14,6 +14,14 @@ from datetime import datetime, date, time, timedelta
 from sqlalchemy.orm import Session
 from pathlib import Path
 
+# Try to import dateutil for flexible time parsing
+try:
+    from dateutil import parser as date_parser
+    DATEUTIL_AVAILABLE = True
+except ImportError:
+    DATEUTIL_AVAILABLE = False
+    date_parser = None
+
 from backend.models import Restaurant, Table, Customer, Booking, BookingStatus
 from backend.services.llm_service import llm_service
 
@@ -1095,9 +1103,6 @@ Be conversational, helpful, and accurate about menu items and pricing."""
             pickup_note = pickup_time_str
             # Try to parse time formats
             try:
-                from dateutil import parser as date_parser
-                import re
-
                 time_lower = pickup_time_str.lower().strip()
                 now = datetime.now()
 
@@ -1120,18 +1125,31 @@ Be conversational, helpful, and accurate about menu items and pricing."""
                     scheduled_time = now + timedelta(minutes=30)
                     logger.info(f"Parsed '{pickup_time_str}' as 30 minutes from now: {scheduled_time}")
 
-                # Handle explicit time (e.g., "6pm", "18:00", "6:30 PM")
+                # Handle explicit time (e.g., "6pm", "18:00", "6:30 PM", "8 PM")
                 elif ":" in pickup_time_str or "pm" in time_lower or "am" in time_lower or re.search(r'\d', time_lower):
-                    parsed_time = date_parser.parse(pickup_time_str, fuzzy=True)
-                    # Set to today with parsed time
-                    scheduled_time = now.replace(
-                        hour=parsed_time.hour,
-                        minute=parsed_time.minute,
-                        second=0,
-                        microsecond=0
-                    )
+                    if DATEUTIL_AVAILABLE:
+                        parsed_time = date_parser.parse(pickup_time_str, fuzzy=True)
+                        scheduled_time = now.replace(
+                            hour=parsed_time.hour,
+                            minute=parsed_time.minute,
+                            second=0,
+                            microsecond=0
+                        )
+                    else:
+                        # Fallback: try to extract hour from common formats like "8pm", "8 pm", "20:00"
+                        hour_match = re.search(r'(\d{1,2})(?::(\d{2}))?(?:\s*)?(am|pm)?', time_lower)
+                        if hour_match:
+                            hour = int(hour_match.group(1))
+                            minute = int(hour_match.group(2)) if hour_match.group(2) else 0
+                            am_pm = hour_match.group(3)
+                            if am_pm == 'pm' and hour < 12:
+                                hour += 12
+                            elif am_pm == 'am' and hour == 12:
+                                hour = 0
+                            scheduled_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
                     # If the time is in the past, assume tomorrow
-                    if scheduled_time < now:
+                    if scheduled_time and scheduled_time < now:
                         scheduled_time += timedelta(days=1)
                     logger.info(f"Parsed '{pickup_time_str}' as specific time: {scheduled_time}")
 

@@ -175,15 +175,15 @@ class ConversationHandler:
             user_message = self._build_user_message(message, context)
 
             # Call LLM service (non-streaming for now - voice handler handles streaming separately)
-            # Limit conversation history to last 10 messages to avoid prompt getting too long
-            recent_history = conversation_history[-10:] if conversation_history and len(conversation_history) > 10 else conversation_history
+            # Limit conversation history to last 6 messages to reduce latency
+            recent_history = conversation_history[-6:] if conversation_history and len(conversation_history) > 6 else conversation_history
 
             ai_response = await self.llm_service.generate_complete_response(
                 system_prompt=system_prompt,
                 user_message=user_message,
                 conversation_history=recent_history,
-                temperature=0.7,
-                max_tokens=3072  # Enough for JSON response with order items
+                temperature=0.5,  # Lower temperature for faster, more consistent responses
+                max_tokens=512  # Shorter responses for lower latency
             )
             
             logger.info(f"AI response (first 500 chars): {ai_response[:500]}")

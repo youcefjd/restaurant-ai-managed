@@ -1,19 +1,14 @@
 """
 Deepgram STT (Speech-to-Text) service for real-time streaming transcription.
 
-Uses Deepgram's WebSocket API for low-latency speech recognition with
-partial transcription results for natural conversation flow.
+Uses Deepgram SDK v5+ WebSocket API for low-latency speech recognition.
 """
 
 import os
-import json
 import asyncio
 import logging
-from typing import Optional, Callable, Dict, Any, AsyncGenerator
-from contextlib import contextmanager
-from deepgram import DeepgramClient
-from deepgram.core.events import EventType
-from deepgram.listen.v1.types.listen_v1results import ListenV1Results
+import threading
+from typing import Optional, Callable, Any
 
 from backend.core.logging import setup_logging
 
@@ -21,183 +16,238 @@ logger = setup_logging(__name__)
 
 
 class DeepgramService:
-    """Service for real-time speech-to-text using Deepgram."""
+    """Service for real-time speech-to-text using Deepgram SDK v5+."""
 
     def __init__(self):
-        """Initialize Deepgram client."""
+        """Initialize Deepgram service."""
         self.api_key = os.getenv("DEEPGRAM_API_KEY")
         self.enabled = bool(self.api_key)
-        
-        if self.enabled:
-            try:
-                self.client = DeepgramClient(api_key=self.api_key)
-                logger.info("Deepgram STT service initialized")
-            except Exception as e:
-                logger.error(f"Failed to initialize Deepgram client: {str(e)}")
-                self.client = None
-                self.enabled = False
-        else:
-            self.client = None
-            logger.warning("Deepgram API key not found - STT service disabled")
+        self._client = None
 
-    def create_live_transcription(
+        if self.enabled:
+            logger.info("Deepgram STT service initialized")
+        else:
+            logger.warning("DEEPGRAM_API_KEY not set - STT service disabled")
+
+    def _get_client(self):
+        """Lazy-load Deepgram client."""
+        if self._client is None and self.enabled:
+            try:
+                from deepgram import DeepgramClient
+                self._client = DeepgramClient(api_key=self.api_key)
+            except Exception as e:
+                logger.error(f"Failed to create Deepgram client: {e}")
+                self.enabled = False
+        return self._client
+
+    async def create_live_connection(
         self,
-        on_message: Optional[Callable[[str, bool], None]] = None,
+        on_transcript: Callable[[str, bool], None],
         on_error: Optional[Callable[[Exception], None]] = None,
-        on_close: Optional[Callable[[], None]] = None
-    ) -> Optional[Any]:
+        on_close: Optional[Callable[[], None]] = None,
+        sample_rate: int = 8000,
+        encoding: str = "linear16",
+        channels: int = 1
+    ) -> Optional['LiveConnection']:
         """
         Create a live transcription connection.
 
         Args:
-            on_message: Callback for transcription updates (text, is_final)
+            on_transcript: Callback for transcription (text, is_final)
             on_error: Callback for errors
             on_close: Callback for connection close
+            sample_rate: Audio sample rate in Hz (default 8000 for telephony)
+            encoding: Audio encoding (linear16 for PCM)
+            channels: Number of audio channels
 
         Returns:
-            Live transcription connection wrapper or None if failed
+            LiveConnection wrapper or None if failed
         """
         if not self.enabled:
-            logger.error("Deepgram service is disabled - cannot create live transcription")
+            logger.error("Deepgram service is disabled")
+            return None
+
+        client = self._get_client()
+        if not client:
             return None
 
         try:
-            # Create live transcription connection using the new SDK v3.0+ API
-            # connect() returns a context manager that yields the socket client
-            connection_context = self.client.listen.v1.connect(
+            from deepgram.core.events import EventType
+
+            # Create connection with Deepgram v5 SDK
+            # Increased endpointing and utterance_end for better sentence detection
+            socket_context = client.listen.v1.connect(
                 model="nova-2",
                 language="en-US",
+                encoding=encoding,
+                sample_rate=str(sample_rate),
+                channels=str(channels),
+                interim_results="true",
                 smart_format="true",
-                interim_results="true",  # Get partial results
                 punctuate="true",
-                endpointing="300",  # Endpoint after 300ms of silence
+                endpointing="500",  # 500ms pause to end utterance (was 300)
+                utterance_end_ms="1500",  # 1.5s to detect end (was 1000)
+                vad_events="true"
             )
-            
-            # Enter the context manager to get the socket client
-            socket_client = connection_context.__enter__()
 
-            # Set up event handlers
-            def on_open_handler(data):
-                logger.info("Deepgram live transcription connection opened")
+            # Enter context to get socket
+            socket = socket_context.__enter__()
 
-            def on_message_handler(data):
-                """Handle transcription messages from Deepgram."""
+            # Define event handlers
+            def handle_message(result):
+                """Handle transcription results."""
                 try:
-                    # Only process Results messages (transcription data)
-                    if isinstance(data, ListenV1Results):
-                        # Extract transcript from the channel alternatives
-                        if data.channel and data.channel.alternatives and len(data.channel.alternatives) > 0:
-                            transcript = data.channel.alternatives[0].transcript or ""
-                            is_final = data.is_final or False
-                            
-                            if transcript and on_message:
-                                on_message(transcript, is_final)
-                                if is_final:
-                                    logger.debug(f"Deepgram final transcript: {transcript}")
-                                else:
-                                    logger.debug(f"Deepgram interim transcript: {transcript}")
+                    # Handle different result types from Deepgram
+                    # Could be LiveTranscriptionResponse, MetadataResponse, etc.
+
+                    # Skip non-transcript messages (metadata, utterance_end, etc.)
+                    if not hasattr(result, 'channel'):
+                        return
+
+                    channel = result.channel
+                    if not channel or not hasattr(channel, 'alternatives'):
+                        return
+
+                    alternatives = channel.alternatives
+                    if not alternatives or len(alternatives) == 0:
+                        return
+
+                    transcript = alternatives[0].transcript
+                    is_final = getattr(result, 'is_final', False)
+
+                    if transcript and transcript.strip():
+                        on_transcript(transcript.strip(), is_final)
+                except AttributeError:
+                    # Not a transcript message, ignore
+                    pass
                 except Exception as e:
-                    logger.error(f"Error processing Deepgram message: {str(e)}")
+                    logger.error(f"Error processing Deepgram result: {e}")
                     if on_error:
                         on_error(e)
 
-            def on_error_handler(error):
-                """Handle errors from Deepgram."""
-                logger.error(f"Deepgram error: {str(error)}")
+            def handle_error(error):
+                """Handle errors."""
+                logger.error(f"Deepgram error: {error}")
                 if on_error:
-                    on_error(error)
+                    on_error(Exception(str(error)))
 
-            def on_close_handler(data):
+            def handle_close(event):
                 """Handle connection close."""
-                logger.info("Deepgram live transcription connection closed")
+                logger.info("Deepgram connection closed")
                 if on_close:
                     on_close()
 
-            # Register event handlers using EventType
-            socket_client.on(EventType.OPEN, on_open_handler)
-            socket_client.on(EventType.MESSAGE, on_message_handler)
-            socket_client.on(EventType.ERROR, on_error_handler)
-            socket_client.on(EventType.CLOSE, on_close_handler)
+            def handle_open(event):
+                """Handle connection open."""
+                logger.info("Deepgram connection opened")
 
-            # Start listening for messages in a background thread
-            # start_listening() blocks, so we need to run it in a separate thread
-            import threading
-            listener_thread = threading.Thread(target=socket_client.start_listening, daemon=True)
-            listener_thread.start()
-            logger.info("Deepgram live transcription started")
+            # Register event handlers using the correct method signature
+            socket.on(EventType.MESSAGE, handle_message)
+            socket.on(EventType.ERROR, handle_error)
+            socket.on(EventType.CLOSE, handle_close)
+            socket.on(EventType.OPEN, handle_open)
 
-            # Create a wrapper object to store both the socket client and context manager
-            class ConnectionWrapper:
-                def __init__(self, socket_client, context_manager):
-                    self.socket_client = socket_client
-                    self.context_manager = context_manager
-                    
-                def send_media(self, data: bytes):
-                    return self.socket_client.send_media(data)
-                
-                def finish(self):
-                    # Exit the context manager to close the connection
-                    try:
-                        self.context_manager.__exit__(None, None, None)
-                    except Exception:
-                        pass
+            # Start listening in background thread
+            def listen_thread():
+                try:
+                    socket.start_listening()
+                except Exception as e:
+                    logger.error(f"Error in Deepgram listener: {e}")
+                    if on_error:
+                        on_error(e)
 
-            wrapper = ConnectionWrapper(socket_client, connection_context)
-            return wrapper
+            listener = threading.Thread(target=listen_thread, daemon=True)
+            listener.start()
+
+            logger.info("Deepgram live connection started successfully")
+            return LiveConnection(socket, socket_context, listener)
 
         except Exception as e:
-            logger.error(f"Failed to create Deepgram live transcription: {str(e)}")
+            logger.error(f"Failed to create Deepgram live connection: {e}", exc_info=True)
             if on_error:
                 on_error(e)
             return None
 
-    async def send_audio(self, connection: Any, audio_data: bytes) -> bool:
-        """
-        Send audio data to Deepgram connection.
-
-        Args:
-            connection: Live transcription connection wrapper object
-            audio_data: Raw audio bytes (PCM16 format)
-
-        Returns:
-            True if successful, False otherwise
-        """
-        if not connection:
-            logger.error("No Deepgram connection provided")
-            return False
-
-        try:
-            connection.send_media(audio_data)
-            return True
-        except Exception as e:
-            logger.error(f"Failed to send audio to Deepgram: {str(e)}")
-            return False
-
-    async def close_connection(self, connection: Any) -> bool:
-        """
-        Close Deepgram connection.
-
-        Args:
-            connection: Live transcription connection wrapper object
-
-        Returns:
-            True if successful, False otherwise
-        """
-        if not connection:
-            return False
-
-        try:
-            # Use the wrapper's finish method to close the connection
-            connection.finish()
-            logger.info("Deepgram connection closed")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to close Deepgram connection: {str(e)}")
-            return False
-
     def is_enabled(self) -> bool:
         """Check if Deepgram service is enabled."""
         return self.enabled
+
+
+class LiveConnection:
+    """Wrapper for Deepgram live transcription connection."""
+
+    def __init__(self, socket, context, listener_thread):
+        """Initialize with Deepgram socket."""
+        self._socket = socket
+        self._context = context
+        self._listener = listener_thread
+        self._closed = False
+
+    async def send_audio(self, audio_bytes: bytes) -> bool:
+        """
+        Send audio data to Deepgram.
+
+        Args:
+            audio_bytes: Raw audio bytes (linear16 PCM)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if self._closed:
+            return False
+
+        try:
+            self._socket.send_media(audio_bytes)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to send audio to Deepgram: {e}")
+            self._closed = True  # Mark as closed on error
+            return False
+
+    def send_keepalive(self) -> bool:
+        """Send keepalive message to Deepgram to prevent timeout."""
+        if self._closed:
+            return False
+
+        try:
+            # Deepgram SDK v5 keepalive
+            if hasattr(self._socket, 'keep_alive'):
+                self._socket.keep_alive()
+            return True
+        except Exception as e:
+            logger.debug(f"Keepalive failed: {e}")
+            return False
+
+    async def close(self) -> bool:
+        """Close the Deepgram connection."""
+        if self._closed:
+            return True
+
+        try:
+            self._closed = True
+
+            # Send close message
+            try:
+                self._socket.send_close_stream()
+            except:
+                pass
+
+            # Exit context
+            try:
+                self._context.__exit__(None, None, None)
+            except:
+                pass
+
+            logger.info("Deepgram connection closed")
+            return True
+        except Exception as e:
+            logger.error(f"Error closing Deepgram connection: {e}")
+            return False
+
+    @property
+    def is_closed(self) -> bool:
+        """Check if connection is closed."""
+        return self._closed
 
 
 # Global Deepgram service instance

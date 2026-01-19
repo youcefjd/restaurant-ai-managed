@@ -205,37 +205,22 @@ class ServiceHealthChecker:
     def check_deepgram(self) -> Dict[str, Optional[str]]:
         """
         Check Deepgram service initialization (lightweight check).
-        
+
         Returns:
             Dict with service name, status, and optional error message
         """
-        if not deepgram_service.enabled:
+        if not deepgram_service.is_enabled():
             return {
                 "service": "Deepgram STT",
                 "status": "disabled",
                 "error": "API key not set"
             }
-        
-        try:
-            # Check if client is initialized
-            if deepgram_service.client:
-                return {
-                    "service": "Deepgram STT",
-                    "status": "healthy",
-                    "details": "client initialized"
-                }
-            else:
-                return {
-                    "service": "Deepgram STT",
-                    "status": "failed",
-                    "error": "Client not initialized"
-                }
-        except Exception as e:
-            return {
-                "service": "Deepgram STT",
-                "status": "failed",
-                "error": str(e)
-            }
+
+        return {
+            "service": "Deepgram STT",
+            "status": "healthy",
+            "details": "API key configured"
+        }
 
     async def check_elevenlabs(self) -> Dict[str, Optional[str]]:
         """

@@ -107,8 +107,12 @@ class RestaurantAccount(Base):
     onboarding_completed = Column(Boolean, nullable=False, default=False)
     is_active = Column(Boolean, nullable=False, default=True)
 
-    # Timestamps
+    # Trial limits
     trial_ends_at = Column(DateTime(timezone=True), nullable=True)
+    trial_order_limit = Column(Integer, nullable=False, default=10)  # Max orders during trial
+    trial_orders_used = Column(Integer, nullable=False, default=0)  # Orders used so far
+
+    # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -279,6 +283,42 @@ class MenuModifier(Base):
     def __repr__(self) -> str:
         price_str = f"+${self.price_adjustment_cents/100:.2f}" if self.price_adjustment_cents > 0 else ""
         return f"<MenuModifier(id={self.id}, name='{self.name}'{price_str})>"
+
+
+class NotificationType(str, Enum):
+    """Admin notification types."""
+    RESTAURANT_SIGNUP = "restaurant_signup"
+    TRIAL_EXPIRING = "trial_expiring"
+    TRIAL_EXPIRED = "trial_expired"
+    PAYMENT_FAILED = "payment_failed"
+    HIGH_VOLUME = "high_volume"
+
+
+class AdminNotification(Base):
+    """
+    Admin notifications for platform events.
+
+    Tracks important events like new signups, trial expirations, etc.
+    """
+    __tablename__ = "admin_notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    notification_type = Column(String(50), nullable=False, index=True)
+    title = Column(String(255), nullable=False)
+    message = Column(Text, nullable=False)
+    account_id = Column(Integer, ForeignKey("restaurant_accounts.id", ondelete="SET NULL"), nullable=True)
+    is_read = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # Relationships
+    account = relationship("RestaurantAccount", backref="notifications")
+
+    __table_args__ = (
+        Index('idx_notification_unread', 'is_read', 'created_at'),
+    )
+
+    def __repr__(self) -> str:
+        return f"<AdminNotification(id={self.id}, type={self.notification_type})>"
 
 
 class TranscriptType(str, Enum):

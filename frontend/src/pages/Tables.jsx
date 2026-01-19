@@ -8,7 +8,7 @@ import {
   CheckCircleIcon,
   XCircleIcon,
 } from '@heroicons/react/24/outline';
-import useApi from '../hooks/useApi';
+import { useApiHelpers } from '../hooks/useApi';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
@@ -53,14 +53,14 @@ export default function Tables() {
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
   
-  const api = useApi();
+  const api = useApiHelpers();
 
   // Fetch restaurants on mount
   useEffect(() => {
     const fetchRestaurants = async () => {
       try {
         setLoadingRestaurants(true);
-        const response = await api.get('/api/');
+        const response = await api.get('/api/restaurants/');
         setRestaurants(response.data || []);
         
         // Auto-select first restaurant if available

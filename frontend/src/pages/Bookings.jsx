@@ -7,7 +7,7 @@
 
 import React from 'react';
 
-export const Bookings: React.FC = () => {
+export default function Bookings() {
   // TODO: Implement component based on requirements
 
   return (
@@ -16,4 +16,4 @@ export const Bookings: React.FC = () => {
       <p>Implementation pending</p>
     </div>
   );
-};
+}

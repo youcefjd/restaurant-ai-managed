@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
-from backend.models import Table, Booking, BookingStatus
+from backend.models import Table, Booking, BookingStatus, Restaurant
 from backend.schemas import TableCreate, TableUpdate, Table as TableResponse
 
 router = APIRouter()
@@ -19,7 +19,30 @@ async def create_table(
     db: Session = Depends(get_db)
 ):
     """Create a new table for a restaurant."""
-    table = Table(**table_data.model_dump())
+    # Verify restaurant exists
+    restaurant = db.query(Restaurant).filter(Restaurant.id == restaurant_id).first()
+    if not restaurant:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Restaurant {restaurant_id} not found"
+        )
+
+    # Check for duplicate table number
+    existing = db.query(Table).filter(
+        Table.restaurant_id == restaurant_id,
+        Table.table_number == table_data.table_number
+    ).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Table {table_data.table_number} already exists"
+        )
+
+    # Override restaurant_id from path parameter
+    table_dict = table_data.model_dump()
+    table_dict['restaurant_id'] = restaurant_id
+
+    table = Table(**table_dict)
     db.add(table)
     db.commit()
     db.refresh(table)

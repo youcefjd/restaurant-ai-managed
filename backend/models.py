@@ -45,7 +45,24 @@ class OrderStatus(str, Enum):
     READY = "ready"
     OUT_FOR_DELIVERY = "out_for_delivery"
     DELIVERED = "delivered"
+    PICKED_UP = "picked_up"
+    COMPLETED = "completed"
     CANCELLED = "cancelled"
+
+
+class OrderType(str, Enum):
+    """Enum for order type values."""
+    TAKEOUT = "takeout"
+    DELIVERY = "delivery"
+
+
+class PaymentStatus(str, Enum):
+    """Enum for payment status values."""
+    UNPAID = "unpaid"
+    PENDING = "pending"
+    PAID = "paid"
+    REFUNDED = "refunded"
+    FAILED = "failed"
 
 
 class DeliveryStatus(str, Enum):
@@ -328,13 +345,16 @@ class Booking(Base):
 class Order(Base):
     """
     Order model representing a food order for delivery or pickup.
-    
+
     Attributes:
         id: Primary key
-        restaurant_id: Foreign key to restaurant
+        account_id: Foreign key to restaurant account (multi-tenant)
+        restaurant_id: Foreign key to restaurant (optional legacy)
         customer_id: Foreign key to customer
+        order_type: Type of order (takeout or delivery)
         order_date: Date and time order was placed
-        delivery_address: Delivery address
+        scheduled_time: When customer wants to pick up / receive delivery
+        delivery_address: Delivery address (for delivery orders)
         order_items: JSON field with order items
         subtotal: Order subtotal in cents
         tax: Tax amount in cents
@@ -346,33 +366,47 @@ class Order(Base):
         updated_at: Last update timestamp
     """
     __tablename__ = "orders"
-    
+
     id = Column(Integer, primary_key=True, index=True)
-    restaurant_id = Column(Integer, ForeignKey("restaurants.id", ondelete="CASCADE"), nullable=False)
-    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="RESTRICT"), nullable=False)
+    account_id = Column(Integer, ForeignKey("restaurant_accounts.id", ondelete="CASCADE"), nullable=True)  # Multi-tenant
+    restaurant_id = Column(Integer, ForeignKey("restaurants.id", ondelete="CASCADE"), nullable=True)  # Optional legacy
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="RESTRICT"), nullable=True)  # Optional if customer info is inline
+
+    # Order type and timing
+    order_type = Column(String(20), nullable=False, default=OrderType.TAKEOUT.value)  # takeout or delivery
     order_date = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    delivery_address = Column(Text, nullable=False)
+    scheduled_time = Column(DateTime(timezone=True), nullable=True)  # Pickup/delivery time
+
+    # Delivery info (only for delivery orders)
+    delivery_address = Column(Text, nullable=True)
+
+    # Order details
     order_items = Column(Text, nullable=False)  # JSON string of items
     subtotal = Column(Integer, nullable=False)  # in cents
     tax = Column(Integer, nullable=False, default=0)
     delivery_fee = Column(Integer, nullable=False, default=0)
     total = Column(Integer, nullable=False)
-    status = Column(String(20), nullable=False, default=OrderStatus.PENDING)
+    status = Column(String(20), nullable=False, default=OrderStatus.PENDING.value)
     special_instructions = Column(Text, nullable=True)
 
     # Payment fields
-    payment_status = Column(String(20), nullable=False, default='unpaid')  # paid, unpaid, pending
-    payment_method = Column(String(30), nullable=True)  # card, cash, pay_on_arrival
+    payment_status = Column(String(20), nullable=False, default=PaymentStatus.UNPAID.value)
+    payment_method = Column(String(30), nullable=True)  # card, cash, pay_at_restaurant
     payment_intent_id = Column(String(255), nullable=True)  # Stripe payment intent ID
 
     # Customer info (denormalized for quick access)
     customer_name = Column(String(100), nullable=True)
     customer_phone = Column(String(20), nullable=True)
+    customer_email = Column(String(255), nullable=True)
+
+    # AI conversation reference
+    conversation_id = Column(String(255), nullable=True)  # Link to Transcript
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
-    
+
     # Relationships
+    account = relationship("RestaurantAccount", backref="orders")
     restaurant = relationship("Restaurant", backref="orders")
     customer = relationship("Customer", backref="orders")
     delivery = relationship("Delivery", back_populates="order", uselist=False)

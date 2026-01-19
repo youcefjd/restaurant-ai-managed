@@ -15,7 +15,8 @@ from pydantic import BaseModel, Field
 
 from backend.database import get_db
 from backend.models_platform import (
-    RestaurantAccount, SubscriptionTier, SubscriptionStatus
+    RestaurantAccount, SubscriptionTier, SubscriptionStatus,
+    AdminNotification, NotificationType
 )
 from backend.models import Restaurant, Order, Booking, Customer
 
@@ -643,3 +644,85 @@ async def get_growth_analytics(
             for b in bookings_by_date
         ]
     }
+
+
+# ============== Notifications ==============
+
+class NotificationResponse(BaseModel):
+    """Admin notification response."""
+    id: int
+    notification_type: str
+    title: str
+    message: str
+    account_id: Optional[int]
+    is_read: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/notifications", response_model=List[NotificationResponse])
+async def get_notifications(
+    unread_only: bool = Query(False, description="Only return unread notifications"),
+    limit: int = Query(50, description="Max notifications to return"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get admin notifications.
+
+    Includes new restaurant signups, trial expirations, etc.
+    """
+    query = db.query(AdminNotification)
+
+    if unread_only:
+        query = query.filter(AdminNotification.is_read == False)
+
+    notifications = query.order_by(
+        AdminNotification.created_at.desc()
+    ).limit(limit).all()
+
+    return notifications
+
+
+@router.get("/notifications/count")
+async def get_notification_count(db: Session = Depends(get_db)):
+    """Get count of unread notifications."""
+    count = db.query(AdminNotification).filter(
+        AdminNotification.is_read == False
+    ).count()
+
+    return {"unread_count": count}
+
+
+@router.post("/notifications/{notification_id}/read")
+async def mark_notification_read(
+    notification_id: int,
+    db: Session = Depends(get_db)
+):
+    """Mark a notification as read."""
+    notification = db.query(AdminNotification).filter(
+        AdminNotification.id == notification_id
+    ).first()
+
+    if not notification:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Notification not found"
+        )
+
+    notification.is_read = True
+    db.commit()
+
+    return {"status": "success"}
+
+
+@router.post("/notifications/read-all")
+async def mark_all_notifications_read(db: Session = Depends(get_db)):
+    """Mark all notifications as read."""
+    db.query(AdminNotification).filter(
+        AdminNotification.is_read == False
+    ).update({"is_read": True})
+    db.commit()
+
+    return {"status": "success"}

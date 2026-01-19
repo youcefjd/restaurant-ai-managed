@@ -23,3 +23,4 @@ deepgram-sdk>=3.0.0
 elevenlabs>=0.2.0
 websockets>=12.0
 pydub>=0.25.1
+python-dateutil>=2.8.0

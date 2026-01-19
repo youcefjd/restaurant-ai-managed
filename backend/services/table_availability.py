@@ -22,7 +22,7 @@ class TableAvailabilityService:
         db: Session,
         restaurant_id: int,
         party_size: int,
-        booking_date: datetime,
+        booking_date,  # Can be date or datetime
         booking_time: dt_time,
         duration_minutes: int = DEFAULT_RESERVATION_DURATION
     ) -> Optional[Table]:
@@ -59,7 +59,7 @@ class TableAvailabilityService:
     def is_table_available(
         db: Session,
         table_id: int,
-        booking_date: datetime,
+        booking_date,  # Can be date or datetime
         booking_time: dt_time,
         duration_minutes: int = DEFAULT_RESERVATION_DURATION
     ) -> bool:
@@ -68,42 +68,40 @@ class TableAvailabilityService:
 
         Returns True if table is free, False if there's a conflict.
         """
+        # Handle both date and datetime inputs
+        if hasattr(booking_date, 'date'):
+            the_date = booking_date.date()
+        else:
+            the_date = booking_date
+
         # Convert booking_time to datetime for comparison
-        booking_datetime = datetime.combine(booking_date.date(), booking_time)
+        booking_datetime = datetime.combine(the_date, booking_time)
         booking_end = booking_datetime + timedelta(minutes=duration_minutes)
 
-        # Find conflicting bookings
-        conflicts = db.query(Booking).filter(
+        # Get all bookings for this table on this date
+        existing_bookings = db.query(Booking).filter(
             Booking.table_id == table_id,
-            Booking.booking_date == booking_date.date(),
-            Booking.status.in_(['pending', 'confirmed']),  # Only active bookings
-            or_(
-                # New booking starts during existing booking
-                and_(
-                    Booking.booking_time <= booking_time,
-                    Booking.booking_time + timedelta(minutes=Booking.duration_minutes) > booking_time
-                ),
-                # New booking ends during existing booking
-                and_(
-                    Booking.booking_time < booking_end.time(),
-                    Booking.booking_time + timedelta(minutes=Booking.duration_minutes) >= booking_end.time()
-                ),
-                # New booking completely overlaps existing booking
-                and_(
-                    booking_time <= Booking.booking_time,
-                    booking_end.time() >= Booking.booking_time + timedelta(minutes=Booking.duration_minutes)
-                )
-            )
-        ).first()
+            Booking.booking_date == the_date,
+            Booking.status.in_(['pending', 'confirmed'])
+        ).all()
 
-        return conflicts is None
+        # Check for conflicts manually (SQLite doesn't support time arithmetic in queries)
+        for existing in existing_bookings:
+            existing_start = datetime.combine(the_date, existing.booking_time)
+            existing_end = existing_start + timedelta(minutes=existing.duration_minutes)
+
+            # Check if time ranges overlap
+            if not (booking_end <= existing_start or booking_datetime >= existing_end):
+                return False
+
+        return True
 
     @staticmethod
     def get_available_time_slots(
         db: Session,
         restaurant_id: int,
         party_size: int,
-        booking_date: datetime,
+        booking_date,  # Can be date or datetime
         start_hour: int = 17,  # 5 PM
         end_hour: int = 22,     # 10 PM
         slot_interval: int = 30  # Check every 30 minutes
@@ -142,7 +140,9 @@ class TableAvailabilityService:
                 available_slots.append((current_time, available_count))
 
             # Move to next slot
-            current_datetime = datetime.combine(booking_date.date(), current_time)
+            # Handle both date and datetime inputs
+            the_date = booking_date.date() if hasattr(booking_date, 'date') else booking_date
+            current_datetime = datetime.combine(the_date, current_time)
             next_datetime = current_datetime + timedelta(minutes=slot_interval)
             current_time = next_datetime.time()
 
@@ -153,7 +153,7 @@ class TableAvailabilityService:
         db: Session,
         restaurant_id: int,
         party_size: int,
-        booking_date: datetime,
+        booking_date,  # Can be date or datetime
         requested_time: dt_time,
         max_suggestions: int = 3
     ) -> List[dt_time]:
@@ -189,22 +189,25 @@ class TableAvailabilityService:
     def get_table_schedule(
         db: Session,
         table_id: int,
-        date: datetime
+        schedule_date  # Can be date or datetime
     ) -> List[dict]:
         """
         Get the full schedule for a specific table on a specific date.
 
         Returns list of bookings with time slots.
         """
+        # Handle both date and datetime inputs
+        the_date = schedule_date.date() if hasattr(schedule_date, 'date') else schedule_date
+
         bookings = db.query(Booking).filter(
             Booking.table_id == table_id,
-            Booking.booking_date == date.date(),
+            Booking.booking_date == the_date,
             Booking.status.in_(['pending', 'confirmed'])
         ).order_by(Booking.booking_time).all()
 
         schedule = []
         for booking in bookings:
-            booking_datetime = datetime.combine(date.date(), booking.booking_time)
+            booking_datetime = datetime.combine(the_date, booking.booking_time)
             end_time = booking_datetime + timedelta(minutes=booking.duration_minutes)
 
             schedule.append({

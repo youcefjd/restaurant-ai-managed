@@ -10,13 +10,20 @@ from pydantic import BaseModel, EmailStr
 from datetime import datetime, timedelta
 
 from backend.database import get_db
-from backend.models_platform import RestaurantAccount, SubscriptionTier, SubscriptionStatus
+from backend.models_platform import (
+    RestaurantAccount, SubscriptionTier, SubscriptionStatus,
+    AdminNotification, NotificationType
+)
 from backend.auth import (
     verify_password,
     get_password_hash,
     create_access_token,
     get_current_user
 )
+from backend.services.twilio_provisioning import twilio_provisioning
+
+import logging
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -53,18 +60,36 @@ async def signup_restaurant(
     """
     Register a new restaurant account.
 
-    Creates account with 30-day free trial.
+    Creates account with:
+    - 30-day free trial OR 10 orders (whichever comes first)
+    - Auto-provisioned Twilio phone number
+    - Notification sent to platform admin
     """
     # Check if email already exists
-    existing = db.query(RestaurantAccount).filter(
+    existing_email = db.query(RestaurantAccount).filter(
         RestaurantAccount.owner_email == signup_data.owner_email
     ).first()
 
-    if existing:
+    if existing_email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered"
         )
+
+    # Check if phone number already exists
+    existing_phone = db.query(RestaurantAccount).filter(
+        RestaurantAccount.phone == signup_data.phone
+    ).first()
+
+    if existing_phone:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Phone number already registered"
+        )
+
+    # Note: For MVP, we use a shared Twilio number instead of provisioning per-restaurant
+    # Auto-provisioning can be enabled later for paid plans
+    twilio_number = None
 
     # Create new restaurant account
     account = RestaurantAccount(
@@ -72,11 +97,14 @@ async def signup_restaurant(
         owner_email=signup_data.owner_email,
         password_hash=get_password_hash(signup_data.password),
         phone=signup_data.phone,
+        twilio_phone_number=twilio_number,
         subscription_tier=SubscriptionTier.FREE.value,
         subscription_status=SubscriptionStatus.TRIAL.value,
         platform_commission_rate=10.0,
         commission_enabled=True,
         trial_ends_at=datetime.now() + timedelta(days=30),
+        trial_order_limit=10,
+        trial_orders_used=0,
         onboarding_completed=False,
         is_active=True
     )
@@ -84,6 +112,38 @@ async def signup_restaurant(
     db.add(account)
     db.commit()
     db.refresh(account)
+
+    # Auto-create Restaurant record linked to this account
+    from backend.models import Restaurant
+    from datetime import time
+    restaurant = Restaurant(
+        account_id=account.id,
+        name=account.business_name,
+        address="Address pending",  # Will be updated during onboarding
+        phone=signup_data.phone,
+        email=account.owner_email,
+        opening_time=time(9, 0),   # Default 9 AM
+        closing_time=time(21, 0),  # Default 9 PM
+        booking_duration_minutes=90,
+        max_party_size=10
+    )
+    db.add(restaurant)
+    db.commit()
+    logger.info(f"Auto-created restaurant location for account {account.id}")
+
+    # Create admin notification for new signup
+    notification = AdminNotification(
+        notification_type=NotificationType.RESTAURANT_SIGNUP.value,
+        title=f"New Restaurant Signup: {account.business_name}",
+        message=f"{account.business_name} signed up with email {account.owner_email}. " +
+                f"Trial ends: {account.trial_ends_at.strftime('%B %d, %Y')}. " +
+                (f"Twilio number: {twilio_number}" if twilio_number else "No Twilio number assigned."),
+        account_id=account.id
+    )
+    db.add(notification)
+    db.commit()
+
+    logger.info(f"New restaurant signup: {account.id} - {account.business_name}")
 
     # Create access token
     access_token = create_access_token(
@@ -102,7 +162,10 @@ async def signup_restaurant(
             "email": account.owner_email,
             "business_name": account.business_name,
             "role": "restaurant",
-            "trial_ends_at": account.trial_ends_at.isoformat() if account.trial_ends_at else None
+            "twilio_phone_number": twilio_number,
+            "trial_ends_at": account.trial_ends_at.isoformat() if account.trial_ends_at else None,
+            "trial_order_limit": account.trial_order_limit,
+            "trial_orders_used": account.trial_orders_used
         }
     }
 

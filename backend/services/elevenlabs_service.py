@@ -1,12 +1,11 @@
 """
 ElevenLabs TTS (Text-to-Speech) service for streaming audio generation.
 
-Uses ElevenLabs API for low-latency, natural-sounding voice synthesis
-with streaming support for real-time conversation.
+Uses ElevenLabs API with ulaw_8000 output format for direct Twilio compatibility.
+No ffmpeg conversion needed - audio streams directly to caller.
 """
 
 import os
-import asyncio
 import logging
 from typing import Optional, AsyncGenerator
 import httpx
@@ -17,133 +16,125 @@ logger = setup_logging(__name__)
 
 
 class ElevenLabsService:
-    """Service for text-to-speech using ElevenLabs."""
+    """Service for text-to-speech using ElevenLabs with Twilio-compatible output."""
 
     def __init__(self):
         """Initialize ElevenLabs service."""
         self.api_key = os.getenv("ELEVENLABS_API_KEY")
-        self.voice_id = os.getenv("ELEVENLABS_VOICE_ID")  # Optional, uses default if not set
+        self.voice_id = os.getenv("ELEVENLABS_VOICE_ID", "cgSgspJ2msm6clMCkdW9")
         self.model = os.getenv("ELEVENLABS_MODEL", "eleven_turbo_v2_5")
         self.base_url = "https://api.elevenlabs.io/v1"
         self.enabled = bool(self.api_key)
-        
+
         if self.enabled:
-            # If no voice_id specified, use default conversational voice
-            # Default voice IDs vary, but we'll fetch it if needed
-            if not self.voice_id:
-                self.voice_id = self._get_default_voice_id()
-            logger.info(f"ElevenLabs TTS service initialized with model: {self.model}, voice: {self.voice_id}")
+            logger.info(f"ElevenLabs TTS initialized - model: {self.model}, voice: {self.voice_id}")
         else:
-            logger.warning("ElevenLabs API key not found - TTS service disabled")
-
-    def _get_default_voice_id(self) -> str:
-        """
-        Get default conversational voice ID.
-
-        Returns:
-            Default voice ID string
-        """
-        # Default to the configured voice ID
-        # User can override with ELEVENLABS_VOICE_ID env var
-        return os.getenv("ELEVENLABS_DEFAULT_VOICE_ID", "cgSgspJ2msm6clMCkdW9")
+            logger.warning("ELEVENLABS_API_KEY not set - TTS service disabled")
 
     async def text_to_speech_stream(
         self,
         text: str,
         voice_id: Optional[str] = None,
-        model: Optional[str] = None,
-        stability: float = 0.5,
-        similarity_boost: float = 0.75
+        output_format: str = "ulaw_8000"
     ) -> AsyncGenerator[bytes, None]:
         """
-        Convert text to speech and stream audio chunks.
+        Stream TTS audio in Twilio-compatible format.
 
         Args:
             text: Text to convert to speech
-            voice_id: Voice ID to use (overrides default)
-            model: Model to use (overrides default)
-            stability: Stability setting (0.0-1.0)
-            similarity_boost: Similarity boost (0.0-1.0)
+            voice_id: Voice ID (uses default if not specified)
+            output_format: Audio format - "ulaw_8000" for Twilio (default)
 
         Yields:
-            Audio chunks as bytes (MP3 or PCM format)
+            Audio chunks as bytes (ulaw 8kHz for direct Twilio streaming)
         """
         if not self.enabled:
-            logger.error("ElevenLabs service is disabled - cannot generate speech")
+            logger.error("ElevenLabs service is disabled")
             return
 
         voice = voice_id or self.voice_id
-        model_name = model or self.model
-
         if not voice:
-            logger.error("No voice ID specified and no default available")
+            logger.error("No voice ID configured")
             return
 
+        url = f"{self.base_url}/text-to-speech/{voice}/stream"
+
+        headers = {
+            "Accept": "audio/basic",  # For ulaw format
+            "Content-Type": "application/json",
+            "xi-api-key": self.api_key
+        }
+
+        # Add output format as query parameter
+        params = {"output_format": output_format}
+
+        data = {
+            "text": text,
+            "model_id": self.model,
+            "voice_settings": {
+                "stability": 0.5,
+                "similarity_boost": 0.75,
+                "style": 0.0,
+                "use_speaker_boost": True
+            }
+        }
+
         try:
-            url = f"{self.base_url}/text-to-speech/{voice}/stream"
-            
-            headers = {
-                "Accept": "audio/mpeg",
-                "Content-Type": "application/json",
-                "xi-api-key": self.api_key
-            }
-
-            data = {
-                "text": text,
-                "model_id": model_name,
-                "voice_settings": {
-                    "stability": stability,
-                    "similarity_boost": similarity_boost
-                }
-            }
-
             async with httpx.AsyncClient(timeout=30.0) as client:
-                async with client.stream("POST", url, json=data, headers=headers) as response:
+                async with client.stream(
+                    "POST",
+                    url,
+                    json=data,
+                    headers=headers,
+                    params=params
+                ) as response:
                     if response.status_code != 200:
                         error_text = await response.aread()
                         logger.error(f"ElevenLabs API error {response.status_code}: {error_text.decode()}")
                         return
 
-                    async for chunk in response.aiter_bytes(chunk_size=4096):
+                    # Stream audio chunks directly - already in ulaw format
+                    async for chunk in response.aiter_bytes(chunk_size=640):
                         if chunk:
                             yield chunk
 
+        except httpx.TimeoutException:
+            logger.error("ElevenLabs request timed out")
         except Exception as e:
-            logger.error(f"Error generating speech with ElevenLabs: {str(e)}", exc_info=True)
+            logger.error(f"ElevenLabs streaming error: {e}", exc_info=True)
 
     async def text_to_speech(
         self,
         text: str,
         voice_id: Optional[str] = None,
-        model: Optional[str] = None
+        output_format: str = "ulaw_8000"
     ) -> Optional[bytes]:
         """
         Convert text to speech and return complete audio.
 
         Args:
-            text: Text to convert to speech
-            voice_id: Voice ID to use (overrides default)
-            model: Model to use (overrides default)
+            text: Text to convert
+            voice_id: Voice ID (uses default if not specified)
+            output_format: Audio format
 
         Returns:
-            Complete audio as bytes, or None if failed
+            Complete audio bytes, or None if failed
         """
-        audio_chunks = []
-        async for chunk in self.text_to_speech_stream(text, voice_id, model):
-            audio_chunks.append(chunk)
-        
-        if audio_chunks:
-            return b"".join(audio_chunks)
-        return None
+        chunks = []
+        async for chunk in self.text_to_speech_stream(text, voice_id, output_format):
+            chunks.append(chunk)
+
+        return b"".join(chunks) if chunks else None
 
     async def get_voices(self) -> Optional[list]:
         """
-        Get list of available voices.
+        Get list of available voices (for health check).
 
         Returns:
             List of voice objects, or None if failed
         """
         if not self.enabled:
+            logger.warning("ElevenLabs service not enabled (no API key)")
             return None
 
         try:
@@ -155,12 +146,24 @@ class ElevenLabsService:
                 if response.status_code == 200:
                     data = response.json()
                     return data.get("voices", [])
+                elif response.status_code == 401:
+                    logger.error("ElevenLabs API key is invalid (401 Unauthorized)")
+                    return None
+                elif response.status_code == 403:
+                    logger.error("ElevenLabs API access forbidden (403) - check API key permissions")
+                    return None
                 else:
-                    logger.error(f"Failed to fetch voices: {response.status_code}")
+                    logger.error(f"Failed to fetch voices: HTTP {response.status_code} - {response.text[:200]}")
                     return None
 
+        except httpx.TimeoutException:
+            logger.error("ElevenLabs API request timed out")
+            return None
+        except httpx.ConnectError as e:
+            logger.error(f"Failed to connect to ElevenLabs API: {e}")
+            return None
         except Exception as e:
-            logger.error(f"Error fetching voices from ElevenLabs: {str(e)}")
+            logger.error(f"Error fetching voices: {type(e).__name__}: {e}")
             return None
 
     def is_enabled(self) -> bool:

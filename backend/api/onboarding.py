@@ -246,20 +246,23 @@ async def update_twilio_phone(
             detail="Phone number must contain at least 10 digits"
         )
 
+    # Normalize to E.164 format (strip all formatting, keep only + and digits)
+    normalized_phone = '+' + digits_only
+
     # Check if phone number is already in use by another account
     existing = db.query(RestaurantAccount).filter(
-        RestaurantAccount.twilio_phone_number == phone,
+        RestaurantAccount.twilio_phone_number == normalized_phone,
         RestaurantAccount.id != account_id
     ).first()
-    
+
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="This phone number is already assigned to another restaurant"
         )
 
-    # Update phone number
-    account.twilio_phone_number = phone
+    # Update phone number (stored in normalized E.164 format)
+    account.twilio_phone_number = normalized_phone
     db.commit()
     db.refresh(account)
 

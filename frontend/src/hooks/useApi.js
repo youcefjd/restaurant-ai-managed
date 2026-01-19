@@ -14,7 +14,7 @@ const apiClient = axios.create({
 apiClient.interceptors.request.use(
   (config) => {
     // Add auth token if available
-    const TOKEN_REDACTED('authToken');
+    const token = localStorage.getItem('authToken');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -382,6 +382,31 @@ function getDefaultErrorMessage(status) {
 
 // Export the axios instance for direct use if needed
 export { apiClient };
+
+/**
+ * Simple hook that returns HTTP method helpers using apiClient
+ * Usage: const api = useApiHelpers();
+ *        const response = await api.get('/url');
+ */
+export function useApiHelpers() {
+  const get = async (url, config = {}) => {
+    return apiClient.get(url, config);
+  };
+
+  const post = async (url, data, config = {}) => {
+    return apiClient.post(url, data, config);
+  };
+
+  const put = async (url, data, config = {}) => {
+    return apiClient.put(url, data, config);
+  };
+
+  const del = async (url, config = {}) => {
+    return apiClient.delete(url, config);
+  };
+
+  return { get, post, put, delete: del };
+}
 
 // Default export
 export default useApi;

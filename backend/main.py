@@ -30,7 +30,7 @@ _env_path = os.path.join(_project_root, '.env')
 load_dotenv(_env_path, override=True)
 
 from backend.database import engine, Base
-from backend.api import restaurants, tables, customers, bookings, availability, voice, payments, deliveries, onboarding, platform_admin, stripe_connect, auth, transcripts, test_conversation, table_management
+from backend.api import restaurants, tables, customers, bookings, availability, voice, payments, deliveries, onboarding, platform_admin, stripe_connect, auth, transcripts, test_conversation, table_management, orders
 from backend.core.exceptions import (
     BusinessLogicError,
     ResourceNotFoundError,
@@ -115,17 +115,41 @@ async def lifespan(app: FastAPI):
             )
         
         # Check other critical services (non-LLM)
+        # Note: twilio (SMS) is not strictly required for voice to work
+        # ElevenLabs and Deepgram are required for voice functionality
+        voice_critical_services = ["deepgram", "elevenlabs"]
+
         for service_name, result in critical_results.items():
-            if service_name not in ["gemini", "openai"] and result.get("status") == "failed":
-                failed_critical.append(result.get("service", service_name))
-        
+            if service_name in ["gemini", "openai"]:
+                continue  # Handled above
+            if service_name == "twilio":
+                # Twilio SMS is not critical - just log warning
+                if result.get("status") == "failed":
+                    logger.warning(f"Twilio SMS service unhealthy: {result.get('error', 'unknown error')}. SMS features will be unavailable.")
+                continue
+            if result.get("status") == "failed":
+                if service_name in voice_critical_services:
+                    failed_critical.append(result.get("service", service_name))
+                else:
+                    logger.warning(f"{service_name} service unhealthy: {result.get('error', 'unknown error')}")
+
         if failed_critical:
-            error_msg = (
-                f"ERROR: Critical services failed health check. Server cannot start.\n"
-                f"Failed services: {', '.join(failed_critical)}"
-            )
-            logger.error(error_msg)
-            raise RuntimeError(error_msg)
+            # Check if we should skip strict health checks (for development)
+            skip_strict = os.getenv("SKIP_STRICT_HEALTH_CHECKS", "").lower() in ("true", "1", "yes")
+
+            if skip_strict:
+                logger.warning(
+                    f"WARNING: Critical services failed health check: {', '.join(failed_critical)}. "
+                    f"Continuing anyway because SKIP_STRICT_HEALTH_CHECKS=true"
+                )
+            else:
+                error_msg = (
+                    f"ERROR: Critical services failed health check. Server cannot start.\n"
+                    f"Failed services: {', '.join(failed_critical)}\n"
+                    f"Set SKIP_STRICT_HEALTH_CHECKS=true to bypass (for development only)"
+                )
+                logger.error(error_msg)
+                raise RuntimeError(error_msg)
         
         if has_working_llm:
             logger.info("All critical services healthy. Server ready to accept requests.")
@@ -497,6 +521,13 @@ app.include_router(
     table_management.router,
     prefix="/api/table-management",
     tags=["Table Management"]
+)
+
+# Restaurant orders (takeout and delivery) - authenticated restaurant endpoints
+app.include_router(
+    orders.router,
+    prefix="/api/restaurant",
+    tags=["Restaurant Orders"]
 )
 
 

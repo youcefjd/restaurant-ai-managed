@@ -10,7 +10,7 @@ import {
   XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { format, parseISO } from 'date-fns';
-import useApi from '../hooks/useApi';
+import { useFetch } from '../hooks/useApi';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -32,17 +32,17 @@ export default function Customers() {
     loading: customersLoading,
     error: customersError,
     refetch: refetchCustomers,
-  } = useApi('/api/customers/');
+  } = useFetch('/api/customers/');
 
   // Fetch all bookings for customer history
   const {
     data: bookings,
     loading: bookingsLoading,
     error: bookingsError,
-  } = useApi('/api/bookings/');
+  } = useFetch('/api/bookings/');
 
   // Fetch restaurants for booking details
-  const { data: restaurants } = useApi('/api/');
+  const { data: restaurants } = useFetch('/api/restaurants/');
 
   // Filter customers based on search term
   const filteredCustomers = useMemo(() => {

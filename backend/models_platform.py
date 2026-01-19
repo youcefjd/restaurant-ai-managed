@@ -87,6 +87,9 @@ class RestaurantAccount(Base):
 
     # Twilio integration
     twilio_phone_number = Column(String(20), nullable=True, unique=True)
+    
+    # Retell AI integration
+    retell_agent_id = Column(String(255), nullable=True, index=True)  # Retell AI agent ID for voice processing
 
     # Operating hours
     opening_time = Column(String(10), nullable=True)  # Format: "HH:MM" (e.g., "09:00")

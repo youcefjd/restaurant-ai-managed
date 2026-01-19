@@ -37,15 +37,16 @@
 
 ## ✨ Key Features
 
-### 🤖 AI with Google Gemini
-- Powered by Google Gemini Flash/Exp models
+### 🤖 AI with Google Gemini (SMS) & Retell AI (Voice)
+- SMS conversations: Google Gemini Flash/Exp models
+- Voice conversations: Retell AI (uses GPT-4o by default, configurable)
 - Understands menu questions, takes orders, makes reservations
 - Fast response times (1-3 seconds)
-- Requires GOOGLE_AI_API_KEY (free tier available)
+- Requires GOOGLE_AI_API_KEY (SMS) and RETELL_API_KEY (voice)
 
-### 📞 AI Phone Assistant (Twilio Integration)
-- Answers calls automatically
-- Speech-to-text with Twilio Whisper
+### 📞 AI Phone Assistant (Twilio + Retell AI)
+- Answers calls automatically via Retell AI
+- Retell handles all voice processing (ASR, LLM, TTS)
 - Natural conversation handling
 - Order processing and confirmation
 - Reservation booking
@@ -210,7 +211,7 @@ sudo systemctl restart restaurant-backend
 - **Authentication:** JWT tokens
 - **AI:** Google Gemini (with OpenAI fallback)
 - **Payments:** Stripe Connect
-- **Voice:** Twilio Voice + Whisper (speech-to-text)
+- **Voice:** Retell AI (complete voice agent platform - ASR, LLM, TTS)
 
 **Frontend:**
 - **Framework:** React 18 + TypeScript
@@ -241,11 +242,15 @@ DATABASE_URL=sqlite:///./restaurant_reservations.db
 GOOGLE_AI_API_KEY=your_google_ai_api_key_here
 GEMINI_MODEL=gemini-2.0-flash-exp  # Optional, defaults to gemini-2.0-flash-exp
 
-# Twilio (Required for AI phone assistant and SMS)
+# Twilio (Required for phone numbers and SMS)
 # Note: Each restaurant sets their own phone number in Settings
 # These credentials are only for making Twilio API calls
 TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 TWILIO_AUTH_TOKEN=your_auth_token_here
+
+# Retell AI (Required for voice AI processing)
+# Retell handles ASR, LLM, and TTS - simplifying voice integration
+RETELL_API_KEY=your_retell_api_key_here
 
 # Stripe Payments (Optional)
 STRIPE_SECRET_KEY=sk_test_xxxxxxxxxxxxxxxxxxxx

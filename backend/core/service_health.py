@@ -14,8 +14,6 @@ from backend.core.logging import setup_logging
 from backend.services.llm_service import llm_service
 from backend.services.voice_service import voice_service
 from backend.services.sms_service import sms_service
-from backend.services.deepgram_service import deepgram_service
-from backend.services.elevenlabs_service import elevenlabs_service
 from backend.services.menu_parser import menu_parser
 
 logger = setup_logging(__name__)
@@ -202,89 +200,30 @@ class ServiceHealthChecker:
                 "error": error_msg
             }
 
-    def check_deepgram(self) -> Dict[str, Optional[str]]:
+    def check_retell(self) -> Dict[str, Optional[str]]:
         """
-        Check Deepgram service initialization (lightweight check).
+        Check Retell AI service configuration.
         
         Returns:
             Dict with service name, status, and optional error message
         """
-        if not deepgram_service.enabled:
+        import os
+        retell_api_key = os.getenv("RETELL_API_KEY")
+        
+        if not retell_api_key:
             return {
-                "service": "Deepgram STT",
+                "service": "Retell AI",
                 "status": "disabled",
-                "error": "API key not set"
+                "error": "RETELL_API_KEY not set"
             }
         
-        try:
-            # Check if client is initialized
-            if deepgram_service.client:
-                return {
-                    "service": "Deepgram STT",
-                    "status": "healthy",
-                    "details": "client initialized"
-                }
-            else:
-                return {
-                    "service": "Deepgram STT",
-                    "status": "failed",
-                    "error": "Client not initialized"
-                }
-        except Exception as e:
-            return {
-                "service": "Deepgram STT",
-                "status": "failed",
-                "error": str(e)
-            }
-
-    async def check_elevenlabs(self) -> Dict[str, Optional[str]]:
-        """
-        Check ElevenLabs API connectivity by calling the /voices endpoint.
-        
-        Returns:
-            Dict with service name, status, and optional error message
-        """
-        if not elevenlabs_service.enabled:
-            return {
-                "service": "ElevenLabs TTS",
-                "status": "disabled",
-                "error": "API key not set"
-            }
-        
-        try:
-            # Make actual API call to verify credentials
-            voices = await asyncio.wait_for(
-                elevenlabs_service.get_voices(),
-                timeout=10.0
-            )
-            
-            if voices is not None:
-                return {
-                    "service": "ElevenLabs TTS",
-                    "status": "healthy",
-                    "details": f"{len(voices)} voices available"
-                }
-            else:
-                return {
-                    "service": "ElevenLabs TTS",
-                    "status": "failed",
-                    "error": "Unable to fetch voices"
-                }
-        except asyncio.TimeoutError:
-            return {
-                "service": "ElevenLabs TTS",
-                "status": "failed",
-                "error": "API call timed out (>10s)"
-            }
-        except Exception as e:
-            error_msg = str(e)
-            if "401" in error_msg or "authenticate" in error_msg.lower():
-                error_msg = "Invalid API key"
-            return {
-                "service": "ElevenLabs TTS",
-                "status": "failed",
-                "error": error_msg
-            }
+        # Retell is managed service - we can't check connectivity without agent ID
+        # Just verify API key is set
+        return {
+            "service": "Retell AI",
+            "status": "healthy",
+            "details": "API key configured (voice processing managed by Retell)"
+        }
 
     def check_menu_parser(self) -> Dict[str, Optional[str]]:
         """
@@ -318,14 +257,13 @@ class ServiceHealthChecker:
 
     async def check_all_critical(self) -> Dict[str, Dict[str, Optional[str]]]:
         """
-        Check all critical services (Gemini/OpenAI, Twilio SMS, Deepgram, ElevenLabs).
+        Check all critical services (Gemini/OpenAI, Twilio SMS, Retell AI).
         
-        These are all required for the voice agent to work with Media Streams.
+        These are required for the voice agent to work.
         Without them, the voice agent will fail and fall back to SMS only.
         
         Note: Twilio check here is for SMS service (requires API access to send messages).
-        Voice calls work via webhooks (Twilio calls the backend) and don't require
-        the backend to have Twilio API access for incoming calls.
+        Voice calls work via webhooks (Twilio calls the backend) and Retell handles voice processing.
         
         Returns:
             Dict mapping service names to their health check results
@@ -334,7 +272,7 @@ class ServiceHealthChecker:
         
         results = {}
         
-        # Check LLM service (critical)
+        # Check LLM service (critical - still used for SMS and conversation handling)
         if llm_service.provider == "gemini" and llm_service.gemini_enabled:
             results["gemini"] = await self.check_gemini()
         elif llm_service.provider == "openai" and llm_service.openai_enabled:
@@ -346,14 +284,11 @@ class ServiceHealthChecker:
             if llm_service.openai_enabled:
                 results["openai"] = await self.check_openai()
         
-        # Check Twilio (critical)
+        # Check Twilio (critical for SMS)
         results["twilio"] = self.check_twilio()
         
-        # Check Deepgram (critical for Media Streams STT)
-        results["deepgram"] = self.check_deepgram()
-        
-        # Check ElevenLabs (critical for Media Streams TTS)
-        results["elevenlabs"] = await self.check_elevenlabs()
+        # Check Retell AI (critical for voice processing)
+        results["retell"] = self.check_retell()
         
         return results
 
@@ -430,8 +365,8 @@ class ServiceHealthChecker:
         
         # All services needed for voice agent are critical
         # Note: "twilio" here refers to SMS functionality (requires API access)
-        # Voice calls work via webhooks and don't require Twilio API access
-        critical_services = {"gemini", "openai", "twilio", "deepgram", "elevenlabs"}
+        # Voice calls work via webhooks and Retell handles voice processing
+        critical_services = {"gemini", "openai", "twilio", "retell"}
         
         for service_name, result in results.items():
             is_critical = service_name in critical_services

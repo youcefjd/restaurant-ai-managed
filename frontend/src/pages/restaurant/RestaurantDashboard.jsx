@@ -46,8 +46,28 @@ const paymentStatusColors = {
 
 function formatTime(dateString) {
   if (!dateString) return 'ASAP';
-  const date = new Date(dateString);
+  // Handle datetime strings - ensure proper timezone handling
+  let date = new Date(dateString);
+  // If the date string doesn't have timezone info and looks like UTC, append Z
+  if (typeof dateString === 'string' && !dateString.includes('Z') && !dateString.includes('+') && !dateString.includes('-', 10)) {
+    date = new Date(dateString + 'Z');
+  }
   return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
+function formatDateTime(dateString) {
+  if (!dateString) return 'ASAP';
+  let date = new Date(dateString);
+  // If the date string doesn't have timezone info, treat as UTC
+  if (typeof dateString === 'string' && !dateString.includes('Z') && !dateString.includes('+') && !dateString.includes('-', 10)) {
+    date = new Date(dateString + 'Z');
+  }
+  return date.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  });
 }
 
 function formatCurrency(cents) {
@@ -140,7 +160,7 @@ function OrderDetailsModal({ order, onClose, onStatusUpdate, onPaymentUpdate }) 
                   {order.order_type === 'takeout' ? 'Pickup Time' : 'Delivery Time'}
                 </h4>
                 <p className="text-gray-900 font-medium">
-                  {order.scheduled_time ? new Date(order.scheduled_time).toLocaleString() : 'ASAP'}
+                  {formatDateTime(order.scheduled_time)}
                 </p>
               </div>
 

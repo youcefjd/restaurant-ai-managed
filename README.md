@@ -19,7 +19,7 @@
 - User management and access control
 
 **For Restaurant Owners:**
-- **AI Phone Assistant** - Automated call handling and order taking (Twilio + Gemini)
+- **AI Phone Assistant** - Automated call handling and order taking (Twilio + Retell AI)
 - **Menu Management** - Interactive menu with real-time availability toggles
 - **Table Reservations** - Automatic booking and table assignment
 - **Order Management** - Takeout, delivery, and dine-in orders
@@ -96,7 +96,8 @@ git clone https://github.com/youcefjd/restaurant-ai-managed.git
 cd restaurant-ai-managed
 
 # 3. Setup environment variables
-# Create .env file with GOOGLE_AI_API_KEY (see .env.example)
+# Create .env file with required keys (see .env.example)
+# Required: GOOGLE_AI_API_KEY (SMS), RETELL_API_KEY (voice), TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN
 
 # 4. Setup backend
 python3 -m venv venv
@@ -131,25 +132,36 @@ npm run preview
 
 ### For AI Phone Assistant Setup
 
-**See complete guide:** [`TWILIO_VOICE_SETUP.md`](TWILIO_VOICE_SETUP.md)
+**Voice AI is powered by Retell AI** - a managed voice agent platform that handles all voice processing (ASR, LLM, TTS).
 
-**Where to put Twilio API keys:**
+**Required Setup:**
 ```bash
 # Edit this file on your server:
 ~/restaurant-ai-managed/.env
 
 # Add these lines:
-# Note: Each restaurant sets their own phone number in Settings
-# These credentials are only for making Twilio API calls
+# Twilio (for phone numbers and SMS)
 TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 TWILIO_AUTH_TOKEN=your_auth_token_here
-PUBLIC_URL=https://your-ngrok-url.ngrok.io
+
+# Retell AI (for voice processing)
+RETELL_API_KEY=your_retell_api_key_here
+
+# Public URL for webhooks
+PUBLIC_URL=https://your-domain.com
 
 # Restart backend
 sudo systemctl restart restaurant-backend
 ```
 
-**Cost:** ~$10-20/month for typical restaurant call volume
+**Next Steps:**
+1. Create Retell AI account at https://retellai.com/
+2. Create a voice agent in Retell dashboard
+3. Configure agent with system prompt from `VOICE_AGENT_SYSTEM_PROMPT.md`
+4. Set `retell_agent_id` for each restaurant in Settings
+5. Configure Retell to call `/api/retell/custom-functions` for custom functions
+
+**Cost:** ~$15-25/month for typical restaurant call volume (includes Retell AI voice processing + Twilio phone/SMS)
 
 ---
 
@@ -191,15 +203,21 @@ sudo systemctl restart restaurant-backend
 │  ├─ Order Management                    │
 │  ├─ Reservation System                  │
 │  ├─ Payment Processing (Stripe)         │
-│  └─ Voice Webhooks (Twilio)             │
+│  └─ Voice Webhooks (Twilio → Retell)    │
 └──────────┬──────────────────┬───────────┘
            │                  │
            ▼                  ▼
     ┌─────────────┐   ┌──────────────┐
     │   Gemini    │   │   Database   │
     │  (AI LLM)   │   │   (SQLite/   │
-    │ Port 11434  │   │  PostgreSQL) │
+    │   for SMS   │   │  PostgreSQL) │
     └─────────────┘   └──────────────┘
+           │
+           ▼
+    ┌─────────────┐
+    │  Retell AI  │
+    │  (Voice)    │
+    └─────────────┘
 ```
 
 ### Tech Stack
@@ -209,7 +227,7 @@ sudo systemctl restart restaurant-backend
 - **Database:** SQLite (development) / PostgreSQL (production)
 - **ORM:** SQLAlchemy
 - **Authentication:** JWT tokens
-- **AI:** Google Gemini (with OpenAI fallback)
+- **AI:** Google Gemini for SMS (with OpenAI fallback), Retell AI for voice
 - **Payments:** Stripe Connect
 - **Voice:** Retell AI (complete voice agent platform - ASR, LLM, TTS)
 
@@ -283,7 +301,8 @@ restaurant-ai-managed/
 │   │   ├── orders.py      # Order management
 │   │   ├── reservations.py # Booking system
 │   │   ├── tables.py      # Table management
-│   │   └── voice.py       # Twilio voice webhooks
+│   │   ├── voice.py       # Twilio voice webhooks (routes to Retell)
+│   │   └── retell.py      # Retell AI custom functions
 │   ├── models.py          # Database models
 │   ├── schemas.py         # Pydantic schemas
 │   ├── database.py        # Database connection
@@ -348,10 +367,10 @@ restaurant-ai-managed/
 - `GET /api/{restaurant_id}/orders` - List orders
 - `PATCH /api/{restaurant_id}/orders/{id}/status` - Update order status
 
-### Voice (Twilio Webhooks)
-- `POST /api/voice/welcome` - Initial call greeting
-- `POST /api/voice/process` - Process customer speech
+### Voice (Twilio + Retell AI)
+- `POST /api/voice/welcome` - Routes calls to Retell AI agent
 - `POST /api/voice/status` - Call status updates
+- `POST /api/retell/custom-functions` - Retell custom functions webhook (orders, reservations, menu queries)
 
 **Full API Documentation:** http://localhost:8000/api/docs
 
@@ -370,8 +389,8 @@ See [`END_TO_END_TEST_REPORT.md`](END_TO_END_TEST_REPORT.md) for complete test c
 - ✅ Kitchen display
 - ✅ Real-time availability
 - ✅ Menu item toggles
-- ⚠️ AI conversations (requires GOOGLE_AI_API_KEY)
-- ⚠️ Phone system (requires Twilio)
+- ⚠️ AI conversations (requires GOOGLE_AI_API_KEY for SMS)
+- ⚠️ Phone system (requires Twilio + RETELL_API_KEY)
 - ⚠️ Payments (requires Stripe)
 
 ### Run Tests
@@ -401,7 +420,7 @@ curl http://localhost:8000/health
 
 ### Optional Services (Per Restaurant)
 - **Twilio Phone Number:** $1/month
-- **Twilio Voice Calls:** ~$0.03/minute (incoming + speech recognition)
+- **Retell AI Voice Processing:** ~$0.015-0.02/minute (includes ASR, LLM, TTS)
 - **Twilio SMS:** $0.0075/message
 - **Stripe Processing:** 2.9% + $0.30 per transaction
 - **Domain Name:** $12/year (optional)
@@ -409,10 +428,10 @@ curl http://localhost:8000/health
 
 **Example Monthly Cost (100 calls, $3000 revenue):**
 - Phone number: $1
-- Voice calls (100 × 3 min × $0.03): $9
+- Retell AI voice processing (100 × 3 min × $0.02): $6
 - SMS confirmations (100 × $0.0075): $0.75
 - Stripe fees (2.9% of $3000): $87
-- **Total: ~$100/month**
+- **Total: ~$95/month**
 - **Restaurant keeps: $2,913**
 - **Platform commission (10%): $300**
 
@@ -468,7 +487,7 @@ sudo certbot --nginx -d myrestaurant.com
 ## 📱 Multi-Device Usage
 
 ### Server Computer
-- Runs backend and frontend (requires GOOGLE_AI_API_KEY)
+- Runs backend and frontend (requires GOOGLE_AI_API_KEY for SMS, RETELL_API_KEY for voice)
 - Always on and connected to internet
 - Can be any Mac/Linux computer with 8GB+ RAM
 
@@ -584,8 +603,10 @@ Proprietary - All rights reserved
 - Contact platform admin
 
 **Twilio/Voice Issues:**
-- See [`TWILIO_VOICE_SETUP.md`](TWILIO_VOICE_SETUP.md)
+- See [`TWILIO_VOICE_SETUP.md`](TWILIO_VOICE_SETUP.md) (note: voice processing now uses Retell AI)
 - Check Twilio console logs
+- Verify Retell AI agent is configured and `retell_agent_id` is set in restaurant settings
+- Check Retell AI dashboard for call logs and errors
 
 ---
 
@@ -599,8 +620,8 @@ Proprietary - All rights reserved
 - ✅ Table and reservation system
 - ✅ Order management (takeout/delivery/dine-in)
 - ✅ Kitchen display
-- ✅ AI conversation handling (Gemini)
-- ✅ Voice assistant (Twilio + Whisper)
+- ✅ AI conversation handling (Gemini for SMS)
+- ✅ Voice assistant (Twilio + Retell AI)
 - ✅ Payment processing (Stripe Connect)
 - ✅ JWT authentication
 - ✅ Real-time availability tracking
@@ -621,7 +642,7 @@ Proprietary - All rights reserved
 
 1. **Technical person:** Follow [`SERVER_SETUP_GUIDE.md`](SERVER_SETUP_GUIDE.md)
 2. **Restaurant owner:** Follow [`RESTAURANT_OWNER_GUIDE.md`](RESTAURANT_OWNER_GUIDE.md)
-3. **Enable phone assistant:** Follow [`TWILIO_VOICE_SETUP.md`](TWILIO_VOICE_SETUP.md)
+3. **Enable phone assistant:** Set up Retell AI account and configure agents (see AI Phone Assistant Setup section above)
 
 **Questions?** Check the documentation files above!
 

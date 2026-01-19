@@ -177,7 +177,7 @@ async def voice_stream(websocket: WebSocket):
     # Transcript debouncing - wait for complete sentences
     transcript_buffer = []  # Buffer to collect transcript segments
     debounce_task: Optional[asyncio.Task] = None
-    DEBOUNCE_DELAY = 1.0  # Wait 1 second after last transcript before processing (reduced for lower latency)
+    DEBOUNCE_DELAY = 1.2  # Wait 1.2 seconds after last transcript before processing
 
     async def send_tts(text: str):
         """Generate and send TTS audio to Twilio."""

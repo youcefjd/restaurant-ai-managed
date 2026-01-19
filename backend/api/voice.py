@@ -26,6 +26,7 @@ from twilio.twiml.voice_response import VoiceResponse, Connect
 from backend.database import get_db
 from backend.services.deepgram_service import deepgram_service
 from backend.services.elevenlabs_service import elevenlabs_service
+from backend.services.openai_tts_service import openai_tts_service
 from backend.services.media_streams_service import media_streams_service
 from backend.services.conversation_handler import conversation_handler
 from backend.services.transcript_service import transcript_service
@@ -113,8 +114,9 @@ async def voice_welcome(request: Request, db: Session = Depends(get_db)):
         response.hangup()
         return Response(content=str(response), media_type="application/xml")
 
-    # Check services availability
-    if not (deepgram_service.is_enabled() and llm_service.is_enabled() and elevenlabs_service.is_enabled()):
+    # Check services availability (OpenAI TTS primary, ElevenLabs fallback)
+    tts_available = openai_tts_service.is_enabled() or elevenlabs_service.is_enabled()
+    if not (deepgram_service.is_enabled() and llm_service.is_enabled() and tts_available):
         logger.warning("Voice services unavailable")
         response = VoiceResponse()
         response.say("Sorry, voice service is temporarily unavailable. Please try again later.", voice='alice')
@@ -177,10 +179,11 @@ async def voice_stream(websocket: WebSocket):
     # Transcript debouncing - wait for complete sentences
     transcript_buffer = []  # Buffer to collect transcript segments
     debounce_task: Optional[asyncio.Task] = None
-    DEBOUNCE_DELAY = 1.2  # Wait 1.2 seconds after last transcript before processing
+    DEBOUNCE_DELAY = 1.5  # Wait 1.5 seconds after last transcript before processing
+    is_processing = False  # Track if we're currently processing to avoid race conditions
 
     async def send_tts(text: str):
-        """Generate and send TTS audio to Twilio."""
+        """Generate and send TTS audio to Twilio. Uses OpenAI TTS (primary) or ElevenLabs (fallback)."""
         nonlocal state, is_speaking, ws_connected, tts_active
 
         if not stream_sid:
@@ -196,9 +199,22 @@ async def voice_stream(websocket: WebSocket):
         is_speaking = False  # Reset barge-in flag when starting TTS
         logger.info(f"TTS: {text[:80]}...")
 
+        # Select TTS service (OpenAI primary, ElevenLabs fallback)
+        if openai_tts_service.is_enabled():
+            tts_stream = openai_tts_service.text_to_speech_stream(text)
+            tts_provider = "OpenAI"
+        elif elevenlabs_service.is_enabled():
+            tts_stream = elevenlabs_service.text_to_speech_stream(text)
+            tts_provider = "ElevenLabs"
+        else:
+            logger.error("No TTS service available")
+            state = CallState.LISTENING
+            tts_active = False
+            return
+
         try:
             chunk_count = 0
-            async for audio_chunk in elevenlabs_service.text_to_speech_stream(text):
+            async for audio_chunk in tts_stream:
                 # Check if WebSocket is still connected
                 if not ws_connected:
                     logger.warning("WebSocket disconnected during TTS, stopping")
@@ -228,7 +244,7 @@ async def voice_stream(websocket: WebSocket):
                 if chunk_count > 2:
                     await asyncio.sleep(0.01)
 
-            logger.info(f"TTS complete: {chunk_count} chunks sent")
+            logger.info(f"TTS ({tts_provider}) complete: {chunk_count} chunks sent")
 
         except Exception as e:
             logger.error(f"TTS error: {e}")
@@ -239,15 +255,16 @@ async def voice_stream(websocket: WebSocket):
 
     async def process_transcript(transcript: str):
         """Process transcript with LLM and send TTS response."""
-        nonlocal state, conversation_context, conversation_messages, deepgram_conn, ws_connected, call_ended
+        nonlocal state, conversation_context, conversation_messages, deepgram_conn, ws_connected, call_ended, is_processing
 
         if not transcript.strip():
             return
 
         # Use lock to prevent parallel LLM calls
         async with processing_lock:
+            is_processing = True
             state = CallState.PROCESSING
-            logger.info(f"Processing: {transcript}")
+            logger.info(f"Processing: {transcript} | History: {len(conversation_messages)} messages")
 
             try:
                 from backend.database import SessionLocal
@@ -272,6 +289,7 @@ async def voice_stream(websocket: WebSocket):
                 # Store for transcript
                 conversation_messages.append({"role": "user", "content": transcript})
                 conversation_messages.append({"role": "assistant", "content": response_message})
+                logger.info(f"Updated history: now {len(conversation_messages)} messages")
 
                 # Track unclear exchanges for graceful hangup
                 unclear_count = conversation_context.get("unclear_count", 0)
@@ -316,6 +334,7 @@ async def voice_stream(websocket: WebSocket):
                     # Signal that call should end (main loop will close websocket)
                     call_ended = True
                     ws_connected = False
+                    is_processing = False  # Clean up before return
                     return
 
             except Exception as e:
@@ -324,13 +343,56 @@ async def voice_stream(websocket: WebSocket):
             finally:
                 state = CallState.LISTENING
 
-    async def process_debounced_transcript():
+        # Check if more transcripts came in while we were processing
+        # Do this AFTER releasing the lock but BEFORE releasing is_processing
+        # so new debounce tasks will wait for us to process the queue
+        queued_transcript = None
+        if transcript_buffer:
+            logger.info(f"Processing queued transcripts: {transcript_buffer}")
+            queued_transcript = " ".join(transcript_buffer)
+            transcript_buffer.clear()
+
+        is_processing = False
+        logger.debug(f"is_processing = False, buffer has {len(transcript_buffer)} items")
+
+        # Process queued transcripts (recursive call will acquire lock again)
+        if queued_transcript:
+            logger.info(f"Processing queued: {queued_transcript}")
+            await process_transcript(queued_transcript)
+
+    def is_filler_speech(text: str) -> bool:
+        """Check if transcript is mostly filler words (person thinking)."""
+        filler_patterns = [
+            'uh', 'uhh', 'uhhh', 'um', 'umm', 'ummm', 'ah', 'ahh', 'ahhh',
+            'er', 'err', 'errr', 'hmm', 'hmmm', 'let me think', 'hold on',
+            'one sec', 'one second', 'wait', 'so', 'like', 'you know'
+        ]
+        text_lower = text.strip().lower()
+        # Check if the entire transcript is just filler
+        for filler in filler_patterns:
+            if text_lower == filler or text_lower == filler + '.':
+                return True
+        # Check if it's very short and starts with filler
+        words = text_lower.split()
+        if len(words) <= 2:
+            for filler in filler_patterns:
+                if text_lower.startswith(filler):
+                    return True
+        return False
+
+    async def process_debounced_transcript(delay: float):
         """Process accumulated transcript after debounce delay."""
         nonlocal transcript_buffer
 
         try:
             # Wait for the debounce delay
-            await asyncio.sleep(DEBOUNCE_DELAY)
+            await asyncio.sleep(delay)
+
+            # If another process is running, don't start a new one
+            # The running process will pick up our buffer in its finally block
+            if is_processing:
+                logger.info(f"Processing in progress, leaving buffer for pickup: {transcript_buffer}")
+                return
 
             # Combine all buffered transcripts
             if transcript_buffer:
@@ -358,9 +420,17 @@ async def voice_stream(websocket: WebSocket):
             if debounce_task:
                 debounce_task.cancel()
 
+            # Check if user is thinking (filler words) - give them more time
+            combined = " ".join(transcript_buffer)
+            if is_filler_speech(combined):
+                delay = 3.0  # 3 seconds for filler speech - let them think
+                logger.info(f"Detected filler speech, waiting 3s: '{combined}'")
+            else:
+                delay = DEBOUNCE_DELAY
+
             # Schedule new debounce task
             debounce_task = asyncio.run_coroutine_threadsafe(
-                process_debounced_transcript(), loop
+                process_debounced_transcript(delay), loop
             )
 
         elif text.strip():
@@ -561,14 +631,17 @@ async def call_status(
 @router.get("/health")
 async def voice_health():
     """Health check for voice service."""
+    tts_available = openai_tts_service.is_enabled() or elevenlabs_service.is_enabled()
     return {
         "service": "voice",
         "deepgram": deepgram_service.is_enabled(),
+        "openai_tts": openai_tts_service.is_enabled(),
         "elevenlabs": elevenlabs_service.is_enabled(),
+        "tts_provider": "openai" if openai_tts_service.is_enabled() else ("elevenlabs" if elevenlabs_service.is_enabled() else "none"),
         "llm": llm_service.is_enabled(),
         "status": "healthy" if all([
             deepgram_service.is_enabled(),
-            elevenlabs_service.is_enabled(),
+            tts_available,
             llm_service.is_enabled()
         ]) else "degraded"
     }

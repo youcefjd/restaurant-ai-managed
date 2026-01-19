@@ -109,6 +109,14 @@ export const restaurantAPI = {
   updateHoursFromGoogle: (accountId: number, placeId: string) =>
     api.post(`/onboarding/accounts/${accountId}/operating-hours-from-google`, { place_id: placeId }),
 
+  // Analytics
+  getAnalyticsSummary: (days: number = 30) =>
+    api.get('/restaurant/orders/analytics/summary', { params: { days } }),
+  getPopularItems: (days: number = 30, limit: number = 10) =>
+    api.get('/restaurant/orders/analytics/popular-items', { params: { days, limit } }),
+  getOrderTrends: (days: number = 30) =>
+    api.get('/restaurant/orders/analytics/trends', { params: { days } }),
+
   // Bookings / Table Reservations
   getBookings: (accountId: number, params?: { status_filter?: string; date_from?: string }) =>
     api.get('/bookings', { params: { account_id: accountId, ...params } }),

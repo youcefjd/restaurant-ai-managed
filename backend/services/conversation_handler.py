@@ -175,8 +175,8 @@ class ConversationHandler:
             user_message = self._build_user_message(message, context)
 
             # Call LLM service (non-streaming for now - voice handler handles streaming separately)
-            # Limit conversation history to last 6 messages to reduce latency
-            recent_history = conversation_history[-6:] if conversation_history and len(conversation_history) > 6 else conversation_history
+            # Limit conversation history to last 12 messages (6 turns) to balance context vs latency
+            recent_history = conversation_history[-12:] if conversation_history and len(conversation_history) > 12 else conversation_history
 
             ai_response = await self.llm_service.generate_complete_response(
                 system_prompt=system_prompt,
@@ -191,6 +191,25 @@ class ConversationHandler:
             # Parse AI response
             result = self._parse_ai_response(ai_response)
             logger.info(f"Parsed intent: {result.get('intent')}, context from AI: {result.get('context', {})}")
+
+            # IMPORTANT: Preserve customer info from AI response in context for ALL intents
+            # This prevents losing name/time when AI returns need_more_info or other intents
+            if result.get("customer_name"):
+                context["customer_name"] = result["customer_name"]
+                logger.info(f"Preserved customer_name in context: {result['customer_name']}")
+            if result.get("time"):
+                context["pickup_time"] = result["time"]
+                logger.info(f"Preserved pickup_time in context: {result['time']}")
+            if result.get("special_requests"):
+                existing_requests = context.get("special_requests", "")
+                if existing_requests:
+                    context["special_requests"] = f"{existing_requests}; {result['special_requests']}"
+                else:
+                    context["special_requests"] = result["special_requests"]
+            # Track if a pairing suggestion was made so we don't suggest again
+            if result.get("suggestion_made"):
+                context["suggestion_made"] = True
+                logger.info("Marked suggestion_made in context")
 
             # Check if we're awaiting a name for an order and got one
             if context.get("awaiting_name") and context.get("pending_order_items"):
@@ -1088,7 +1107,9 @@ Be conversational, helpful, and accurate about menu items and pricing."""
             # Calculate totals
             subtotal = sum(item.get("price_cents", 0) * item.get("quantity", 1) for item in order_items)
             tax = int(subtotal * 0.08)  # 8% tax
-            delivery_fee = 500  # $5 delivery fee
+            # Only add delivery fee for actual delivery orders (not pickup)
+            is_delivery = context.get("delivery_address") and context.get("delivery_address") != "Pickup"
+            delivery_fee = 500 if is_delivery else 0  # $5 delivery fee only for delivery
             total = subtotal + tax + delivery_fee
 
         # For now, all orders are pay at pickup (card payment not yet implemented)
@@ -1253,10 +1274,17 @@ Thank you!"""
         message += "You can pay when you pick up. Is there anything else I can help you with?"
 
         # Clear cart from context since order is complete, but keep call going
+        # Include order total in context so AI can answer follow-up questions about the total
         return {
             "type": "gather",  # Don't hang up - wait for customer to say goodbye
             "message": message,
-            "context": {"order_id": order.id, "cart_items": [], "order_confirmed": True}
+            "context": {
+                "order_id": order.id,
+                "order_total": total_dollars,
+                "order_items_recap": items_recap,
+                "cart_items": [],
+                "order_confirmed": True
+            }
         }
 
 

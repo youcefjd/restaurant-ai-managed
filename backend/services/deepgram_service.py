@@ -85,8 +85,8 @@ class DeepgramService:
                 interim_results="true",
                 smart_format="true",
                 punctuate="true",
-                endpointing="500",  # 500ms pause to end utterance (was 300)
-                utterance_end_ms="1500",  # 1.5s to detect end (was 1000)
+                endpointing="500",  # 500ms pause to end utterance
+                utterance_end_ms="1500",  # 1.5s to detect end
                 vad_events="true"
             )
 

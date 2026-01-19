@@ -7,10 +7,11 @@ and updating order status.
 from fastapi import APIRouter, Depends, HTTPException, Query
 from starlette import status as http_status
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, or_
+from sqlalchemy import desc, or_, func
 from pydantic import BaseModel
-from typing import List, Optional
-from datetime import datetime, date
+from typing import List, Optional, Dict
+from datetime import datetime, date, timedelta
+from collections import defaultdict
 
 from backend.database import get_db
 from backend.models import Order, OrderStatus, OrderType, PaymentStatus
@@ -450,3 +451,269 @@ async def update_payment_status(
     logger.info(f"Order {order_id} payment status updated to {new_status.value}")
 
     return order_to_response(order)
+
+
+# ============== Analytics Endpoints ==============
+
+class PopularItemResponse(BaseModel):
+    item_name: str
+    quantity_sold: int
+    revenue_cents: int
+    order_count: int
+
+
+class DailyTrendResponse(BaseModel):
+    date: str
+    order_count: int
+    revenue_cents: int
+    avg_order_value_cents: int
+
+
+class AnalyticsSummaryResponse(BaseModel):
+    period_start: str
+    period_end: str
+    total_orders: int
+    total_revenue_cents: int
+    avg_order_value_cents: int
+    takeout_orders: int
+    delivery_orders: int
+    popular_items: List[PopularItemResponse]
+    daily_trends: List[DailyTrendResponse]
+    peak_hours: Dict[int, int]  # hour -> order count
+    repeat_customer_rate: float
+
+
+@router.get("/analytics/popular-items", response_model=List[PopularItemResponse])
+async def get_popular_items(
+    days: int = Query(30, ge=1, le=365, description="Number of days to analyze"),
+    limit: int = Query(10, ge=1, le=50, description="Number of items to return"),
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get the most popular menu items based on quantity sold.
+    """
+    if current_user["role"] != "restaurant":
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
+            detail="Only restaurant accounts can access analytics"
+        )
+
+    account_id = current_user["account_id"]
+    start_date = datetime.now() - timedelta(days=days)
+
+    # Get completed orders in the time range
+    orders = db.query(Order).filter(
+        Order.account_id == account_id,
+        Order.created_at >= start_date,
+        Order.status.notin_([OrderStatus.CANCELLED.value])
+    ).all()
+
+    # Aggregate items
+    item_stats = defaultdict(lambda: {"quantity": 0, "revenue": 0, "orders": 0})
+
+    for order in orders:
+        items = parse_order_items(order.order_items)
+        order_items_seen = set()  # Track unique items per order for order count
+
+        for item in items:
+            name = item.get("name", item.get("item_name", "Unknown"))
+            quantity = item.get("quantity", 1)
+            price = item.get("price_cents", item.get("price", 0))
+
+            item_stats[name]["quantity"] += quantity
+            item_stats[name]["revenue"] += price * quantity
+
+            if name not in order_items_seen:
+                item_stats[name]["orders"] += 1
+                order_items_seen.add(name)
+
+    # Sort by quantity and return top items
+    sorted_items = sorted(
+        item_stats.items(),
+        key=lambda x: x[1]["quantity"],
+        reverse=True
+    )[:limit]
+
+    return [
+        PopularItemResponse(
+            item_name=name,
+            quantity_sold=stats["quantity"],
+            revenue_cents=stats["revenue"],
+            order_count=stats["orders"]
+        )
+        for name, stats in sorted_items
+    ]
+
+
+@router.get("/analytics/trends", response_model=List[DailyTrendResponse])
+async def get_order_trends(
+    days: int = Query(30, ge=1, le=365, description="Number of days to analyze"),
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get daily order trends (order count, revenue, average order value).
+    """
+    if current_user["role"] != "restaurant":
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
+            detail="Only restaurant accounts can access analytics"
+        )
+
+    account_id = current_user["account_id"]
+    start_date = datetime.now() - timedelta(days=days)
+
+    # Get orders in the time range (excluding cancelled)
+    orders = db.query(Order).filter(
+        Order.account_id == account_id,
+        Order.created_at >= start_date,
+        Order.status.notin_([OrderStatus.CANCELLED.value])
+    ).all()
+
+    # Group by date
+    daily_stats = defaultdict(lambda: {"count": 0, "revenue": 0})
+
+    for order in orders:
+        order_date = order.created_at.strftime("%Y-%m-%d")
+        daily_stats[order_date]["count"] += 1
+        daily_stats[order_date]["revenue"] += order.total or 0
+
+    # Fill in missing dates with zeros
+    result = []
+    current = start_date.date()
+    end = datetime.now().date()
+
+    while current <= end:
+        date_str = current.strftime("%Y-%m-%d")
+        stats = daily_stats.get(date_str, {"count": 0, "revenue": 0})
+        avg = stats["revenue"] // stats["count"] if stats["count"] > 0 else 0
+
+        result.append(DailyTrendResponse(
+            date=date_str,
+            order_count=stats["count"],
+            revenue_cents=stats["revenue"],
+            avg_order_value_cents=avg
+        ))
+        current += timedelta(days=1)
+
+    return result
+
+
+@router.get("/analytics/summary", response_model=AnalyticsSummaryResponse)
+async def get_analytics_summary(
+    days: int = Query(30, ge=1, le=365, description="Number of days to analyze"),
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get comprehensive analytics summary including popular items, trends, and metrics.
+    """
+    if current_user["role"] != "restaurant":
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
+            detail="Only restaurant accounts can access analytics"
+        )
+
+    account_id = current_user["account_id"]
+    start_date = datetime.now() - timedelta(days=days)
+    end_date = datetime.now()
+
+    # Get orders in the time range (excluding cancelled)
+    orders = db.query(Order).filter(
+        Order.account_id == account_id,
+        Order.created_at >= start_date,
+        Order.status.notin_([OrderStatus.CANCELLED.value])
+    ).all()
+
+    # Basic stats
+    total_orders = len(orders)
+    total_revenue = sum(o.total or 0 for o in orders)
+    avg_order_value = total_revenue // total_orders if total_orders > 0 else 0
+    takeout_orders = len([o for o in orders if o.order_type == OrderType.TAKEOUT.value])
+    delivery_orders = len([o for o in orders if o.order_type == OrderType.DELIVERY.value])
+
+    # Popular items
+    item_stats = defaultdict(lambda: {"quantity": 0, "revenue": 0, "orders": 0})
+    for order in orders:
+        items = parse_order_items(order.order_items)
+        order_items_seen = set()
+
+        for item in items:
+            name = item.get("name", item.get("item_name", "Unknown"))
+            quantity = item.get("quantity", 1)
+            price = item.get("price_cents", item.get("price", 0))
+
+            item_stats[name]["quantity"] += quantity
+            item_stats[name]["revenue"] += price * quantity
+
+            if name not in order_items_seen:
+                item_stats[name]["orders"] += 1
+                order_items_seen.add(name)
+
+    sorted_items = sorted(
+        item_stats.items(),
+        key=lambda x: x[1]["quantity"],
+        reverse=True
+    )[:10]
+
+    popular_items = [
+        PopularItemResponse(
+            item_name=name,
+            quantity_sold=stats["quantity"],
+            revenue_cents=stats["revenue"],
+            order_count=stats["orders"]
+        )
+        for name, stats in sorted_items
+    ]
+
+    # Daily trends
+    daily_stats = defaultdict(lambda: {"count": 0, "revenue": 0})
+    for order in orders:
+        order_date = order.created_at.strftime("%Y-%m-%d")
+        daily_stats[order_date]["count"] += 1
+        daily_stats[order_date]["revenue"] += order.total or 0
+
+    daily_trends = []
+    current = start_date.date()
+    end = end_date.date()
+
+    while current <= end:
+        date_str = current.strftime("%Y-%m-%d")
+        stats = daily_stats.get(date_str, {"count": 0, "revenue": 0})
+        avg = stats["revenue"] // stats["count"] if stats["count"] > 0 else 0
+
+        daily_trends.append(DailyTrendResponse(
+            date=date_str,
+            order_count=stats["count"],
+            revenue_cents=stats["revenue"],
+            avg_order_value_cents=avg
+        ))
+        current += timedelta(days=1)
+
+    # Peak hours
+    peak_hours = defaultdict(int)
+    for order in orders:
+        hour = order.created_at.hour
+        peak_hours[hour] += 1
+
+    # Repeat customer rate
+    customer_phones = [o.customer_phone for o in orders if o.customer_phone]
+    unique_customers = len(set(customer_phones))
+    repeat_rate = 0.0
+    if unique_customers > 0 and len(customer_phones) > unique_customers:
+        repeat_rate = round((len(customer_phones) - unique_customers) / len(customer_phones) * 100, 1)
+
+    return AnalyticsSummaryResponse(
+        period_start=start_date.strftime("%Y-%m-%d"),
+        period_end=end_date.strftime("%Y-%m-%d"),
+        total_orders=total_orders,
+        total_revenue_cents=total_revenue,
+        avg_order_value_cents=avg_order_value,
+        takeout_orders=takeout_orders,
+        delivery_orders=delivery_orders,
+        popular_items=popular_items,
+        daily_trends=daily_trends,
+        peak_hours=dict(peak_hours),
+        repeat_customer_rate=repeat_rate
+    )

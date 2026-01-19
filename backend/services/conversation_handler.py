@@ -1197,14 +1197,21 @@ Be conversational, helpful, and accurate about menu items and pricing."""
                 f"{item.get('quantity', 1)}x {item.get('item_name')}"
                 for item in order_items
             ])
+            # Build pickup time text for SMS
+            if pickup_note and pickup_note != "ASAP":
+                pickup_text = f"Pickup at {pickup_note}"
+            else:
+                pickup_text = "Ready in 15-20 minutes"
+
             confirmation_msg = f"""Your order #{order.id} is confirmed!
 
 {items_text}
 
 Total: ${total / 100:.2f}
+{pickup_text}
 Payment: {payment_method}
 
-We'll have it ready in 15-20 minutes. Thank you!"""
+Thank you!"""
             # Use restaurant's Twilio phone number for SMS if available
             from_number = account.twilio_phone_number if account else None
             sms_service.send_sms(phone, confirmation_msg, from_number=from_number)
@@ -1238,9 +1245,11 @@ We'll have it ready in 15-20 minutes. Thank you!"""
         total_dollars = total / 100
 
         message = f"Your order is confirmed! Just to recap, you have {items_recap} for a total of ${total_dollars:.2f}. "
-        message += f"We'll have order number {order.id} ready in about 15-20 minutes for {customer.name}. "
+        message += f"Order number {order.id} for {customer.name}. "
         if pickup_note and pickup_note != "ASAP":
-            message += f"Pickup time: {pickup_note}. "
+            message += f"We'll have it ready for pickup at {pickup_note}. "
+        else:
+            message += "We'll have it ready in about 15-20 minutes. "
         message += "You can pay when you pick up. Is there anything else I can help you with?"
 
         # Clear cart from context since order is complete, but keep call going

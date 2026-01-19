@@ -166,7 +166,7 @@ async def voice_stream(websocket: WebSocket):
     current_transcript = ""
     is_speaking = False  # User is speaking (barge-in detection)
     tts_active = False  # Track if TTS is currently playing
-    barge_in_threshold = 3  # Minimum words to trigger barge-in
+    barge_in_threshold = 6  # Minimum words to trigger barge-in (increased to avoid false triggers)
 
     # Task management
     tts_task: Optional[asyncio.Task] = None

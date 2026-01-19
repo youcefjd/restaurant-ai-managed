@@ -114,8 +114,8 @@ async def voice_welcome(request: Request, db: Session = Depends(get_db)):
         response.hangup()
         return Response(content=str(response), media_type="application/xml")
 
-    # Check services availability (OpenAI TTS primary, ElevenLabs fallback)
-    tts_available = openai_tts_service.is_enabled() or elevenlabs_service.is_enabled()
+    # Check services availability (ElevenLabs TTS primary, OpenAI fallback)
+    tts_available = elevenlabs_service.is_enabled() or openai_tts_service.is_enabled()
     if not (deepgram_service.is_enabled() and llm_service.is_enabled() and tts_available):
         logger.warning("Voice services unavailable")
         response = VoiceResponse()
@@ -199,13 +199,13 @@ async def voice_stream(websocket: WebSocket):
         is_speaking = False  # Reset barge-in flag when starting TTS
         logger.info(f"TTS: {text[:80]}...")
 
-        # Select TTS service (OpenAI primary, ElevenLabs fallback)
-        if openai_tts_service.is_enabled():
-            tts_stream = openai_tts_service.text_to_speech_stream(text)
-            tts_provider = "OpenAI"
-        elif elevenlabs_service.is_enabled():
+        # Select TTS service (ElevenLabs primary, OpenAI fallback)
+        if elevenlabs_service.is_enabled():
             tts_stream = elevenlabs_service.text_to_speech_stream(text)
             tts_provider = "ElevenLabs"
+        elif openai_tts_service.is_enabled():
+            tts_stream = openai_tts_service.text_to_speech_stream(text)
+            tts_provider = "OpenAI"
         else:
             logger.error("No TTS service available")
             state = CallState.LISTENING
@@ -631,13 +631,13 @@ async def call_status(
 @router.get("/health")
 async def voice_health():
     """Health check for voice service."""
-    tts_available = openai_tts_service.is_enabled() or elevenlabs_service.is_enabled()
+    tts_available = elevenlabs_service.is_enabled() or openai_tts_service.is_enabled()
     return {
         "service": "voice",
         "deepgram": deepgram_service.is_enabled(),
-        "openai_tts": openai_tts_service.is_enabled(),
         "elevenlabs": elevenlabs_service.is_enabled(),
-        "tts_provider": "openai" if openai_tts_service.is_enabled() else ("elevenlabs" if elevenlabs_service.is_enabled() else "none"),
+        "openai_tts": openai_tts_service.is_enabled(),
+        "tts_provider": "elevenlabs" if elevenlabs_service.is_enabled() else ("openai" if openai_tts_service.is_enabled() else "none"),
         "llm": llm_service.is_enabled(),
         "status": "healthy" if all([
             deepgram_service.is_enabled(),

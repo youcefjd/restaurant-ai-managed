@@ -39,7 +39,7 @@ class LLMService:
         self.openai_api_key = os.getenv("OPENAI_API_KEY")
         self.gemini_api_key = os.getenv("GOOGLE_AI_API_KEY")
         self.openai_model = os.getenv("OPENAI_MODEL", "gpt-4o")
-        self.gemini_model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+        self.gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp")
 
         self.openai_client = None
         self.gemini_client = None

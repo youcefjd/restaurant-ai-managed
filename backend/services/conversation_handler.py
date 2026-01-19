@@ -245,6 +245,14 @@ class ConversationHandler:
                     "context": result.get("context", context)
                 }
 
+            elif result["intent"] == "end_call_abuse":
+                # Caller is being abusive/inappropriate - end the call politely
+                logger.warning(f"Ending call due to abuse/inappropriate behavior from {phone}")
+                return {
+                    "type": "hangup",
+                    "message": result.get("message", "I'm not able to continue this call, but I hope you have a good day. Goodbye.")
+                }
+
             elif result["intent"] == "goodbye":
                 # Check if there's a pending cart that should be finalized
                 cart_items = context.get("cart_items", [])

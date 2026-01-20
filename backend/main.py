@@ -30,7 +30,7 @@ _env_path = os.path.join(_project_root, '.env')
 load_dotenv(_env_path, override=True)
 
 from backend.database import engine, Base
-from backend.api import restaurants, tables, customers, bookings, availability, voice, payments, deliveries, onboarding, platform_admin, stripe_connect, auth, transcripts, test_conversation, table_management, orders
+from backend.api import restaurants, tables, customers, bookings, availability, voice, payments, deliveries, onboarding, platform_admin, stripe_connect, auth, transcripts, test_conversation, table_management, orders, retell_voice
 from backend.core.exceptions import (
     BusinessLogicError,
     ResourceNotFoundError,
@@ -470,7 +470,13 @@ app.include_router(
 app.include_router(
     voice.router,
     prefix="/api/voice",
-    tags=["Voice"]
+    tags=["Voice (Twilio/Deepgram)"]
+)
+
+app.include_router(
+    retell_voice.router,
+    prefix="/api/retell",
+    tags=["Voice (Retell AI)"]
 )
 
 app.include_router(

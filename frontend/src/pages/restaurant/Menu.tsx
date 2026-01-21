@@ -5,6 +5,7 @@ import { Plus, Edit, Trash2, Sparkles, ChevronDown, ChevronUp } from 'lucide-rea
 import { useAuth } from '../../contexts/AuthContext'
 import CreateMenuModal from '../../components/CreateMenuModal'
 import EditMenuModal from '../../components/EditMenuModal'
+import LoadingTRex from '../../components/LoadingTRex'
 
 export default function RestaurantMenu() {
   const { user } = useAuth()
@@ -66,7 +67,7 @@ export default function RestaurantMenu() {
   }
 
   if (isLoading) {
-    return <div className="text-center py-12">Loading menu...</div>
+    return <LoadingTRex message="Loading menu" />
   }
 
   if (!menu?.menus || menu.menus.length === 0) {

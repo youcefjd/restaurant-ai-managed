@@ -8,6 +8,7 @@ import {
 import {
   TrendingUp, DollarSign, ShoppingBag, Clock, Users, Star
 } from 'lucide-react'
+import LoadingTRex from '../../components/LoadingTRex'
 
 type TimePeriod = 7 | 30 | 90
 
@@ -99,11 +100,7 @@ export default function RestaurantAnalytics() {
   ].filter(d => d.value > 0) : []
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
-    )
+    return <LoadingTRex message="Loading analytics" />
   }
 
   if (error) {

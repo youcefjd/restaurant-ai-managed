@@ -3,6 +3,7 @@ import { restaurantAPI } from '../../services/api'
 import { Calendar, Clock, Users, CheckCircle, XCircle } from 'lucide-react'
 import { useState } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
+import LoadingTRex from '../../components/LoadingTRex'
 
 export default function RestaurantReservations() {
   const { user } = useAuth()
@@ -67,7 +68,7 @@ export default function RestaurantReservations() {
   }
 
   if (isLoading) {
-    return <div className="text-center py-12">Loading reservations...</div>
+    return <LoadingTRex message="Loading reservations" />
   }
 
   return (

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { restaurantAPI } from '../../services/api'
 import { useAuth } from '../../contexts/AuthContext'
 import { Phone, Save, AlertCircle, CheckCircle, Info, ExternalLink, Clock, Search, MapPin, Loader2, Trash2 } from 'lucide-react'
+import LoadingTRex from '../../components/LoadingTRex'
 
 export default function Settings() {
   const { user } = useAuth()
@@ -267,14 +268,7 @@ export default function Settings() {
   }
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-4 border-primary-200 border-t-primary-600 mx-auto mb-4"></div>
-          <p className="text-gray-600 font-medium">Loading settings...</p>
-        </div>
-      </div>
-    )
+    return <LoadingTRex message="Loading settings" />
   }
 
   return (

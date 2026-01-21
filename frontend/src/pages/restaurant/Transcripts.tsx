@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import { MessageSquare, Phone, MessageCircle, Calendar, Clock, Search } from 'lucide-react'
 import api from '../../services/api'
+import LoadingTRex from '../../components/LoadingTRex'
 
 interface Transcript {
   id: number
@@ -106,6 +107,10 @@ export default function Transcripts() {
     )
   }
 
+  if (loading) {
+    return <LoadingTRex message="Loading transcripts" />
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -167,9 +172,7 @@ export default function Transcripts() {
 
           {/* Transcript List */}
           <div className="flex-1 overflow-y-auto">
-            {loading ? (
-              <div className="p-8 text-center text-gray-500">Loading...</div>
-            ) : filteredTranscripts.length === 0 ? (
+            {filteredTranscripts.length === 0 ? (
               <div className="p-8 text-center text-gray-500">
                 <MessageSquare className="w-12 h-12 mx-auto mb-3 text-gray-300" />
                 <p>No transcripts found</p>

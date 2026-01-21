@@ -1,10 +1,38 @@
 import { useQuery } from '@tanstack/react-query'
 import { restaurantAPI } from '../../services/api'
-import { ShoppingBag, DollarSign, Clock, TrendingUp, CheckCircle, Package, Activity, ArrowUpRight, AlertTriangle, Phone, Menu as MenuIcon, X, User, MapPin, CreditCard, FileText } from 'lucide-react'
+import {
+  ShoppingBag,
+  DollarSign,
+  Clock,
+  TrendingUp,
+  CheckCircle,
+  Package,
+  ArrowUpRight,
+  AlertTriangle,
+  Phone,
+  Menu as MenuIcon,
+  X,
+  User,
+  CreditCard,
+  FileText
+} from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useNavigate } from 'react-router-dom'
 import { AreaChart, Area, BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip } from 'recharts'
 import { useState } from 'react'
+
+// Custom tooltip for charts
+const CustomTooltip = ({ active, payload, label, prefix = '' }: any) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-white border border-gray-200 rounded-lg px-3 py-2 shadow-lg">
+        <p className="text-xs text-gray-500">{label}</p>
+        <p className="text-sm font-bold text-gray-900">{prefix}{payload[0].value}</p>
+      </div>
+    )
+  }
+  return null
+}
 
 export default function RestaurantDashboard() {
   const { user } = useAuth()
@@ -16,12 +44,11 @@ export default function RestaurantDashboard() {
     queryKey: ['orders', restaurantId],
     queryFn: () => restaurantAPI.getOrders(restaurantId!),
     enabled: !!restaurantId,
-    refetchInterval: 5000, // Refetch every 5 seconds for real-time updates
-    placeholderData: (previousData) => previousData, // Keep previous data while refetching
-    staleTime: 1000, // Consider data fresh for 1 second to prevent unnecessary refetches
+    refetchInterval: 5000,
+    placeholderData: (previousData) => previousData,
+    staleTime: 1000,
   })
 
-  // Fetch account details to check for phone number and menu
   const { data: account } = useQuery({
     queryKey: ['account', restaurantId],
     queryFn: async () => {
@@ -31,7 +58,6 @@ export default function RestaurantDashboard() {
     enabled: !!restaurantId,
   })
 
-  // Fetch menu to check if it exists
   const { data: menuData } = useQuery({
     queryKey: ['menu', restaurantId],
     queryFn: async () => {
@@ -39,16 +65,15 @@ export default function RestaurantDashboard() {
       return response.data
     },
     enabled: !!restaurantId,
-    placeholderData: (previousData) => previousData, // Keep previous data while refetching
-    refetchOnMount: 'always', // Refetch on mount but keep previous data visible
+    placeholderData: (previousData) => previousData,
+    refetchOnMount: 'always',
   })
 
-  // Check for missing setup
-  const hasPhoneNumber = account?.twilio_phone_number
+  const hasPhoneNumber = account?.twilio_phone_number || account?.retell_phone_number
   const hasMenus = menuData?.menus && menuData.menus.length > 0
-  const hasMenuItems = hasMenus && 
-    menuData.menus.some((menu: any) => 
-      menu.categories && menu.categories.some((cat: any) => 
+  const hasMenuItems = hasMenus &&
+    menuData.menus.some((menu: any) =>
+      menu.categories && menu.categories.some((cat: any) =>
         cat.items && cat.items.length > 0
       )
     )
@@ -88,116 +113,69 @@ export default function RestaurantDashboard() {
 
   const weekData = getLast7Days()
 
-  const stats = [
-    {
-      label: 'Today\'s Revenue',
-      value: `$${todayRevenue.toFixed(2)}`,
-      icon: DollarSign,
-      gradient: 'from-green-500 to-emerald-600',
-      iconBg: 'bg-green-500',
-      bgGradient: 'bg-gradient-to-br from-green-50 to-emerald-100',
-      change: '+12%',
-      trend: 'up',
-    },
-    {
-      label: 'Pending Orders',
-      value: pendingOrders,
-      icon: Clock,
-      gradient: 'from-orange-500 to-amber-600',
-      iconBg: 'bg-orange-500',
-      bgGradient: 'bg-gradient-to-br from-orange-50 to-amber-100',
-      change: pendingOrders > 0 ? 'Needs attention' : 'All clear',
-      trend: pendingOrders > 0 ? 'alert' : 'normal',
-    },
-    {
-      label: 'Completed Today',
-      value: completedToday,
-      icon: CheckCircle,
-      gradient: 'from-blue-500 to-blue-600',
-      iconBg: 'bg-blue-500',
-      bgGradient: 'bg-gradient-to-br from-blue-50 to-blue-100',
-      change: `${todayOrders.length} total`,
-      trend: 'normal',
-    },
-    {
-      label: 'Total Revenue',
-      value: `$${totalRevenue.toFixed(2)}`,
-      icon: TrendingUp,
-      gradient: 'from-purple-500 to-purple-600',
-      iconBg: 'bg-purple-500',
-      bgGradient: 'bg-gradient-to-br from-purple-50 to-purple-100',
-      change: 'All time',
-      trend: 'up',
-    },
-  ]
-
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-4 border-primary-200 border-t-primary-600 mx-auto mb-4"></div>
-          <p className="text-gray-600 font-medium">Loading dashboard...</p>
-        </div>
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="text-center py-20">
-        <div className="bg-red-50 border border-red-200 rounded-xl p-6 max-w-md mx-auto">
-          <p className="text-red-600 font-semibold">Error loading dashboard</p>
-          <p className="text-sm text-red-500 mt-2">Please refresh the page</p>
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm text-center py-12 max-w-md mx-auto">
+        <div className="w-12 h-12 mx-auto rounded-lg bg-red-50 flex items-center justify-center mb-4">
+          <AlertTriangle className="w-6 h-6 text-red-600" />
         </div>
+        <p className="text-red-600 font-semibold">Error loading dashboard</p>
+        <p className="text-sm text-gray-500 mt-2">Please refresh the page</p>
       </div>
     )
   }
 
   return (
-    <div className="space-y-6 animate-fade-in pb-8">
+    <div className="space-y-6">
       {/* Setup Warnings */}
       {(!hasPhoneNumber || !hasMenuItems) && (
-        <div className="bg-yellow-50 border-2 border-yellow-200 rounded-2xl p-6 shadow-lg">
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-6">
           <div className="flex items-start gap-4">
-            <AlertTriangle className="w-6 h-6 text-yellow-600 flex-shrink-0 mt-0.5" />
+            <div className="p-3 rounded-lg bg-amber-100">
+              <AlertTriangle className="w-6 h-6 text-amber-600" />
+            </div>
             <div className="flex-1">
-              <h3 className="text-lg font-bold text-yellow-900 mb-3">Complete Your Setup</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-3">Complete Your Setup</h3>
               <div className="space-y-3">
                 {!hasPhoneNumber && (
-                  <div className="flex items-center justify-between bg-white rounded-lg p-4 border border-yellow-200">
+                  <div className="flex items-center justify-between bg-white rounded-lg p-4 border border-gray-200">
                     <div className="flex items-center gap-3">
-                      <Phone className="w-5 h-5 text-yellow-600" />
+                      <Phone className="w-5 h-5 text-amber-600" />
                       <div>
-                        <p className="font-semibold text-gray-900">Phone Number Not Configured</p>
-                        <p className="text-sm text-gray-600">Customers can't call your restaurant yet. Set up your Twilio phone number to enable voice AI.</p>
+                        <p className="font-medium text-gray-900">Phone Number Not Configured</p>
+                        <p className="text-sm text-gray-500">Enable voice AI for your restaurant</p>
                       </div>
                     </div>
                     <button
                       onClick={() => navigate('/restaurant/settings')}
-                      className="px-4 py-2 bg-yellow-600 text-white rounded-lg font-semibold hover:bg-yellow-700 transition-colors"
+                      className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
                     >
-                      Configure Now
+                      Configure
                     </button>
                   </div>
                 )}
                 {!hasMenuItems && (
-                  <div className="flex items-center justify-between bg-white rounded-lg p-4 border border-yellow-200">
+                  <div className="flex items-center justify-between bg-white rounded-lg p-4 border border-gray-200">
                     <div className="flex items-center gap-3">
-                      <MenuIcon className="w-5 h-5 text-yellow-600" />
+                      <MenuIcon className="w-5 h-5 text-amber-600" />
                       <div>
-                        <p className="font-semibold text-gray-900">
-                          {hasMenus ? 'No Menu Items Yet' : 'No Menu Items'}
+                        <p className="font-medium text-gray-900">
+                          {hasMenus ? 'No Menu Items Yet' : 'No Menu Created'}
                         </p>
-                        <p className="text-sm text-gray-600">
-                          {hasMenus 
-                            ? 'Your menus exist but need items. Add menu items so customers can place orders.'
-                            : 'Add menu items so customers can place orders via phone or online.'}
-                        </p>
+                        <p className="text-sm text-gray-500">Add items so customers can order</p>
                       </div>
                     </div>
                     <button
                       onClick={() => navigate('/restaurant/menu')}
-                      className="px-4 py-2 bg-yellow-600 text-white rounded-lg font-semibold hover:bg-yellow-700 transition-colors"
+                      className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
                     >
                       {hasMenus ? 'Add Items' : 'Create Menu'}
                     </button>
@@ -209,84 +187,115 @@ export default function RestaurantDashboard() {
         </div>
       )}
 
-      {/* Welcome Header */}
-      <div className="bg-gradient-to-r from-primary-600 to-secondary-600 rounded-2xl p-8 text-white shadow-xl">
+      {/* Welcome Card */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold mb-2">Welcome back!</h1>
-            <p className="text-blue-100">Here's what's happening with your restaurant today</p>
+            <h1 className="text-2xl font-bold text-gray-900 mb-1">Welcome back</h1>
+            <p className="text-gray-500">Here's what's happening with your restaurant today</p>
           </div>
-          <div className="hidden md:flex items-center gap-2 bg-white/20 backdrop-blur-sm rounded-lg px-4 py-2">
-            <Activity className="w-5 h-5" />
-            <span className="font-semibold">Live Dashboard</span>
+          <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-50 border border-green-200">
+            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+            <span className="text-sm font-medium text-green-700">Live Dashboard</span>
           </div>
         </div>
       </div>
 
-      {/* Stats Grid - Optimized for Tablets */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-        {stats.map((stat) => (
-          <div
-            key={stat.label}
-            className="relative group bg-white rounded-2xl p-6 shadow-card hover:shadow-card-hover transition-all duration-300 border border-gray-100 overflow-hidden min-h-[180px]"
-          >
-            {/* Background decoration */}
-            <div className={`absolute top-0 right-0 w-32 h-32 ${stat.bgGradient} rounded-full blur-3xl opacity-30 group-hover:opacity-50 transition-opacity`}></div>
-
-            <div className="relative">
-              <div className="flex items-start justify-between mb-4">
-                <div className={`p-3 rounded-xl ${stat.iconBg} shadow-lg`}>
-                  <stat.icon className="w-7 h-7 text-white" />
-                </div>
-                {stat.trend === 'alert' && (
-                  <div className="flex items-center gap-1 px-3 py-1 bg-orange-100 text-orange-700 rounded-full text-xs font-semibold">
-                    <Activity className="w-3 h-3" />
-                    {stat.change}
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <p className="text-gray-600 text-sm font-medium mb-2">{stat.label}</p>
-                <p className="text-4xl font-bold text-gray-900 mb-2">{stat.value}</p>
-                {stat.trend !== 'alert' && (
-                  <p className="text-xs text-gray-500">{stat.change}</p>
-                )}
-              </div>
+      {/* Stats Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Today's Revenue */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm text-gray-500 font-medium">Today's Revenue</p>
+              <p className="text-3xl font-bold text-green-600 mt-2">${todayRevenue.toFixed(0)}</p>
+              <p className="text-xs text-green-600 mt-2 flex items-center gap-1">
+                <TrendingUp className="w-3 h-3" />
+                From {todayOrders.length} orders
+              </p>
+            </div>
+            <div className="p-3 rounded-lg bg-green-50">
+              <DollarSign className="w-6 h-6 text-green-600" />
             </div>
           </div>
-        ))}
+        </div>
+
+        {/* Pending Orders */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm text-gray-500 font-medium">Pending Orders</p>
+              <p className="text-3xl font-bold text-amber-600 mt-2">{pendingOrders}</p>
+              {pendingOrders > 0 ? (
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                  <span className="text-xs text-amber-600 font-medium">Needs attention</span>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-500 mt-2">All clear</p>
+              )}
+            </div>
+            <div className="p-3 rounded-lg bg-amber-50">
+              <Clock className="w-6 h-6 text-amber-600" />
+            </div>
+          </div>
+        </div>
+
+        {/* Completed Today */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm text-gray-500 font-medium">Completed Today</p>
+              <p className="text-3xl font-bold text-blue-600 mt-2">{completedToday}</p>
+              <p className="text-xs text-gray-500 mt-2">{todayOrders.length} total orders</p>
+            </div>
+            <div className="p-3 rounded-lg bg-blue-50">
+              <CheckCircle className="w-6 h-6 text-blue-600" />
+            </div>
+          </div>
+        </div>
+
+        {/* Total Revenue */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm text-gray-500 font-medium">Total Revenue</p>
+              <p className="text-3xl font-bold text-gray-900 mt-2">${totalRevenue.toFixed(0)}</p>
+              <p className="text-xs text-gray-500 mt-2">All time</p>
+            </div>
+            <div className="p-3 rounded-lg bg-gray-100">
+              <TrendingUp className="w-6 h-6 text-gray-600" />
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Charts Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Revenue Chart */}
-        <div className="bg-white rounded-2xl p-6 shadow-card border border-gray-100">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-bold text-gray-900">Revenue (Last 7 Days)</h2>
-            <div className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-semibold">
-              ${weekData.reduce((sum, d) => sum + d.revenue, 0).toFixed(0)}
-            </div>
+            <h2 className="text-lg font-semibold text-gray-900">Revenue Trend</h2>
+            <span className="text-xs bg-green-50 text-green-700 px-2 py-1 rounded-full font-medium">
+              ${weekData.reduce((sum, d) => sum + d.revenue, 0).toFixed(0)} this week
+            </span>
           </div>
           <ResponsiveContainer width="100%" height={250}>
             <AreaChart data={weekData}>
               <defs>
                 <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor="#22c55e" stopOpacity={0}/>
+                  <stop offset="5%" stopColor="#16a34a" stopOpacity={0.2}/>
+                  <stop offset="95%" stopColor="#16a34a" stopOpacity={0}/>
                 </linearGradient>
               </defs>
-              <XAxis dataKey="day" stroke="#9ca3af" fontSize={12} />
-              <YAxis stroke="#9ca3af" fontSize={12} />
-              <Tooltip
-                contentStyle={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }}
-                formatter={(value: number) => [`$${value.toFixed(2)}`, 'Revenue']}
-              />
+              <XAxis dataKey="day" stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} />
+              <YAxis stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} />
+              <Tooltip content={<CustomTooltip prefix="$" />} />
               <Area
                 type="monotone"
                 dataKey="revenue"
-                stroke="#22c55e"
-                strokeWidth={3}
+                stroke="#16a34a"
+                strokeWidth={2}
                 fill="url(#revenueGradient)"
               />
             </AreaChart>
@@ -294,79 +303,78 @@ export default function RestaurantDashboard() {
         </div>
 
         {/* Orders Chart */}
-        <div className="bg-white rounded-2xl p-6 shadow-card border border-gray-100">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-bold text-gray-900">Orders (Last 7 Days)</h2>
-            <div className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-semibold">
-              {weekData.reduce((sum, d) => sum + d.orders, 0)} orders
-            </div>
+            <h2 className="text-lg font-semibold text-gray-900">Orders</h2>
+            <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-full font-medium">
+              {weekData.reduce((sum, d) => sum + d.orders, 0)} this week
+            </span>
           </div>
           <ResponsiveContainer width="100%" height={250}>
             <BarChart data={weekData}>
-              <XAxis dataKey="day" stroke="#9ca3af" fontSize={12} />
-              <YAxis stroke="#9ca3af" fontSize={12} />
-              <Tooltip
-                contentStyle={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }}
-              />
-              <Bar dataKey="orders" fill="#3b82f6" radius={[8, 8, 0, 0]} />
+              <XAxis dataKey="day" stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} />
+              <YAxis stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} />
+              <Tooltip content={<CustomTooltip />} />
+              <Bar dataKey="orders" fill="#2563eb" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
       </div>
 
-      {/* Recent Orders - Tablet Optimized */}
-      <div className="bg-white rounded-2xl p-6 shadow-card border border-gray-100">
+      {/* Recent Orders */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-bold text-gray-900">Recent Orders</h2>
-          <button className="text-sm text-primary-600 hover:text-primary-700 font-semibold flex items-center gap-1">
+          <h2 className="text-lg font-semibold text-gray-900">Recent Orders</h2>
+          <button
+            onClick={() => navigate('/restaurant/orders')}
+            className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+          >
             View All <ArrowUpRight className="w-4 h-4" />
           </button>
         </div>
 
         {todayOrders.length === 0 ? (
-          <div className="text-center py-16 bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl">
-            <Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-600 font-medium">No orders yet today</p>
-            <p className="text-sm text-gray-500 mt-1">Orders will appear here as they come in</p>
+          <div className="text-center py-16 bg-gray-50 rounded-lg">
+            <div className="w-16 h-16 mx-auto rounded-lg bg-gray-200 flex items-center justify-center mb-4">
+              <Package className="w-8 h-8 text-gray-400" />
+            </div>
+            <p className="text-gray-500 font-medium">No orders yet today</p>
+            <p className="text-gray-400 text-sm mt-1">Orders will appear here as they come in</p>
           </div>
         ) : (
           <div className="space-y-3">
             {todayOrders.slice(0, 5).map((order: any) => (
               <div
                 key={order.id}
-                className="flex items-center justify-between p-5 bg-gradient-to-r from-gray-50 to-white rounded-xl border border-gray-100 hover:border-primary-200 hover:shadow-md transition-all duration-200 cursor-pointer group"
                 onClick={() => setSelectedOrder(order)}
+                className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50/30 transition-all cursor-pointer"
               >
                 <div className="flex items-center gap-4">
-                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
                     order.status === 'completed' ? 'bg-green-100' :
-                    order.status === 'pending' ? 'bg-orange-100' : 'bg-blue-100'
+                    order.status === 'pending' ? 'bg-amber-100' : 'bg-red-100'
                   }`}>
                     {order.status === 'completed' ? (
-                      <CheckCircle className="w-6 h-6 text-green-600" />
+                      <CheckCircle className="w-5 h-5 text-green-600" />
                     ) : order.status === 'pending' ? (
-                      <Clock className="w-6 h-6 text-orange-600" />
+                      <Clock className="w-5 h-5 text-amber-600" />
                     ) : (
-                      <ShoppingBag className="w-6 h-6 text-blue-600" />
+                      <ShoppingBag className="w-5 h-5 text-red-600" />
                     )}
                   </div>
                   <div>
-                    <p className="font-semibold text-gray-900 text-lg">Order #{order.id}</p>
-                    <p className="text-sm text-gray-600">{order.customer_name || 'Anonymous'}</p>
-                    <p className="text-xs text-gray-500">{new Date(order.created_at).toLocaleTimeString()}</p>
+                    <p className="font-semibold text-gray-900">Order #{order.id}</p>
+                    <p className="text-sm text-gray-500">{order.customer_name || 'Anonymous'}</p>
+                    <p className="text-xs text-gray-400">{new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="text-2xl font-bold text-gray-900 mb-1">${(order.total / 100).toFixed(2)}</p>
-                  <span
-                    className={`inline-flex items-center text-xs px-3 py-1.5 rounded-full font-semibold ${
-                      order.status === 'completed'
-                        ? 'bg-green-100 text-green-700'
-                        : order.status === 'pending'
-                        ? 'bg-orange-100 text-orange-700'
-                        : 'bg-blue-100 text-blue-700'
-                    }`}
-                  >
+                  <p className="text-lg font-bold text-gray-900">${(order.total / 100).toFixed(2)}</p>
+                  <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                    order.status === 'completed' ? 'bg-green-100 text-green-700' :
+                    order.status === 'pending' ? 'bg-amber-100 text-amber-700' :
+                    'bg-red-100 text-red-700'
+                  }`}>
                     {order.status}
                   </span>
                 </div>
@@ -376,190 +384,112 @@ export default function RestaurantDashboard() {
         )}
       </div>
 
-      {/* Order Details Modal - Same as Orders page */}
+      {/* Order Details Modal */}
       {selectedOrder && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-          onClick={() => setSelectedOrder(null)}
-        >
+        <>
           <div
-            className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <h2 className="text-2xl font-bold">Order #{selectedOrder.id}</h2>
-                <span className={`text-sm px-3 py-1 rounded-full ${
-                  selectedOrder.status === 'completed' ? 'bg-green-100 text-green-700' :
-                  selectedOrder.status === 'pending' ? 'bg-orange-100 text-orange-700' :
-                  'bg-red-100 text-red-700'
-                }`}>
-                  {selectedOrder.status}
-                </span>
-                {selectedOrder.payment_status && (
-                  <span className={`text-sm px-3 py-1 rounded-full font-medium ${
-                    selectedOrder.payment_status === 'paid'
-                      ? 'bg-green-100 text-green-700'
-                      : 'bg-amber-100 text-amber-700'
+            onClick={() => setSelectedOrder(null)}
+            className="fixed inset-0 bg-black/50 z-40"
+          />
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-2xl max-h-[90vh] overflow-hidden">
+            <div className="bg-white rounded-xl shadow-xl max-h-[90vh] overflow-y-auto">
+              {/* Header */}
+              <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <h2 className="text-xl font-bold text-gray-900">Order #{selectedOrder.id}</h2>
+                  <span className={`text-xs px-3 py-1 rounded-full font-medium ${
+                    selectedOrder.status === 'completed' ? 'bg-green-100 text-green-700' :
+                    selectedOrder.status === 'pending' ? 'bg-amber-100 text-amber-700' :
+                    'bg-red-100 text-red-700'
                   }`}>
-                    {selectedOrder.payment_status === 'paid' ? '✓ Paid' : '⏳ Unpaid'}
+                    {selectedOrder.status}
                   </span>
-                )}
-              </div>
-              <button
-                onClick={() => setSelectedOrder(null)}
-                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Content */}
-            <div className="p-6 space-y-6">
-              {/* Customer Information */}
-              <div className="space-y-3">
-                <h3 className="font-semibold text-lg flex items-center gap-2">
-                  <User className="w-5 h-5 text-primary-600" />
-                  Customer Information
-                </h3>
-                <div className="bg-gray-50 p-4 rounded-lg space-y-2">
-                  <div className="flex items-center gap-2">
-                    <User className="w-4 h-4 text-gray-500" />
-                    <span className="font-medium">Name:</span>
-                    <span>{selectedOrder.customer_name || 'Anonymous'}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Phone className="w-4 h-4 text-gray-500" />
-                    <span className="font-medium">Phone:</span>
-                    <span>{selectedOrder.customer_phone || 'No phone'}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Clock className="w-4 h-4 text-gray-500" />
-                    <span className="font-medium">Ordered:</span>
-                    <span>{new Date(selectedOrder.created_at).toLocaleString()}</span>
-                  </div>
                 </div>
+                <button
+                  onClick={() => setSelectedOrder(null)}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <X className="w-5 h-5 text-gray-500" />
+                </button>
               </div>
 
-              {/* Order Items */}
-              <div className="space-y-3">
-                <h3 className="font-semibold text-lg flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-primary-600" />
-                  Order Items
-                </h3>
-                <div className="bg-gray-50 p-4 rounded-lg space-y-3">
-                  {(() => {
-                    try {
-                      const items = typeof selectedOrder.order_items === 'string'
-                        ? JSON.parse(selectedOrder.order_items)
-                        : selectedOrder.order_items || []
-                      return items.map((item: any, idx: number) => (
-                        <div key={idx} className="flex items-start justify-between border-b border-gray-200 pb-2 last:border-0 last:pb-0">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-semibold text-primary-600">{item.quantity || 1}x</span>
-                              <span className="font-medium">{item.item_name || item.name || 'Item'}</span>
-                            </div>
-                            {item.modifiers && item.modifiers.length > 0 && (
-                              <p className="text-sm text-gray-600 ml-6">
-                                + {item.modifiers.join(', ')}
-                              </p>
-                            )}
-                          </div>
-                          <span className="font-medium text-gray-700">
-                            ${((item.price_cents || 0) / 100).toFixed(2)}
-                          </span>
-                        </div>
-                      ))
-                    } catch (e) {
-                      return <p className="text-sm text-gray-500">No items</p>
-                    }
-                  })()}
-                </div>
-              </div>
-
-              {/* Delivery/Pickup */}
-              <div className="space-y-3">
-                <h3 className="font-semibold text-lg flex items-center gap-2">
-                  <MapPin className="w-5 h-5 text-primary-600" />
-                  Delivery Information
-                </h3>
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  {selectedOrder.delivery_address === 'Pickup' ? (
-                    <div className="flex items-center gap-2">
-                      <span className="text-2xl">🏪</span>
-                      <div>
-                        <p className="font-medium">Pickup Order</p>
-                        <p className="text-sm text-gray-600">Customer will pick up at restaurant</p>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <span className="text-2xl">🚚</span>
-                      <div>
-                        <p className="font-medium">Delivery Order</p>
-                        <p className="text-sm text-gray-600">{selectedOrder.delivery_address}</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Payment Information */}
-              <div className="space-y-3">
-                <h3 className="font-semibold text-lg flex items-center gap-2">
-                  <CreditCard className="w-5 h-5 text-primary-600" />
-                  Payment Information
-                </h3>
-                <div className="bg-gray-50 p-4 rounded-lg space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-600">Subtotal</span>
-                    <span className="font-medium">${(selectedOrder.subtotal / 100).toFixed(2)}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-600">Tax</span>
-                    <span className="font-medium">${(selectedOrder.tax / 100).toFixed(2)}</span>
-                  </div>
-                  {selectedOrder.delivery_fee > 0 && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-600">Delivery Fee</span>
-                      <span className="font-medium">${(selectedOrder.delivery_fee / 100).toFixed(2)}</span>
-                    </div>
-                  )}
-                  <div className="flex items-center justify-between border-t border-gray-300 pt-3">
-                    <span className="font-bold text-lg">Total</span>
-                    <span className="font-bold text-2xl text-primary-600">${(selectedOrder.total / 100).toFixed(2)}</span>
-                  </div>
-                  <div className="flex items-center justify-between bg-white p-3 rounded border mt-3">
-                    <span className="font-medium">Payment Method:</span>
-                    <span className="capitalize">{selectedOrder.payment_method || 'Not specified'}</span>
-                  </div>
-                  <div className="flex items-center justify-between bg-white p-3 rounded border">
-                    <span className="font-medium">Payment Status:</span>
-                    <span className={`px-3 py-1 rounded-full font-medium ${
-                      selectedOrder.payment_status === 'paid'
-                        ? 'bg-green-100 text-green-700'
-                        : 'bg-amber-100 text-amber-700'
-                    }`}>
-                      {selectedOrder.payment_status === 'paid' ? '✓ PAID' : '⏳ UNPAID'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Special Instructions */}
-              {selectedOrder.special_instructions && (
+              {/* Content */}
+              <div className="p-6 space-y-6">
+                {/* Customer Info */}
                 <div className="space-y-3">
-                  <h3 className="font-semibold text-lg">Special Instructions</h3>
-                  <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
-                    <p className="text-gray-700">{selectedOrder.special_instructions}</p>
+                  <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                    <User className="w-5 h-5 text-blue-600" />
+                    Customer Information
+                  </h3>
+                  <div className="bg-gray-50 p-4 rounded-lg space-y-2">
+                    <div className="flex items-center gap-3">
+                      <User className="w-4 h-4 text-gray-400" />
+                      <span className="text-gray-500 text-sm">Name:</span>
+                      <span className="text-gray-900 font-medium">{selectedOrder.customer_name || 'Anonymous'}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Phone className="w-4 h-4 text-gray-400" />
+                      <span className="text-gray-500 text-sm">Phone:</span>
+                      <span className="text-gray-900 font-medium">{selectedOrder.customer_phone || 'No phone'}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Clock className="w-4 h-4 text-gray-400" />
+                      <span className="text-gray-500 text-sm">Ordered:</span>
+                      <span className="text-gray-900 font-medium">{new Date(selectedOrder.created_at).toLocaleString()}</span>
+                    </div>
                   </div>
                 </div>
-              )}
+
+                {/* Order Items */}
+                <div className="space-y-3">
+                  <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                    <FileText className="w-5 h-5 text-blue-600" />
+                    Order Items
+                  </h3>
+                  <div className="bg-gray-50 p-4 rounded-lg space-y-3">
+                    {(() => {
+                      try {
+                        const items = typeof selectedOrder.order_items === 'string'
+                          ? JSON.parse(selectedOrder.order_items)
+                          : selectedOrder.order_items || []
+                        return items.map((item: any, idx: number) => (
+                          <div key={idx} className="flex items-start justify-between py-2 border-b border-gray-200 last:border-0">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-blue-600 font-bold">{item.quantity || 1}x</span>
+                                <span className="text-gray-900 font-medium">{item.item_name || item.name || 'Item'}</span>
+                              </div>
+                              {item.modifiers && item.modifiers.length > 0 && (
+                                <p className="text-sm text-gray-500 ml-6">+ {item.modifiers.join(', ')}</p>
+                              )}
+                            </div>
+                            <span className="text-gray-700 font-medium">${((item.price_cents || 0) / 100).toFixed(2)}</span>
+                          </div>
+                        ))
+                      } catch (e) {
+                        return <p className="text-sm text-gray-500">No items</p>
+                      }
+                    })()}
+                  </div>
+                </div>
+
+                {/* Payment */}
+                <div className="space-y-3">
+                  <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                    <CreditCard className="w-5 h-5 text-blue-600" />
+                    Payment
+                  </h3>
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <div className="flex items-center justify-between pt-2">
+                      <span className="font-bold text-gray-900">Total</span>
+                      <span className="text-2xl font-bold text-blue-600">${(selectedOrder.total / 100).toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   )

@@ -72,25 +72,27 @@ export default function LandingPage() {
   ]
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-primary-50 to-white">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200">
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Phone className="w-8 h-8 text-primary-600" />
-              <h1 className="text-2xl font-bold text-primary-600">RestaurantAI</h1>
+              <div className="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center">
+                <Phone className="w-5 h-5 text-white" />
+              </div>
+              <h1 className="text-xl font-semibold text-gray-900">RestaurantAI</h1>
             </div>
-            <div className="flex gap-4">
+            <div className="flex gap-3">
               <button
                 onClick={() => navigate('/login')}
-                className="btn btn-secondary"
+                className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
               >
                 Restaurant Login
               </button>
               <button
                 onClick={() => navigate('/admin-login')}
-                className="btn btn-primary"
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
               >
                 Platform Admin
               </button>
@@ -100,46 +102,52 @@ export default function LandingPage() {
       </header>
 
       {/* Hero Section */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
-        <div className="text-center">
-          <h2 className="text-5xl font-bold text-gray-900 mb-6">
-            AI-Powered Restaurant Platform
-          </h2>
-          <p className="text-xl text-gray-600 mb-8 max-w-3xl mx-auto">
-            Transform your restaurant with intelligent AI phone answering, menu-aware conversations,
-            and automated order processing. Never miss a call or order again.
-          </p>
-          <div className="flex gap-4 justify-center">
-            <button onClick={() => navigate('/signup')} className="btn btn-primary px-8 py-3 text-lg">
-              Start Free Trial <ArrowRight className="w-5 h-5 ml-2 inline" />
-            </button>
-            <button onClick={() => navigate('/login')} className="btn btn-secondary px-8 py-3 text-lg">
-              Restaurant Login
-            </button>
+      <section className="bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+          <div className="text-center max-w-3xl mx-auto">
+            <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6 leading-tight">
+              AI-Powered Restaurant Management
+            </h2>
+            <p className="text-lg text-gray-600 mb-8 leading-relaxed">
+              Transform your restaurant with intelligent AI phone answering, menu-aware conversations,
+              and automated order processing. Never miss a call or order again.
+            </p>
+            <div className="flex gap-4 justify-center flex-wrap">
+              <button
+                onClick={() => navigate('/signup')}
+                className="px-6 py-3 text-base font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors inline-flex items-center gap-2"
+              >
+                Start Free Trial <ArrowRight className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => navigate('/login')}
+                className="px-6 py-3 text-base font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg transition-colors"
+              >
+                Restaurant Login
+              </button>
+            </div>
           </div>
-        </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-20">
-          <div className="text-center">
-            <p className="text-4xl font-bold text-primary-600">24/7</p>
-            <p className="text-gray-600 mt-2">AI Phone Answering</p>
-          </div>
-          <div className="text-center">
-            <p className="text-4xl font-bold text-primary-600">100%</p>
-            <p className="text-gray-600 mt-2">Order Accuracy</p>
-          </div>
-          <div className="text-center">
-            <p className="text-4xl font-bold text-primary-600">10%</p>
-            <p className="text-gray-600 mt-2">Platform Commission</p>
+          {/* Stats */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-16 pt-16 border-t border-gray-200">
+            {[
+              { value: '24/7', label: 'AI Phone Answering' },
+              { value: '100%', label: 'Order Accuracy' },
+              { value: '10%', label: 'Platform Commission' },
+            ].map((stat) => (
+              <div key={stat.label} className="text-center">
+                <p className="text-4xl font-bold text-blue-600 mb-1">{stat.value}</p>
+                <p className="text-gray-600">{stat.label}</p>
+              </div>
+            ))}
           </div>
         </div>
       </section>
 
       {/* Features Section */}
-      <section className="bg-white py-20">
+      <section className="py-20 bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
+          <div className="text-center mb-12">
             <h3 className="text-3xl font-bold text-gray-900 mb-4">
               Everything You Need to Run a Modern Restaurant
             </h3>
@@ -148,14 +156,17 @@ export default function LandingPage() {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {features.map((feature) => (
-              <div key={feature.title} className="text-center">
-                <div className="inline-flex p-4 bg-primary-50 rounded-lg mb-4">
-                  <feature.icon className="w-8 h-8 text-primary-600" />
+              <div
+                key={feature.title}
+                className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 hover:shadow-md transition-shadow"
+              >
+                <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center mb-4">
+                  <feature.icon className="w-6 h-6 text-blue-600" />
                 </div>
-                <h4 className="text-xl font-semibold mb-2">{feature.title}</h4>
-                <p className="text-gray-600">{feature.description}</p>
+                <h4 className="text-lg font-semibold text-gray-900 mb-2">{feature.title}</h4>
+                <p className="text-gray-600 text-sm">{feature.description}</p>
               </div>
             ))}
           </div>
@@ -163,50 +174,36 @@ export default function LandingPage() {
       </section>
 
       {/* How It Works */}
-      <section className="py-20">
+      <section className="py-20 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
+          <div className="text-center mb-12">
             <h3 className="text-3xl font-bold text-gray-900 mb-4">
               Get Started in Minutes
             </h3>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
-            <div className="text-center">
-              <div className="w-12 h-12 bg-primary-600 text-white rounded-full flex items-center justify-center text-xl font-bold mx-auto mb-4">
-                1
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {[
+              { step: '1', title: 'Sign Up & Add Menu', description: 'Create your account and upload your restaurant menu with items, prices, and modifiers' },
+              { step: '2', title: 'Connect Stripe', description: 'Link your Stripe account for automatic payment processing with commission splits' },
+              { step: '3', title: 'Start Taking Orders', description: 'AI starts answering calls, taking orders, and managing reservations instantly' },
+            ].map((item) => (
+              <div key={item.step} className="text-center">
+                <div className="w-12 h-12 bg-blue-600 text-white rounded-full flex items-center justify-center text-xl font-bold mx-auto mb-4">
+                  {item.step}
+                </div>
+                <h4 className="text-lg font-semibold text-gray-900 mb-2">{item.title}</h4>
+                <p className="text-gray-600">{item.description}</p>
               </div>
-              <h4 className="text-xl font-semibold mb-2">Sign Up & Add Menu</h4>
-              <p className="text-gray-600">
-                Create your account and upload your restaurant menu with items, prices, and modifiers
-              </p>
-            </div>
-            <div className="text-center">
-              <div className="w-12 h-12 bg-primary-600 text-white rounded-full flex items-center justify-center text-xl font-bold mx-auto mb-4">
-                2
-              </div>
-              <h4 className="text-xl font-semibold mb-2">Connect Stripe</h4>
-              <p className="text-gray-600">
-                Link your Stripe account for automatic payment processing with commission splits
-              </p>
-            </div>
-            <div className="text-center">
-              <div className="w-12 h-12 bg-primary-600 text-white rounded-full flex items-center justify-center text-xl font-bold mx-auto mb-4">
-                3
-              </div>
-              <h4 className="text-xl font-semibold mb-2">Start Taking Orders</h4>
-              <p className="text-gray-600">
-                AI starts answering calls, taking orders, and managing reservations instantly
-              </p>
-            </div>
+            ))}
           </div>
         </div>
       </section>
 
       {/* Pricing Section */}
-      <section className="bg-white py-20">
+      <section className="py-20 bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
+          <div className="text-center mb-12">
             <h3 className="text-3xl font-bold text-gray-900 mb-4">
               Simple, Transparent Pricing
             </h3>
@@ -215,31 +212,31 @@ export default function LandingPage() {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
             {plans.map((plan) => (
               <div
                 key={plan.name}
-                className={`rounded-lg p-8 ${
+                className={`rounded-xl p-8 ${
                   plan.highlight
-                    ? 'bg-primary-600 text-white ring-4 ring-primary-300 scale-105'
-                    : 'bg-white border-2 border-gray-200'
+                    ? 'bg-blue-600 text-white ring-4 ring-blue-200 scale-105'
+                    : 'bg-white border border-gray-200 shadow-sm'
                 }`}
               >
-                <h4 className={`text-2xl font-bold mb-2 ${plan.highlight ? 'text-white' : 'text-gray-900'}`}>
+                <h4 className={`text-xl font-bold mb-2 ${plan.highlight ? 'text-white' : 'text-gray-900'}`}>
                   {plan.name}
                 </h4>
                 <div className="mb-6">
                   <span className={`text-4xl font-bold ${plan.highlight ? 'text-white' : 'text-gray-900'}`}>
                     {plan.price}
                   </span>
-                  <span className={`text-sm ${plan.highlight ? 'text-primary-100' : 'text-gray-600'}`}>
+                  <span className={`text-sm ${plan.highlight ? 'text-blue-100' : 'text-gray-500'}`}>
                     {' '}/{plan.period}
                   </span>
                 </div>
                 <ul className="space-y-3 mb-8">
                   {plan.features.map((feature) => (
                     <li key={feature} className="flex items-start gap-2">
-                      <CheckCircle className={`w-5 h-5 flex-shrink-0 ${plan.highlight ? 'text-white' : 'text-green-600'}`} />
+                      <CheckCircle className={`w-5 h-5 flex-shrink-0 ${plan.highlight ? 'text-blue-200' : 'text-green-500'}`} />
                       <span className={`text-sm ${plan.highlight ? 'text-white' : 'text-gray-600'}`}>
                         {feature}
                       </span>
@@ -249,8 +246,8 @@ export default function LandingPage() {
                 <button
                   className={`w-full py-3 rounded-lg font-medium transition-colors ${
                     plan.highlight
-                      ? 'bg-white text-primary-600 hover:bg-gray-100'
-                      : 'bg-primary-600 text-white hover:bg-primary-700'
+                      ? 'bg-white text-blue-600 hover:bg-blue-50'
+                      : 'bg-blue-600 text-white hover:bg-blue-700'
                   }`}
                 >
                   {plan.cta}
@@ -261,14 +258,34 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* CTA Section */}
+      <section className="py-20 bg-blue-600">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <h3 className="text-3xl font-bold text-white mb-4">
+            Ready to Transform Your Restaurant?
+          </h3>
+          <p className="text-lg text-blue-100 mb-8">
+            Join thousands of restaurants already using AI to grow their business
+          </p>
+          <button
+            onClick={() => navigate('/signup')}
+            className="px-8 py-4 text-lg font-medium text-blue-600 bg-white hover:bg-blue-50 rounded-lg transition-colors inline-flex items-center gap-2"
+          >
+            Start Your Free Trial <ArrowRight className="w-5 h-5" />
+          </button>
+        </div>
+      </section>
+
       {/* Footer */}
       <footer className="bg-gray-900 text-white py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
             <div>
               <div className="flex items-center gap-2 mb-4">
-                <Phone className="w-6 h-6" />
-                <h5 className="text-lg font-bold">RestaurantAI</h5>
+                <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
+                  <Phone className="w-4 h-4 text-white" />
+                </div>
+                <h5 className="text-lg font-semibold">RestaurantAI</h5>
               </div>
               <p className="text-gray-400 text-sm">
                 AI-powered platform for modern restaurants
@@ -277,30 +294,30 @@ export default function LandingPage() {
             <div>
               <h6 className="font-semibold mb-4">Product</h6>
               <ul className="space-y-2 text-sm text-gray-400">
-                <li>Features</li>
-                <li>Pricing</li>
-                <li>Demo</li>
+                <li className="hover:text-white cursor-pointer transition-colors">Features</li>
+                <li className="hover:text-white cursor-pointer transition-colors">Pricing</li>
+                <li className="hover:text-white cursor-pointer transition-colors">Demo</li>
               </ul>
             </div>
             <div>
               <h6 className="font-semibold mb-4">Company</h6>
               <ul className="space-y-2 text-sm text-gray-400">
-                <li>About</li>
-                <li>Blog</li>
-                <li>Careers</li>
+                <li className="hover:text-white cursor-pointer transition-colors">About</li>
+                <li className="hover:text-white cursor-pointer transition-colors">Blog</li>
+                <li className="hover:text-white cursor-pointer transition-colors">Careers</li>
               </ul>
             </div>
             <div>
               <h6 className="font-semibold mb-4">Support</h6>
               <ul className="space-y-2 text-sm text-gray-400">
-                <li>Help Center</li>
-                <li>Contact</li>
-                <li>Status</li>
+                <li className="hover:text-white cursor-pointer transition-colors">Help Center</li>
+                <li className="hover:text-white cursor-pointer transition-colors">Contact</li>
+                <li className="hover:text-white cursor-pointer transition-colors">Status</li>
               </ul>
             </div>
           </div>
           <div className="border-t border-gray-800 mt-8 pt-8 text-center text-sm text-gray-400">
-            2025 RestaurantAI. All rights reserved.
+            © 2025 RestaurantAI. All rights reserved.
           </div>
         </div>
       </footer>

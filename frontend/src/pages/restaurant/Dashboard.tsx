@@ -20,6 +20,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { useNavigate } from 'react-router-dom'
 import { AreaChart, Area, BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip } from 'recharts'
 import { useState } from 'react'
+import LoadingTRex from '../../components/LoadingTRex'
 
 // Custom tooltip for charts
 const CustomTooltip = ({ active, payload, label, prefix = '' }: any) => {
@@ -104,11 +105,7 @@ export default function RestaurantDashboard() {
   const weekData = getLast7Days()
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-      </div>
-    )
+    return <LoadingTRex message="Loading dashboard" />
   }
 
   if (error) {

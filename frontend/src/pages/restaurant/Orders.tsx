@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
+import LoadingTRex from '../../components/LoadingTRex'
 
 export default function RestaurantOrders() {
   const { user } = useAuth()
@@ -80,11 +81,7 @@ export default function RestaurantOrders() {
   }
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-      </div>
-    )
+    return <LoadingTRex message="Loading orders" />
   }
 
   return (

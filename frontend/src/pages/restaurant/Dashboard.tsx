@@ -9,12 +9,12 @@ import {
   Package,
   ArrowUpRight,
   AlertTriangle,
-  Phone,
   Menu as MenuIcon,
   X,
   User,
   CreditCard,
-  FileText
+  FileText,
+  Phone
 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useNavigate } from 'react-router-dom'
@@ -49,15 +49,6 @@ export default function RestaurantDashboard() {
     staleTime: 1000,
   })
 
-  const { data: account } = useQuery({
-    queryKey: ['account', restaurantId],
-    queryFn: async () => {
-      const response = await restaurantAPI.getAccount(restaurantId!)
-      return response.data
-    },
-    enabled: !!restaurantId,
-  })
-
   const { data: menuData } = useQuery({
     queryKey: ['menu', restaurantId],
     queryFn: async () => {
@@ -69,7 +60,6 @@ export default function RestaurantDashboard() {
     refetchOnMount: 'always',
   })
 
-  const hasPhoneNumber = account?.twilio_phone_number || account?.retell_phone_number
   const hasMenus = menuData?.menus && menuData.menus.length > 0
   const hasMenuItems = hasMenus &&
     menuData.menus.some((menu: any) =>
@@ -135,8 +125,8 @@ export default function RestaurantDashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Setup Warnings */}
-      {(!hasPhoneNumber || !hasMenuItems) && (
+      {/* Setup Warning - Menu Items */}
+      {!hasMenuItems && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-6">
           <div className="flex items-start gap-4">
             <div className="p-3 rounded-lg bg-amber-100">
@@ -144,43 +134,22 @@ export default function RestaurantDashboard() {
             </div>
             <div className="flex-1">
               <h3 className="text-lg font-semibold text-gray-900 mb-3">Complete Your Setup</h3>
-              <div className="space-y-3">
-                {!hasPhoneNumber && (
-                  <div className="flex items-center justify-between bg-white rounded-lg p-4 border border-gray-200">
-                    <div className="flex items-center gap-3">
-                      <Phone className="w-5 h-5 text-amber-600" />
-                      <div>
-                        <p className="font-medium text-gray-900">Phone Number Not Configured</p>
-                        <p className="text-sm text-gray-500">Enable voice AI for your restaurant</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => navigate('/restaurant/settings')}
-                      className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-                    >
-                      Configure
-                    </button>
+              <div className="flex items-center justify-between bg-white rounded-lg p-4 border border-gray-200">
+                <div className="flex items-center gap-3">
+                  <MenuIcon className="w-5 h-5 text-amber-600" />
+                  <div>
+                    <p className="font-medium text-gray-900">
+                      {hasMenus ? 'No Menu Items Yet' : 'No Menu Created'}
+                    </p>
+                    <p className="text-sm text-gray-500">Add items so customers can order</p>
                   </div>
-                )}
-                {!hasMenuItems && (
-                  <div className="flex items-center justify-between bg-white rounded-lg p-4 border border-gray-200">
-                    <div className="flex items-center gap-3">
-                      <MenuIcon className="w-5 h-5 text-amber-600" />
-                      <div>
-                        <p className="font-medium text-gray-900">
-                          {hasMenus ? 'No Menu Items Yet' : 'No Menu Created'}
-                        </p>
-                        <p className="text-sm text-gray-500">Add items so customers can order</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => navigate('/restaurant/menu')}
-                      className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-                    >
-                      {hasMenus ? 'Add Items' : 'Create Menu'}
-                    </button>
-                  </div>
-                )}
+                </div>
+                <button
+                  onClick={() => navigate('/restaurant/menu')}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                >
+                  {hasMenus ? 'Add Items' : 'Create Menu'}
+                </button>
               </div>
             </div>
           </div>

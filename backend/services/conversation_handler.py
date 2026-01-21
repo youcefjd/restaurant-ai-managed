@@ -11,7 +11,6 @@ import json
 import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime, date, time, timedelta
-from sqlalchemy.orm import Session
 from pathlib import Path
 
 # Try to import dateutil for flexible time parsing
@@ -22,10 +21,22 @@ except ImportError:
     DATEUTIL_AVAILABLE = False
     date_parser = None
 
-from backend.models import Restaurant, Table, Customer, Booking, BookingStatus
+from backend.database import SupabaseDB
 from backend.services.llm_service import llm_service
 
 logger = logging.getLogger(__name__)
+
+# Table names
+RESTAURANT_ACCOUNTS_TABLE = "restaurant_accounts"
+MENUS_TABLE = "menus"
+MENU_CATEGORIES_TABLE = "menu_categories"
+MENU_ITEMS_TABLE = "menu_items"
+MENU_MODIFIERS_TABLE = "menu_modifiers"
+ORDERS_TABLE = "orders"
+CUSTOMERS_TABLE = "customers"
+BOOKINGS_TABLE = "bookings"
+TABLES_TABLE = "tables"
+RESTAURANTS_TABLE = "restaurants"
 
 
 class ConversationHandler:
@@ -35,22 +46,22 @@ class ConversationHandler:
         """Initialize conversation handler with LLM service."""
         self.llm_service = llm_service
         self.enabled = llm_service.is_enabled()
-        
+
         # Load system prompt template
         self.system_prompt_template = self._load_system_prompt_template()
-        
+
         if self.enabled:
             logger.info(f"Conversation handler initialized with LLM provider: {llm_service.get_provider()}")
         else:
             logger.warning("LLM service not available - conversation handler disabled")
-    
+
     def _load_system_prompt_template(self) -> str:
         """Load system prompt template from markdown file."""
         try:
             # Get the project root directory
             current_dir = Path(__file__).parent.parent.parent
             template_path = current_dir / "VOICE_AGENT_SYSTEM_PROMPT.md"
-            
+
             if template_path.exists():
                 with open(template_path, 'r', encoding='utf-8') as f:
                     template = f.read()
@@ -69,7 +80,7 @@ class ConversationHandler:
         phone: str,
         restaurant_id: int,
         context: Dict[str, Any],
-        db: Session,
+        db: SupabaseDB,
         conversation_history: Optional[List[Dict[str, str]]] = None
     ) -> Dict[str, Any]:
         """
@@ -80,7 +91,7 @@ class ConversationHandler:
             phone: Customer's phone number
             restaurant_id: ID of the restaurant being called
             context: Conversation context (previous exchanges, gathered data)
-            db: Database session
+            db: Database instance
             conversation_history: List of previous messages [{"role": "user/assistant", "content": "..."}]
 
         Returns:
@@ -94,13 +105,10 @@ class ConversationHandler:
 
         try:
             # Get or create customer
-            customer = db.query(Customer).filter(Customer.phone == phone).first()
+            customer = db.query_one(CUSTOMERS_TABLE, {"phone": phone})
 
             # Get menu data for menu-aware responses using the specific restaurant
-            from backend.models_platform import RestaurantAccount
-            account = db.query(RestaurantAccount).filter(
-                RestaurantAccount.id == restaurant_id
-            ).first()
+            account = db.query_one(RESTAURANT_ACCOUNTS_TABLE, {"id": restaurant_id})
 
             if not account:
                 logger.error(f"Restaurant account not found: {restaurant_id}")
@@ -111,50 +119,47 @@ class ConversationHandler:
 
             menu_data = None
             # Fetch full menu structure for this specific restaurant from database
-            import requests
             try:
-                from backend.models_platform import Menu, MenuCategory, MenuItem, MenuModifier
-
-                menus = db.query(Menu).filter(Menu.account_id == account.id).all()
+                menus = db.query_all(MENUS_TABLE, {"account_id": account["id"]})
                 menu_data = {
-                    "business_name": account.business_name,
+                    "business_name": account.get("business_name"),
                     "menus": []
                 }
 
                 for menu in menus:
                     menu_dict = {
-                        "id": menu.id,
-                        "name": menu.name,
-                        "description": menu.description,
+                        "id": menu["id"],
+                        "name": menu["name"],
+                        "description": menu.get("description"),
                         "categories": []
                     }
 
-                    categories = db.query(MenuCategory).filter(MenuCategory.menu_id == menu.id).all()
+                    categories = db.query_all(MENU_CATEGORIES_TABLE, {"menu_id": menu["id"]})
                     for category in categories:
                         category_dict = {
-                            "id": category.id,
-                            "name": category.name,
+                            "id": category["id"],
+                            "name": category["name"],
                             "items": []
                         }
 
-                        items = db.query(MenuItem).filter(MenuItem.category_id == category.id).all()
+                        items = db.query_all(MENU_ITEMS_TABLE, {"category_id": category["id"]})
                         for item in items:
                             item_dict = {
-                                "id": item.id,
-                                "name": item.name,
-                                "description": item.description,
-                                "price_cents": item.price_cents,
-                                "dietary_tags": item.dietary_tags or [],
+                                "id": item["id"],
+                                "name": item["name"],
+                                "description": item.get("description"),
+                                "price_cents": item.get("price_cents"),
+                                "dietary_tags": item.get("dietary_tags") or [],
                                 "modifiers": []
                             }
 
-                            if item.modifiers:
-                                modifiers = db.query(MenuModifier).filter(MenuModifier.item_id == item.id).all()
+                            if item.get("modifiers"):
+                                modifiers = db.query_all(MENU_MODIFIERS_TABLE, {"item_id": item["id"]})
                                 for mod in modifiers:
                                     item_dict["modifiers"].append({
-                                        "id": mod.id,
-                                        "name": mod.name,
-                                        "price_adjustment_cents": mod.price_adjustment_cents
+                                        "id": mod["id"],
+                                        "name": mod["name"],
+                                        "price_adjustment_cents": mod.get("price_adjustment_cents")
                                     })
 
                             category_dict["items"].append(item_dict)
@@ -171,7 +176,7 @@ class ConversationHandler:
                 system_prompt = self._build_system_prompt_from_template(context, customer, menu_data, account)
             else:
                 system_prompt = self._build_system_prompt(context, customer, menu_data, account)
-            
+
             user_message = self._build_user_message(message, context)
 
             # Call LLM service (non-streaming for now - voice handler handles streaming separately)
@@ -185,7 +190,7 @@ class ConversationHandler:
                 temperature=0.5,  # Lower temperature for faster, more consistent responses
                 max_tokens=1024  # Enough for JSON response
             )
-            
+
             logger.info(f"AI response (first 500 chars): {ai_response[:500]}")
 
             # Parse AI response
@@ -325,11 +330,11 @@ class ConversationHandler:
                 "message": "I'm having trouble processing your request. Could you please try again?"
             }
 
-    def _build_system_prompt(self, context: Dict, customer: Optional[Customer], menu_data: Optional[Dict] = None, account=None) -> str:
+    def _build_system_prompt(self, context: Dict, customer: Optional[Dict], menu_data: Optional[Dict] = None, account: Optional[Dict] = None) -> str:
         """Build system prompt for Claude with menu awareness."""
         customer_info = ""
         if customer:
-            customer_info = f"\nCustomer name: {customer.name}\nPrevious orders: {customer.total_bookings}"
+            customer_info = f"\nCustomer name: {customer.get('name')}\nPrevious orders: {customer.get('total_bookings', 0)}"
 
         menu_info = ""
         if menu_data and menu_data.get("menus"):
@@ -347,19 +352,24 @@ class ConversationHandler:
                             menu_info += "      Customizations:\n"
                             for mod in item['modifiers']:
                                 price_str = f" (+${mod['price_adjustment_cents']/100:.2f})" if mod['price_adjustment_cents'] > 0 else ""
-                                menu_info += f"        • {mod['name']}{price_str}\n"
+                                menu_info += f"        * {mod['name']}{price_str}\n"
 
         # Get operating hours info
         hours_info = ""
         if account:
-            if account.opening_time and account.closing_time:
+            if account.get("opening_time") and account.get("closing_time"):
                 days_str = ""
-                if account.operating_days:
-                    day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-                    days_str = ", ".join([day_names[d] for d in sorted(account.operating_days)])
-                
+                if account.get("operating_days"):
+                    op_days = account["operating_days"]
+                    # Handle both formats: list of strings or list of indices
+                    if op_days and isinstance(op_days[0], str):
+                        days_str = ", ".join(op_days)
+                    else:
+                        day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+                        days_str = ", ".join([day_names[d] for d in sorted(op_days)])
+
                 hours_info = f"\n\nOPERATING HOURS:\n"
-                hours_info += f"Hours: {account.opening_time} - {account.closing_time}\n"
+                hours_info += f"Hours: {account['opening_time']} - {account['closing_time']}\n"
                 if days_str:
                     hours_info += f"Days: {days_str}\n"
                 hours_info += "\nUse ONLY this information when answering questions about operating hours. Do not make up hours.\n"
@@ -386,9 +396,9 @@ You help with:
 
 **Recommendations & Upselling (be helpful, not pushy):**
 - After adding items, suggest ONE complementary pairing: "That goes great with our Garlic Naan!" or "Would you like to add a mango lassi to go with that?"
-- For curry dishes → suggest naan or rice
-- For appetizers → suggest a main course
-- For mains → suggest a drink or dessert
+- For curry dishes -> suggest naan or rice
+- For appetizers -> suggest a main course
+- For mains -> suggest a drink or dessert
 - If they seem undecided, ask about preferences: "Do you prefer something spicy or mild?" "Are you looking for vegetarian options?"
 - Keep suggestions brief and natural - don't list multiple options
 
@@ -396,7 +406,7 @@ You help with:
 - **REQUIRED**: Always gather: exact item name, quantity, any add-ons, their name, pickup time
 - **PICKUP TIME**: Ask "When would you like to pick this up?" - accept "ASAP", "in 30 minutes", "at 6pm", etc.
   - Set the "time" field in your response (e.g., "ASAP", "18:00", "in 30 minutes")
-  - If they say "now" or "as soon as possible" → time: "ASAP"
+  - If they say "now" or "as soon as possible" -> time: "ASAP"
 - **NAME HANDLING**:
   - If customer info shows a name (returning customer), confirm: "Is this still for [Name]?"
   - If no customer info (new customer), ask: "What name should I put this under?"
@@ -410,8 +420,8 @@ You help with:
 - NEVER make up information - if unsure, say so
 
 **Ending the Call:**
-- When customer says "bye", "goodbye", "that's all", "nothing else", "I'm done" → use intent "goodbye"
-- After confirming an order, if customer says "no" to "anything else?" → use intent "goodbye" with a friendly farewell
+- When customer says "bye", "goodbye", "that's all", "nothing else", "I'm done" -> use intent "goodbye"
+- After confirming an order, if customer says "no" to "anything else?" -> use intent "goodbye" with a friendly farewell
 - When ending: "Thank you for calling [restaurant name]! Have a great day!"
 
 Current conversation context: {json.dumps(context)}
@@ -445,33 +455,38 @@ Today's date: {datetime.now().strftime('%Y-%m-%d')}
 Be conversational, helpful, and accurate about menu items and pricing."""
 
     def _build_system_prompt_from_template(
-        self, 
-        context: Dict, 
-        customer: Optional[Customer], 
-        menu_data: Optional[Dict] = None, 
-        account=None
+        self,
+        context: Dict,
+        customer: Optional[Dict],
+        menu_data: Optional[Dict] = None,
+        account: Optional[Dict] = None
     ) -> str:
         """Build system prompt from markdown template with placeholders."""
         if not self.system_prompt_template:
             # Fallback to old method
             return self._build_system_prompt(context, customer, menu_data, account)
-        
+
         try:
             prompt = self.system_prompt_template
-            
+
             # Replace placeholders
             prompt = prompt.replace("{{now}}", datetime.now().isoformat())
             prompt = prompt.replace("{{current_date}}", datetime.now().strftime('%Y-%m-%d'))
-            
+
             if account:
-                prompt = prompt.replace("{{restaurant_name}}", account.business_name or "our restaurant")
-                prompt = prompt.replace("{{opening_time}}", account.opening_time or "N/A")
-                prompt = prompt.replace("{{closing_time}}", account.closing_time or "N/A")
-                
+                prompt = prompt.replace("{{restaurant_name}}", account.get("business_name") or "our restaurant")
+                prompt = prompt.replace("{{opening_time}}", account.get("opening_time") or "N/A")
+                prompt = prompt.replace("{{closing_time}}", account.get("closing_time") or "N/A")
+
                 # Format operating days
-                if account.operating_days:
-                    day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-                    days_str = ", ".join([day_names[d] for d in sorted(account.operating_days)])
+                if account.get("operating_days"):
+                    op_days = account["operating_days"]
+                    # Handle both formats: list of strings or list of indices
+                    if op_days and isinstance(op_days[0], str):
+                        days_str = ", ".join(op_days)
+                    else:
+                        day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+                        days_str = ", ".join([day_names[d] for d in sorted(op_days)])
                 else:
                     days_str = "Not specified"
                 prompt = prompt.replace("{{operating_days}}", days_str)
@@ -480,7 +495,7 @@ Be conversational, helpful, and accurate about menu items and pricing."""
                 prompt = prompt.replace("{{opening_time}}", "N/A")
                 prompt = prompt.replace("{{closing_time}}", "N/A")
                 prompt = prompt.replace("{{operating_days}}", "Not specified")
-            
+
             # Format menu data
             menu_str = ""
             if menu_data and menu_data.get("menus"):
@@ -498,24 +513,24 @@ Be conversational, helpful, and accurate about menu items and pricing."""
                                 menu_str += "      Customizations:\n"
                                 for mod in item['modifiers']:
                                     price_str = f" (+${mod['price_adjustment_cents']/100:.2f})" if mod['price_adjustment_cents'] > 0 else ""
-                                    menu_str += f"        • {mod['name']}{price_str}\n"
+                                    menu_str += f"        * {mod['name']}{price_str}\n"
             else:
                 menu_str = "\n\nRESTAURANT MENU:\nNo menu items available.\n"
-            
+
             prompt = prompt.replace("{{menu_data}}", menu_str)
-            
+
             # Add current context
             context_json = json.dumps(context)
             prompt = prompt.replace("{{context}}", context_json)
-            
+
             # Customer info
             customer_info = ""
             if customer:
-                customer_info = f"\nCustomer name: {customer.name}\nPrevious orders: {customer.total_bookings}"
+                customer_info = f"\nCustomer name: {customer.get('name')}\nPrevious orders: {customer.get('total_bookings', 0)}"
             prompt = prompt.replace("{{customer_info}}", customer_info)
-            
+
             return prompt
-            
+
         except Exception as e:
             logger.error(f"Error building prompt from template: {str(e)}")
             # Fallback to old method
@@ -576,7 +591,7 @@ Be conversational, helpful, and accurate about menu items and pricing."""
         self,
         result: Dict,
         phone: str,
-        db: Session,
+        db: SupabaseDB,
         context: Dict
     ) -> Dict[str, Any]:
         """Handle booking creation."""
@@ -594,23 +609,22 @@ Be conversational, helpful, and accurate about menu items and pricing."""
             }
 
         # Get or create customer
-        customer = db.query(Customer).filter(Customer.phone == phone).first()
+        customer = db.query_one(CUSTOMERS_TABLE, {"phone": phone})
         if not customer:
             customer_name = result.get("customer_name", "Guest")
-            customer = Customer(
-                phone=phone,
-                name=customer_name
-            )
-            db.add(customer)
-            db.flush()
+            customer = db.insert(CUSTOMERS_TABLE, {
+                "phone": phone,
+                "name": customer_name
+            })
 
-        # Get first restaurant (TODO: support multiple restaurants)
-        restaurant = db.query(Restaurant).first()
-        if not restaurant:
+        # Get first restaurant
+        restaurants = db.query_all(RESTAURANTS_TABLE, limit=1)
+        if not restaurants:
             return {
                 "type": "error",
                 "message": "I'm sorry, we're not taking reservations at this time."
             }
+        restaurant = restaurants[0]
 
         # Parse date and time
         booking_date = datetime.strptime(result["date"], "%Y-%m-%d").date()
@@ -618,7 +632,7 @@ Be conversational, helpful, and accurate about menu items and pricing."""
 
         # Find available table
         available_table = self._find_available_table(
-            restaurant.id,
+            restaurant["id"],
             booking_date,
             booking_time,
             result["party_size"],
@@ -633,19 +647,16 @@ Be conversational, helpful, and accurate about menu items and pricing."""
             }
 
         # Create booking
-        booking = Booking(
-            restaurant_id=restaurant.id,
-            table_id=available_table.id,
-            customer_id=customer.id,
-            booking_date=booking_date,
-            booking_time=booking_time,
-            party_size=result["party_size"],
-            duration_minutes=120,
-            status=BookingStatus.CONFIRMED
-        )
-        db.add(booking)
-        db.commit()
-        db.refresh(booking)
+        booking = db.insert(BOOKINGS_TABLE, {
+            "restaurant_id": restaurant["id"],
+            "table_id": available_table["id"],
+            "customer_id": customer["id"],
+            "booking_date": str(booking_date),
+            "booking_time": str(booking_time),
+            "party_size": result["party_size"],
+            "duration_minutes": 120,
+            "status": "confirmed"
+        })
 
         # Send SMS confirmation
         try:
@@ -657,19 +668,19 @@ Be conversational, helpful, and accurate about menu items and pricing."""
         return {
             "type": "confirmation",
             "booking": {
-                "restaurant_name": restaurant.name,
+                "restaurant_name": restaurant["name"],
                 "booking_date": booking_date,
                 "booking_time": booking_time,
                 "party_size": result["party_size"],
-                "customer_name": customer.name,
-                "confirmation_id": booking.id
+                "customer_name": customer["name"],
+                "confirmation_id": booking["id"]
             }
         }
 
     async def _handle_availability(
         self,
         result: Dict,
-        db: Session,
+        db: SupabaseDB,
         context: Dict
     ) -> Dict[str, Any]:
         """Handle availability check."""
@@ -684,14 +695,15 @@ Be conversational, helpful, and accurate about menu items and pricing."""
             }
 
         # Get restaurant
-        restaurant = db.query(Restaurant).first()
-        if not restaurant:
+        restaurants = db.query_all(RESTAURANTS_TABLE, limit=1)
+        if not restaurants:
             return {"type": "error", "message": "Restaurant not available"}
+        restaurant = restaurants[0]
 
         # Find available time slots
         booking_date = datetime.strptime(result["date"], "%Y-%m-%d").date()
         available_times = self._get_available_times(
-            restaurant.id,
+            restaurant["id"],
             booking_date,
             result["party_size"],
             db
@@ -709,22 +721,27 @@ Be conversational, helpful, and accurate about menu items and pricing."""
         self,
         result: Dict,
         phone: str,
-        db: Session
+        db: SupabaseDB
     ) -> Dict[str, Any]:
         """Handle booking cancellation."""
-        customer = db.query(Customer).filter(Customer.phone == phone).first()
+        customer = db.query_one(CUSTOMERS_TABLE, {"phone": phone})
         if not customer:
             return {
                 "type": "error",
                 "message": "I don't have any bookings under this phone number."
             }
 
-        # Find active bookings
-        active_bookings = db.query(Booking).filter(
-            Booking.customer_id == customer.id,
-            Booking.status == BookingStatus.CONFIRMED,
-            Booking.booking_date >= datetime.now().date()
-        ).all()
+        # Find active bookings using raw query since we need complex filtering
+        today = datetime.now().date()
+        query = db.table(BOOKINGS_TABLE).select("*").eq(
+            "customer_id", customer["id"]
+        ).eq(
+            "status", "confirmed"
+        ).gte(
+            "booking_date", str(today)
+        )
+        result_data = query.execute()
+        active_bookings = result_data.data or []
 
         if not active_bookings:
             return {
@@ -734,30 +751,30 @@ Be conversational, helpful, and accurate about menu items and pricing."""
 
         # Cancel the most recent booking
         booking = active_bookings[0]
-        booking.status = BookingStatus.CANCELLED
-        db.commit()
+        db.update(BOOKINGS_TABLE, booking["id"], {"status": "cancelled"})
 
         # Send cancellation SMS
         try:
             from backend.services.sms_service import sms_service
-            restaurant = db.query(Restaurant).filter(Restaurant.id == booking.restaurant_id).first()
+            restaurant = db.query_one(RESTAURANTS_TABLE, {"id": booking["restaurant_id"]})
             if restaurant:
                 sms_service.send_cancellation_confirmation(booking, customer, restaurant)
         except Exception as e:
             logger.error(f"Failed to send SMS: {e}")
 
+        booking_date = datetime.strptime(booking["booking_date"], "%Y-%m-%d").date()
         return {
             "type": "gather",
-            "message": f"I've cancelled your reservation for {booking.booking_date.strftime('%B %d')}. Is there anything else I can help you with?"
+            "message": f"I've cancelled your reservation for {booking_date.strftime('%B %d')}. Is there anything else I can help you with?"
         }
 
     async def _handle_operating_hours(
         self,
-        account,
+        account: Dict,
         result: Dict
     ) -> Dict[str, Any]:
         """Handle operating hours questions."""
-        if not account.opening_time or not account.closing_time:
+        if not account.get("opening_time") or not account.get("closing_time"):
             return {
                 "type": "gather",
                 "message": "I'm sorry, I don't have the operating hours information available right now. Please contact the restaurant directly for their hours.",
@@ -766,12 +783,12 @@ Be conversational, helpful, and accurate about menu items and pricing."""
 
         # Format operating days
         days_str = ""
-        if account.operating_days:
+        if account.get("operating_days"):
             day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-            days_str = ", ".join([day_names[d] for d in sorted(account.operating_days)])
-        
+            days_str = ", ".join([day_names[d] for d in sorted(account["operating_days"])])
+
         # Build response message
-        message = f"We're open from {account.opening_time} to {account.closing_time}"
+        message = f"We're open from {account['opening_time']} to {account['closing_time']}"
         if days_str:
             message += f" on {days_str}"
         message += ". Is there anything else I can help you with?"
@@ -798,23 +815,32 @@ Be conversational, helpful, and accurate about menu items and pricing."""
         booking_date: date,
         booking_time: time,
         party_size: int,
-        db: Session
-    ) -> Optional[Table]:
+        db: SupabaseDB
+    ) -> Optional[Dict]:
         """Find available table for booking."""
         # Get all active tables with sufficient capacity
-        tables = db.query(Table).filter(
-            Table.restaurant_id == restaurant_id,
-            Table.capacity >= party_size,
-            Table.is_active == True
-        ).all()
+        query = db.table(TABLES_TABLE).select("*").eq(
+            "restaurant_id", restaurant_id
+        ).gte(
+            "capacity", party_size
+        ).eq(
+            "is_active", True
+        )
+        result = query.execute()
+        tables = result.data or []
 
         # Check each table for conflicts
         for table in tables:
-            conflicts = db.query(Booking).filter(
-                Booking.table_id == table.id,
-                Booking.booking_date == booking_date,
-                Booking.status.in_([BookingStatus.CONFIRMED, BookingStatus.PENDING])
-            ).all()
+            # Get bookings for this table on this date
+            conflicts_query = db.table(BOOKINGS_TABLE).select("*").eq(
+                "table_id", table["id"]
+            ).eq(
+                "booking_date", str(booking_date)
+            ).in_(
+                "status", ["confirmed", "pending"]
+            )
+            conflicts_result = conflicts_query.execute()
+            conflicts = conflicts_result.data or []
 
             # Check time overlap
             start_datetime = datetime.combine(booking_date, booking_time)
@@ -822,8 +848,9 @@ Be conversational, helpful, and accurate about menu items and pricing."""
 
             has_conflict = False
             for conflict in conflicts:
-                conflict_start = datetime.combine(booking_date, conflict.booking_time)
-                conflict_end = conflict_start + timedelta(minutes=conflict.duration_minutes)
+                conflict_time = datetime.strptime(conflict["booking_time"], "%H:%M:%S").time()
+                conflict_start = datetime.combine(booking_date, conflict_time)
+                conflict_end = conflict_start + timedelta(minutes=conflict["duration_minutes"])
 
                 if not (end_datetime <= conflict_start or start_datetime >= conflict_end):
                     has_conflict = True
@@ -839,20 +866,23 @@ Be conversational, helpful, and accurate about menu items and pricing."""
         restaurant_id: int,
         booking_date: date,
         party_size: int,
-        db: Session
+        db: SupabaseDB
     ) -> List[time]:
         """Get list of available time slots."""
-        restaurant = db.query(Restaurant).filter(Restaurant.id == restaurant_id).first()
+        restaurant = db.query_one(RESTAURANTS_TABLE, {"id": restaurant_id})
         if not restaurant:
             return []
 
         available_times = []
 
         # Generate time slots from opening to closing (every 30 minutes)
-        current_time = datetime.combine(booking_date, restaurant.opening_time)
-        closing_time = datetime.combine(booking_date, restaurant.closing_time)
+        opening_time = datetime.strptime(restaurant["opening_time"], "%H:%M:%S").time()
+        closing_time = datetime.strptime(restaurant["closing_time"], "%H:%M:%S").time()
 
-        while current_time < closing_time - timedelta(hours=1):  # Stop 1 hour before closing
+        current_time = datetime.combine(booking_date, opening_time)
+        closing_datetime = datetime.combine(booking_date, closing_time)
+
+        while current_time < closing_datetime - timedelta(hours=1):  # Stop 1 hour before closing
             # Check if table available at this time
             if self._find_available_table(restaurant_id, booking_date, current_time.time(), party_size, db):
                 available_times.append(current_time.time())
@@ -865,9 +895,9 @@ Be conversational, helpful, and accurate about menu items and pricing."""
         self,
         result: Dict,
         phone: str,
-        db: Session,
+        db: SupabaseDB,
         context: Dict,
-        account: 'RestaurantAccount'
+        account: Dict
     ) -> Dict[str, Any]:
         """
         Handle adding items to cart WITHOUT creating an order yet.
@@ -938,9 +968,9 @@ Be conversational, helpful, and accurate about menu items and pricing."""
         self,
         result: Dict,
         phone: str,
-        db: Session,
+        db: SupabaseDB,
         context: Dict,
-        account: 'RestaurantAccount'
+        account: Dict
     ) -> Dict[str, Any]:
         """
         Finalize the order - check we have all required info and create the order.
@@ -1003,14 +1033,12 @@ Be conversational, helpful, and accurate about menu items and pricing."""
         self,
         result: Dict,
         phone: str,
-        db: Session,
+        db: SupabaseDB,
         context: Dict,
-        account: 'RestaurantAccount'
-        ) -> Dict[str, Any]:
+        account: Dict
+    ) -> Dict[str, Any]:
         """Handle takeout order placement."""
         import json as json_lib
-        from backend.models import Order, OrderStatus
-        from sqlalchemy.exc import IntegrityError
 
         # Normalize phone number to E.164 format (digits only with + prefix)
         def normalize_phone(p):
@@ -1024,22 +1052,20 @@ Be conversational, helpful, and accurate about menu items and pricing."""
         phone_digits = phone.lstrip('+') if phone else ''
 
         # Get or create customer - try both with and without + prefix
-        from backend.models import Customer
-        customer = db.query(Customer).filter(
-            (Customer.phone == phone) | (Customer.phone == phone_digits)
-        ).first()
+        customer = db.query_one(CUSTOMERS_TABLE, {"phone": phone})
+        if not customer:
+            customer = db.query_one(CUSTOMERS_TABLE, {"phone": phone_digits})
 
         if customer:
             # Returning customer - check if they provided a new name
             new_name = result.get("customer_name", "").strip()
-            if new_name and new_name != customer.name:
+            if new_name and new_name != customer.get("name"):
                 # Customer provided a different name, update it
-                logger.info(f"Updating customer name from '{customer.name}' to '{new_name}' for {phone}")
-                customer.name = new_name
+                logger.info(f"Updating customer name from '{customer.get('name')}' to '{new_name}' for {phone}")
                 try:
-                    db.flush()
-                except IntegrityError:
-                    db.rollback()
+                    customer = db.update(CUSTOMERS_TABLE, customer["id"], {"name": new_name})
+                except Exception as e:
+                    logger.error(f"Failed to update customer name: {e}")
         else:
             # New customer - name is required
             customer_name = result.get("customer_name", "").strip()
@@ -1056,15 +1082,13 @@ Be conversational, helpful, and accurate about menu items and pricing."""
                     }
                 }
             try:
-                customer = Customer(phone=phone, name=customer_name)
-                db.add(customer)
-                db.flush()
-            except IntegrityError:
+                customer = db.insert(CUSTOMERS_TABLE, {"phone": phone, "name": customer_name})
+            except Exception as e:
                 # Customer was created by another request, fetch them
-                db.rollback()
-                customer = db.query(Customer).filter(
-                    (Customer.phone == phone) | (Customer.phone == phone_digits)
-                ).first()
+                logger.warning(f"Failed to create customer, trying to fetch: {e}")
+                customer = db.query_one(CUSTOMERS_TABLE, {"phone": phone})
+                if not customer:
+                    customer = db.query_one(CUSTOMERS_TABLE, {"phone": phone_digits})
                 if not customer:
                     logger.error(f"Failed to create or find customer with phone {phone}")
                     return {
@@ -1073,8 +1097,7 @@ Be conversational, helpful, and accurate about menu items and pricing."""
                     }
 
         # Get first restaurant location for this account
-        from backend.models import Restaurant
-        restaurant = db.query(Restaurant).filter(Restaurant.account_id == account.id).first()
+        restaurant = db.query_one(RESTAURANTS_TABLE, {"account_id": account["id"]})
         if not restaurant:
             return {
                 "type": "error",
@@ -1178,38 +1201,36 @@ Be conversational, helpful, and accurate about menu items and pricing."""
                 logger.warning(f"Could not parse pickup time '{pickup_time_str}': {e}")
 
         # Create order with payment info
-        order = Order(
-            account_id=account.id,  # Multi-tenant: link to restaurant account
-            restaurant_id=restaurant.id,
-            customer_id=customer.id,
-            customer_name=customer.name,
-            customer_phone=phone,
-            order_date=datetime.now(),
-            scheduled_time=scheduled_time,
-            delivery_address=context.get("delivery_address", "Pickup"),
-            order_items=json_lib.dumps(order_items),
-            subtotal=subtotal,
-            tax=tax,
-            delivery_fee=delivery_fee if context.get("delivery_address") else 0,
-            total=total,
-            status=OrderStatus.PENDING.value,
-            payment_method=payment_method,
-            payment_status="paid" if payment_method == "card" else "unpaid",
-            special_instructions=f"Pickup: {pickup_note}" + (f"\n{result.get('special_requests')}" if result.get('special_requests') else "")
-        )
-        db.add(order)
-        db.commit()
-        db.refresh(order)
+        order_data = {
+            "account_id": account["id"],  # Multi-tenant: link to restaurant account
+            "restaurant_id": restaurant["id"],
+            "customer_id": customer["id"],
+            "customer_name": customer.get("name"),
+            "customer_phone": phone,
+            "order_date": datetime.now().isoformat(),
+            "scheduled_time": scheduled_time.isoformat() if scheduled_time else None,
+            "delivery_address": context.get("delivery_address", "Pickup"),
+            "order_items": json_lib.dumps(order_items),
+            "subtotal": subtotal,
+            "tax": tax,
+            "delivery_fee": delivery_fee if context.get("delivery_address") else 0,
+            "total": total,
+            "status": "pending",
+            "payment_method": payment_method,
+            "payment_status": "paid" if payment_method == "card" else "unpaid",
+            "special_instructions": f"Pickup: {pickup_note}" + (f"\n{result.get('special_requests')}" if result.get('special_requests') else "")
+        }
+        order = db.insert(ORDERS_TABLE, order_data)
 
         # Track trial order usage (successful AI-processed order)
-        if account.subscription_status == "trial":
-            account.trial_orders_used = (account.trial_orders_used or 0) + 1
-            db.commit()
-            logger.info(f"Trial order tracked for account {account.id}: {account.trial_orders_used}/{account.trial_order_limit} orders used")
+        if account.get("subscription_status") == "trial":
+            trial_orders_used = (account.get("trial_orders_used") or 0) + 1
+            db.update(RESTAURANT_ACCOUNTS_TABLE, account["id"], {"trial_orders_used": trial_orders_used})
+            logger.info(f"Trial order tracked for account {account['id']}: {trial_orders_used}/{account.get('trial_order_limit', 10)} orders used")
 
             # Check if trial limit reached
-            if account.trial_orders_used >= (account.trial_order_limit or 10):
-                logger.warning(f"Account {account.id} has reached trial order limit")
+            if trial_orders_used >= (account.get("trial_order_limit") or 10):
+                logger.warning(f"Account {account['id']} has reached trial order limit")
 
         # Send SMS confirmation
         try:
@@ -1224,7 +1245,7 @@ Be conversational, helpful, and accurate about menu items and pricing."""
             else:
                 pickup_text = "Ready in 15-20 minutes"
 
-            confirmation_msg = f"""Your order #{order.id} is confirmed!
+            confirmation_msg = f"""Your order #{order['id']} is confirmed!
 
 {items_text}
 
@@ -1234,7 +1255,7 @@ Payment: {payment_method}
 
 Thank you!"""
             # Use restaurant's Twilio phone number for SMS if available
-            from_number = account.twilio_phone_number if account else None
+            from_number = account.get("twilio_phone_number")
             sms_service.send_sms(phone, confirmation_msg, from_number=from_number)
         except Exception as e:
             logger.error(f"Failed to send order confirmation SMS: {str(e)}")
@@ -1243,18 +1264,18 @@ Thank you!"""
         try:
             from backend.services.kitchen_printer import kitchen_printer
             order_dict = {
-                "id": order.id,
-                "customer_name": customer.name,
+                "id": order["id"],
+                "customer_name": customer.get("name"),
                 "customer_phone": phone,
                 "order_items": json_lib.dumps(order_items),
                 "total": total,
                 "payment_method": payment_method,
-                "payment_status": order.payment_status,
-                "delivery_address": order.delivery_address,
+                "payment_status": order.get("payment_status"),
+                "delivery_address": order.get("delivery_address"),
                 "special_requests": result.get("special_requests")
             }
             kitchen_printer.print_order(order_dict)
-            logger.info(f"Order #{order.id} printed to kitchen")
+            logger.info(f"Order #{order['id']} printed to kitchen")
         except Exception as e:
             logger.error(f"Failed to print order to kitchen: {str(e)}")
 
@@ -1266,7 +1287,7 @@ Thank you!"""
         total_dollars = total / 100
 
         message = f"Your order is confirmed! Just to recap, you have {items_recap} for a total of ${total_dollars:.2f}. "
-        message += f"Order number {order.id} for {customer.name}. "
+        message += f"Order number {order['id']} for {customer.get('name')}. "
         if pickup_note and pickup_note != "ASAP":
             message += f"We'll have it ready for pickup at {pickup_note}. "
         else:
@@ -1279,7 +1300,7 @@ Thank you!"""
             "type": "gather",  # Don't hang up - wait for customer to say goodbye
             "message": message,
             "context": {
-                "order_id": order.id,
+                "order_id": order["id"],
                 "order_total": total_dollars,
                 "order_items_recap": items_recap,
                 "cart_items": [],

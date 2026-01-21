@@ -105,14 +105,13 @@ cp .env.example .env  # Edit with your settings
 uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
 
 # 5. Setup frontend (new terminal)
-cd frontend-new
+cd frontend
 npm install
-npm run build
-npm run preview
+npm run dev
 ```
 
 **Access:**
-- Frontend: http://YOUR_SERVER_IP:4173 (Vite preview default port)
+- Frontend: http://YOUR_SERVER_IP:3000
 - Backend API: http://YOUR_SERVER_IP:8000
 - API Docs: http://YOUR_SERVER_IP:8000/api/docs
 
@@ -122,7 +121,7 @@ npm run preview
 
 **Quick version:**
 1. Open browser on tablet/phone/laptop
-2. Go to: `http://SERVER_IP:4173`
+2. Go to: `http://SERVER_IP:3000`
 3. Create account (30-day free trial)
 4. Add your menu
 5. Setup tables
@@ -258,7 +257,7 @@ GOOGLE_MAPS_API_KEY=your_google_maps_api_key_here
 # Server Config
 PORT=8000
 PUBLIC_URL=https://your-domain.com
-CORS_ORIGINS=http://localhost:4173,http://localhost:5173,http://192.168.1.100:4173,http://192.168.1.100:5173
+CORS_ORIGINS=http://localhost:3000,http://192.168.1.100:3000
 
 # JWT Secret (generate with: openssl rand -hex 32)
 SECRET_KEY=your_secret_key_here
@@ -288,7 +287,7 @@ restaurant-ai-managed/
 │   │   └── voice_service.py         # Twilio TwiML generation
 │   └── main.py            # FastAPI application
 │
-├── frontend-new/
+├── frontend/
 │   ├── src/
 │   │   ├── components/
 │   │   │   ├── layouts/   # Admin & Restaurant layouts
@@ -375,7 +374,7 @@ See [`END_TO_END_TEST_REPORT.md`](END_TO_END_TEST_REPORT.md) for complete test c
 pytest
 
 # Frontend tests
-cd frontend-new
+cd frontend
 npm test
 
 # Test AI integration
@@ -421,7 +420,7 @@ curl http://localhost:8000/health
 uvicorn backend.main:app --reload
 
 # Frontend
-cd frontend-new && npm run dev
+cd frontend && npm run dev
 ```
 
 ### Production (Linux Server)
@@ -432,7 +431,7 @@ See [`SERVER_SETUP_GUIDE.md`](SERVER_SETUP_GUIDE.md) for complete systemd setup.
 **2. Or use PM2:**
 ```bash
 pm2 start "uvicorn backend.main:app --host 0.0.0.0" --name restaurant-backend
-cd frontend-new && pm2 start "npm run preview" --name restaurant-frontend
+cd frontend && pm2 start "npm run preview" --name restaurant-frontend
 pm2 save
 pm2 startup
 ```
@@ -444,7 +443,7 @@ server {
     server_name myrestaurant.com;
 
     location / {
-        proxy_pass http://localhost:4173;
+        proxy_pass http://localhost:3000;
     }
 
     location /api {
@@ -468,7 +467,7 @@ sudo certbot --nginx -d myrestaurant.com
 - Can be any Mac/Linux computer with 8GB+ RAM
 
 ### Restaurant Tablet (Recommended)
-- Access: `http://SERVER_IP:4173`
+- Access: `http://SERVER_IP:3000`
 - Keep at counter for order taking
 - Large screen, easy to use
 - Touch-optimized interface
@@ -522,7 +521,7 @@ ls -la .env
 node --version  # Should be 18+
 
 # Rebuild
-cd frontend-new
+cd frontend
 rm -rf node_modules dist
 npm install
 npm run build
@@ -546,11 +545,11 @@ ollama pull llama2
 ```bash
 # Check firewall
 sudo ufw status  # Linux
-# Allow ports 8000 and 4173
+# Allow ports 8000 and 3000
 
 # Check server is listening on 0.0.0.0
 lsof -i :8000
-lsof -i :4173
+lsof -i :3000
 ```
 
 ---

@@ -20,10 +20,9 @@ from enum import Enum
 
 from fastapi import APIRouter, Depends, Request, Form, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response
-from sqlalchemy.orm import Session
 from twilio.twiml.voice_response import VoiceResponse, Connect
 
-from backend.database import get_db
+from backend.database import get_db, SupabaseDB
 from backend.services.deepgram_service import deepgram_service
 from backend.services.elevenlabs_service import elevenlabs_service
 from backend.services.openai_tts_service import openai_tts_service
@@ -64,7 +63,7 @@ def get_base_url(request: Request) -> str:
 
 @router.post("/welcome")
 @router.get("/welcome")
-async def voice_welcome(request: Request, db: Session = Depends(get_db)):
+async def voice_welcome(request: Request, db: SupabaseDB = Depends(get_db)):
     """
     Initial webhook when call is received.
     Returns TwiML with Media Streams Start instruction.
@@ -102,10 +101,7 @@ async def voice_welcome(request: Request, db: Session = Depends(get_db)):
         }
 
     # Look up restaurant
-    from backend.models_platform import RestaurantAccount
-    restaurant = db.query(RestaurantAccount).filter(
-        RestaurantAccount.twilio_phone_number == to_normalized
-    ).first()
+    restaurant = db.query_one("restaurant_accounts", {"twilio_phone_number": to_normalized})
 
     if not restaurant:
         logger.warning(f"No restaurant for number: {To}")
@@ -267,19 +263,15 @@ async def voice_stream(websocket: WebSocket):
             logger.info(f"Processing: {transcript} | History: {len(conversation_messages)} messages")
 
             try:
-                from backend.database import SessionLocal
-                db = SessionLocal()
-                try:
-                    result = await conversation_handler.process_message(
-                        message=transcript,
-                        phone=from_number or "",
-                        restaurant_id=restaurant_id,
-                        context=conversation_context,
-                        conversation_history=conversation_messages,
-                        db=db
-                    )
-                finally:
-                    db.close()
+                db = SupabaseDB()
+                result = await conversation_handler.process_message(
+                    message=transcript,
+                    phone=from_number or "",
+                    restaurant_id=restaurant_id,
+                    context=conversation_context,
+                    conversation_history=conversation_messages,
+                    db=db
+                )
 
                 # Update conversation state
                 conversation_context = result.get("context", {})
@@ -505,28 +497,21 @@ async def voice_stream(websocket: WebSocket):
 
                     # Look up restaurant
                     if to_number:
-                        from backend.database import SessionLocal
-                        from backend.models_platform import RestaurantAccount
-                        db = SessionLocal()
-                        try:
-                            to_normalized = to_number.strip()
-                            if not to_normalized.startswith('+'):
-                                to_normalized = '+' + to_normalized
+                        db = SupabaseDB()
+                        to_normalized = to_number.strip()
+                        if not to_normalized.startswith('+'):
+                            to_normalized = '+' + to_normalized
 
-                            restaurant = db.query(RestaurantAccount).filter(
-                                RestaurantAccount.twilio_phone_number == to_normalized
-                            ).first()
+                        restaurant = db.query_one("restaurant_accounts", {"twilio_phone_number": to_normalized})
 
-                            if restaurant:
-                                restaurant_id = restaurant.id
-                                restaurant_name = restaurant.business_name
-                                logger.info(f"Restaurant: {restaurant_name}")
-                            else:
-                                logger.warning(f"Restaurant not found for: {to_number}")
-                                await websocket.close()
-                                return
-                        finally:
-                            db.close()
+                        if restaurant:
+                            restaurant_id = restaurant["id"]
+                            restaurant_name = restaurant["business_name"]
+                            logger.info(f"Restaurant: {restaurant_name}")
+                        else:
+                            logger.warning(f"Restaurant not found for: {to_number}")
+                            await websocket.close()
+                            return
 
                     state = CallState.LISTENING
 
@@ -554,20 +539,16 @@ async def voice_stream(websocket: WebSocket):
                     # Save transcript
                     if conversation_messages and restaurant_id:
                         try:
-                            from backend.database import SessionLocal
-                            db = SessionLocal()
-                            try:
-                                transcript_service.save_transcript(
-                                    db=db,
-                                    account_id=restaurant_id,
-                                    transcript_type="voice",
-                                    customer_phone=from_number or "",
-                                    conversation_id=call_sid or "",
-                                    messages=conversation_messages,
-                                    twilio_phone=to_number
-                                )
-                            finally:
-                                db.close()
+                            db = SupabaseDB()
+                            transcript_service.save_transcript(
+                                db=db,
+                                account_id=restaurant_id,
+                                transcript_type="voice",
+                                customer_phone=from_number or "",
+                                conversation_id=call_sid or "",
+                                messages=conversation_messages,
+                                twilio_phone=to_number
+                            )
                         except Exception as e:
                             logger.error(f"Failed to save transcript: {e}")
 

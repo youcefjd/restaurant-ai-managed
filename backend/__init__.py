@@ -1,7 +1,7 @@
 """
 Restaurant Reservation System Backend API
 
-A comprehensive reservation management system built with FastAPI and SQLite.
+A comprehensive reservation management system built with FastAPI and Supabase.
 Provides full CRUD operations for restaurants, tables, customers, and bookings
 with intelligent availability checking and automatic table assignment.
 """
@@ -11,8 +11,7 @@ __author__ = "Restaurant Reservation System"
 __description__ = "Backend API for managing restaurant reservations"
 
 # Package-level imports for easier access
-from .database import engine, SessionLocal, Base
-from .models import Restaurant, Table, Customer, Booking
+from .database import SupabaseDB, init_db, check_connection
 from .schemas import (
     RestaurantCreate,
     RestaurantUpdate,
@@ -29,28 +28,14 @@ from .schemas import (
     AvailabilityQuery,
     AvailabilityResponse
 )
-# Services are imported directly in route handlers where needed
-# from .services import (
-#     RestaurantService,
-#     TableService,
-#     CustomerService,
-#     BookingService,
-#     AvailabilityService
-# )
 
 # Export main components
 __all__ = [
     # Database
-    "engine",
-    "SessionLocal",
-    "Base",
-    
-    # Models
-    "Restaurant",
-    "Table",
-    "Customer",
-    "Booking",
-    
+    "SupabaseDB",
+    "init_db",
+    "check_connection",
+
     # Schemas
     "RestaurantCreate",
     "RestaurantUpdate",
@@ -67,15 +52,3 @@ __all__ = [
     "AvailabilityQuery",
     "AvailabilityResponse",
 ]
-
-# Initialize database tables on import
-def init_db():
-    """Initialize database tables if they don't exist."""
-    try:
-        Base.metadata.create_all(bind=engine)
-    except Exception as e:
-        print(f"Error initializing database: {e}")
-        raise
-
-# Run initialization
-init_db()

@@ -10,15 +10,9 @@ from typing import List, Optional, Union
 from pydantic import BaseModel, Field, EmailStr
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Request
-from sqlalchemy.orm import Session
 from typing import Optional as Opt
 
-from backend.database import get_db
-from backend.models_platform import (
-    RestaurantAccount, Menu, MenuCategory, MenuItem, MenuModifier,
-    SubscriptionTier, SubscriptionStatus
-)
-from backend.models import Restaurant
+from backend.database import get_db, SupabaseDB
 from backend.services.google_maps_service import google_maps_service
 from backend.services.menu_parser import menu_parser
 
@@ -148,7 +142,7 @@ class MenuModifierResponse(BaseModel):
 @router.post("/signup", response_model=RestaurantAccountResponse, status_code=status.HTTP_201_CREATED)
 async def signup_restaurant(
     account_data: RestaurantAccountCreate,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Sign up a new restaurant account.
@@ -159,9 +153,7 @@ async def signup_restaurant(
     - Platform commission rate of 10%
     """
     # Check if email already exists
-    existing = db.query(RestaurantAccount).filter(
-        RestaurantAccount.owner_email == account_data.owner_email
-    ).first()
+    existing = db.query_one("restaurant_accounts", {"owner_email": account_data.owner_email})
 
     if existing:
         raise HTTPException(
@@ -170,29 +162,27 @@ async def signup_restaurant(
         )
 
     # Create account
-    account = RestaurantAccount(
-        **account_data.model_dump(),
-        subscription_tier=SubscriptionTier.FREE.value,
-        subscription_status=SubscriptionStatus.TRIAL.value,
-        platform_commission_rate=10.0,
-        trial_ends_at=datetime.now() + timedelta(days=30),
-        onboarding_completed=False,
-        is_active=True
-    )
+    account_dict = account_data.model_dump()
+    account_dict.update({
+        "subscription_tier": "free",
+        "subscription_status": "trial",
+        "platform_commission_rate": 10.0,
+        "trial_ends_at": (datetime.now() + timedelta(days=30)).isoformat(),
+        "onboarding_completed": False,
+        "is_active": True
+    })
 
-    db.add(account)
-    db.commit()
-    db.refresh(account)
+    account = db.insert("restaurant_accounts", account_dict)
 
-    logger.info(f"New restaurant account created: {account.id} - {account.business_name}")
+    logger.info(f"New restaurant account created: {account['id']} - {account['business_name']}")
 
     return account
 
 
 @router.get("/accounts/{account_id}", response_model=RestaurantAccountResponse)
-async def get_account(account_id: int, db: Session = Depends(get_db)):
+async def get_account(account_id: int, db: SupabaseDB = Depends(get_db)):
     """Get restaurant account details."""
-    account = db.query(RestaurantAccount).filter(RestaurantAccount.id == account_id).first()
+    account = db.query_one("restaurant_accounts", {"id": account_id})
 
     if not account:
         raise HTTPException(
@@ -212,16 +202,16 @@ class TwilioPhoneUpdate(BaseModel):
 async def update_twilio_phone(
     account_id: int,
     phone_data: TwilioPhoneUpdate,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Update Twilio phone number for restaurant account.
-    
+
     This phone number is used to identify which restaurant a call is for.
     The number must match the Twilio phone number configured in your Twilio account.
     """
     # Verify account exists
-    account = db.query(RestaurantAccount).filter(RestaurantAccount.id == account_id).first()
+    account = db.query_one("restaurant_accounts", {"id": account_id})
     if not account:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -230,14 +220,14 @@ async def update_twilio_phone(
 
     # Validate phone number format (E.164 format: +[country code][number])
     phone = phone_data.twilio_phone_number.strip()
-    
+
     # Basic validation: should start with + and have 10+ digits
     if not phone.startswith('+'):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Phone number must be in E.164 format (e.g., +15551234567). Must start with +"
         )
-    
+
     # Remove + and check if remaining is all digits
     digits_only = phone[1:].replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
     if not digits_only.isdigit() or len(digits_only) < 10:
@@ -250,10 +240,9 @@ async def update_twilio_phone(
     normalized_phone = '+' + digits_only
 
     # Check if phone number is already in use by another account
-    existing = db.query(RestaurantAccount).filter(
-        RestaurantAccount.twilio_phone_number == normalized_phone,
-        RestaurantAccount.id != account_id
-    ).first()
+    # Query all accounts with this phone number and filter out current account
+    existing_accounts = db.query_all("restaurant_accounts", {"twilio_phone_number": normalized_phone})
+    existing = next((acc for acc in existing_accounts if acc["id"] != account_id), None)
 
     if existing:
         raise HTTPException(
@@ -262,27 +251,25 @@ async def update_twilio_phone(
         )
 
     # Update phone number (stored in normalized E.164 format)
-    account.twilio_phone_number = normalized_phone
-    db.commit()
-    db.refresh(account)
+    updated_account = db.update("restaurant_accounts", account_id, {"twilio_phone_number": normalized_phone})
 
     logger.info(f"Updated Twilio phone number for account {account_id}: {phone}")
 
-    return account
+    return updated_account
 
 
 @router.delete("/accounts/{account_id}/twilio-phone", response_model=RestaurantAccountResponse)
 async def remove_twilio_phone(
     account_id: int,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Remove Twilio phone number from restaurant account.
-    
+
     This will set the phone number to null, disabling voice AI for this restaurant.
     """
     # Verify account exists
-    account = db.query(RestaurantAccount).filter(RestaurantAccount.id == account_id).first()
+    account = db.query_one("restaurant_accounts", {"id": account_id})
     if not account:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -290,13 +277,11 @@ async def remove_twilio_phone(
         )
 
     # Remove phone number
-    account.twilio_phone_number = None
-    db.commit()
-    db.refresh(account)
+    updated_account = db.update("restaurant_accounts", account_id, {"twilio_phone_number": None})
 
     logger.info(f"Removed Twilio phone number for account {account_id}")
 
-    return account
+    return updated_account
 
 
 class OperatingHoursUpdate(BaseModel):
@@ -310,20 +295,22 @@ class OperatingHoursUpdate(BaseModel):
 async def update_operating_hours(
     account_id: int,
     hours_data: OperatingHoursUpdate,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Update operating hours for restaurant account.
-    
+
     This information is used by the AI to answer customer questions about hours of operation.
     """
     # Verify account exists
-    account = db.query(RestaurantAccount).filter(RestaurantAccount.id == account_id).first()
+    account = db.query_one("restaurant_accounts", {"id": account_id})
     if not account:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Account not found"
         )
+
+    update_data = {}
 
     # Validate time format if provided
     if hours_data.opening_time:
@@ -335,7 +322,7 @@ async def update_operating_hours(
             hour, minute = int(parts[0]), int(parts[1])
             if hour < 0 or hour > 23 or minute < 0 or minute > 59:
                 raise ValueError("Invalid time values")
-            account.opening_time = hours_data.opening_time
+            update_data["opening_time"] = hours_data.opening_time
         except (ValueError, AttributeError):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -351,7 +338,7 @@ async def update_operating_hours(
             hour, minute = int(parts[0]), int(parts[1])
             if hour < 0 or hour > 23 or minute < 0 or minute > 59:
                 raise ValueError("Invalid time values")
-            account.closing_time = hours_data.closing_time
+            update_data["closing_time"] = hours_data.closing_time
         except (ValueError, AttributeError):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -365,14 +352,16 @@ async def update_operating_hours(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Operating days must be integers between 0 (Monday) and 6 (Sunday)"
             )
-        account.operating_days = hours_data.operating_days
+        update_data["operating_days"] = hours_data.operating_days
 
-    db.commit()
-    db.refresh(account)
+    if update_data:
+        updated_account = db.update("restaurant_accounts", account_id, update_data)
+    else:
+        updated_account = account
 
     logger.info(f"Updated operating hours for account {account_id}")
 
-    return account
+    return updated_account
 
 
 @router.post("/accounts/{account_id}/menus", status_code=status.HTTP_201_CREATED)
@@ -380,11 +369,11 @@ async def create_menu(
     account_id: int,
     menu_name: str,
     menu_description: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """Create a new menu for a restaurant account."""
     # Verify account exists
-    account = db.query(RestaurantAccount).filter(RestaurantAccount.id == account_id).first()
+    account = db.query_one("restaurant_accounts", {"id": account_id})
     if not account:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -392,23 +381,19 @@ async def create_menu(
         )
 
     # Create menu
-    menu = Menu(
-        account_id=account_id,
-        name=menu_name,
-        description=menu_description,
-        is_active=True
-    )
-
-    db.add(menu)
-    db.commit()
-    db.refresh(menu)
+    menu = db.insert("menus", {
+        "account_id": account_id,
+        "name": menu_name,
+        "description": menu_description,
+        "is_active": True
+    })
 
     return {
-        "id": menu.id,
-        "account_id": menu.account_id,
-        "name": menu.name,
-        "description": menu.description,
-        "is_active": menu.is_active
+        "id": menu["id"],
+        "account_id": menu["account_id"],
+        "name": menu["name"],
+        "description": menu["description"],
+        "is_active": menu["is_active"]
     }
 
 
@@ -416,52 +401,62 @@ async def create_menu(
 async def update_menu(
     menu_id: int,
     menu_update: MenuUpdate,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """Update a menu's name and/or description."""
-    menu = db.query(Menu).filter(Menu.id == menu_id).first()
+    menu = db.query_one("menus", {"id": menu_id})
     if not menu:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Menu not found"
         )
 
+    update_data = {}
     if menu_update.menu_name is not None:
-        menu.name = menu_update.menu_name
+        update_data["name"] = menu_update.menu_name
     if menu_update.menu_description is not None:
-        menu.description = menu_update.menu_description
+        update_data["description"] = menu_update.menu_description
 
-    db.commit()
-    db.refresh(menu)
+    if update_data:
+        menu = db.update("menus", menu_id, update_data)
 
     return {
-        "id": menu.id,
-        "account_id": menu.account_id,
-        "name": menu.name,
-        "description": menu.description,
-        "is_active": menu.is_active
+        "id": menu["id"],
+        "account_id": menu["account_id"],
+        "name": menu["name"],
+        "description": menu["description"],
+        "is_active": menu["is_active"]
     }
 
 
 @router.delete("/menus/{menu_id}", status_code=status.HTTP_200_OK)
 async def delete_menu(
     menu_id: int,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """Delete a menu and all its categories and items."""
-    menu = db.query(Menu).filter(Menu.id == menu_id).first()
+    menu = db.query_one("menus", {"id": menu_id})
     if not menu:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Menu not found"
         )
 
-    menu_name = menu.name
-    db.delete(menu)
-    db.commit()
+    menu_name = menu["name"]
+
+    # Delete all items in categories belonging to this menu
+    categories = db.query_all("menu_categories", {"menu_id": menu_id})
+    for category in categories:
+        db.delete_where("menu_items", {"category_id": category["id"]})
+
+    # Delete all categories belonging to this menu
+    db.delete_where("menu_categories", {"menu_id": menu_id})
+
+    # Delete the menu
+    db.delete("menus", menu_id)
 
     logger.info(f"Deleted menu {menu_id}: {menu_name}")
-    
+
     return {
         "message": f"Menu '{menu_name}' has been deleted",
         "menu_id": menu_id
@@ -474,11 +469,11 @@ async def create_category(
     category_name: str,
     category_description: Optional[str] = None,
     display_order: int = 0,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """Create a new category in a menu."""
     # Verify menu exists
-    menu = db.query(Menu).filter(Menu.id == menu_id).first()
+    menu = db.query_one("menus", {"id": menu_id})
     if not menu:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -486,34 +481,30 @@ async def create_category(
         )
 
     # Create category
-    category = MenuCategory(
-        menu_id=menu_id,
-        name=category_name,
-        description=category_description,
-        display_order=display_order
-    )
-
-    db.add(category)
-    db.commit()
-    db.refresh(category)
+    category = db.insert("menu_categories", {
+        "menu_id": menu_id,
+        "name": category_name,
+        "description": category_description,
+        "display_order": display_order
+    })
 
     return {
-        "id": category.id,
-        "menu_id": category.menu_id,
-        "name": category.name,
-        "description": category.description,
-        "display_order": category.display_order
+        "id": category["id"],
+        "menu_id": category["menu_id"],
+        "name": category["name"],
+        "description": category["description"],
+        "display_order": category["display_order"]
     }
 
 
 @router.post("/items", response_model=MenuItemResponse, status_code=status.HTTP_201_CREATED)
 async def create_menu_item(
     item_data: MenuItemCreate,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """Create a new menu item."""
     # Verify category exists
-    category = db.query(MenuCategory).filter(MenuCategory.id == item_data.category_id).first()
+    category = db.query_one("menu_categories", {"id": item_data.category_id})
     if not category:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -521,10 +512,7 @@ async def create_menu_item(
         )
 
     # Create item
-    item = MenuItem(**item_data.model_dump())
-    db.add(item)
-    db.commit()
-    db.refresh(item)
+    item = db.insert("menu_items", item_data.model_dump())
 
     return item
 
@@ -533,11 +521,11 @@ async def create_menu_item(
 async def update_menu_item(
     item_id: int,
     item_data: MenuItemUpdate,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """Update a menu item."""
     # Find the item
-    item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
+    item = db.query_one("menu_items", {"id": item_id})
     if not item:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -545,25 +533,21 @@ async def update_menu_item(
         )
 
     # If category_id is being updated, verify the category exists
-    if item_data.category_id is not None and item_data.category_id != item.category_id:
-        category = db.query(MenuCategory).filter(MenuCategory.id == item_data.category_id).first()
+    if item_data.category_id is not None and item_data.category_id != item["category_id"]:
+        category = db.query_one("menu_categories", {"id": item_data.category_id})
         if not category:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Category not found"
             )
-        item.category_id = item_data.category_id
 
     # Update fields that are provided
-    update_data = item_data.model_dump(exclude_unset=True, exclude={'category_id'})
-    for field, value in update_data.items():
-        if value is not None:
-            setattr(item, field, value)
+    update_data = {k: v for k, v in item_data.model_dump(exclude_unset=True).items() if v is not None}
 
-    db.commit()
-    db.refresh(item)
+    if update_data:
+        item = db.update("menu_items", item_id, update_data)
 
-    logger.info(f"Updated menu item {item_id}: {item.name}")
+    logger.info(f"Updated menu item {item_id}: {item['name']}")
     return item
 
 
@@ -571,7 +555,7 @@ async def update_menu_item(
 async def toggle_menu_item_availability(
     item_id: int,
     is_available: bool,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Toggle menu item availability.
@@ -579,43 +563,40 @@ async def toggle_menu_item_availability(
     Use this to mark items as available/unavailable based on ingredient availability
     or during different times of the day.
     """
-    item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
+    item = db.query_one("menu_items", {"id": item_id})
     if not item:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Menu item not found"
         )
 
-    item.is_available = is_available
-    db.commit()
-    db.refresh(item)
+    item = db.update("menu_items", item_id, {"is_available": is_available})
 
     return {
-        "id": item.id,
-        "name": item.name,
-        "is_available": item.is_available,
-        "message": f"Item '{item.name}' is now {'available' if is_available else 'unavailable'}"
+        "id": item["id"],
+        "name": item["name"],
+        "is_available": item["is_available"],
+        "message": f"Item '{item['name']}' is now {'available' if is_available else 'unavailable'}"
     }
 
 
 @router.delete("/items/{item_id}", status_code=status.HTTP_200_OK)
 async def delete_menu_item(
     item_id: int,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Delete a menu item by ID.
     """
-    item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
+    item = db.query_one("menu_items", {"id": item_id})
     if not item:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Menu item not found"
         )
 
-    item_name = item.name
-    db.delete(item)
-    db.commit()
+    item_name = item["name"]
+    db.delete("menu_items", item_id)
 
     logger.info(f"Deleted menu item {item_id}: {item_name}")
 
@@ -629,13 +610,13 @@ async def delete_menu_item(
 async def delete_all_menu_items(
     account_id: int,
     menu_id: int,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Delete all menu items from a specific menu.
     """
     # Verify account exists
-    account = db.query(RestaurantAccount).filter(RestaurantAccount.id == account_id).first()
+    account = db.query_one("restaurant_accounts", {"id": account_id})
     if not account:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -643,26 +624,25 @@ async def delete_all_menu_items(
         )
 
     # Verify menu exists and belongs to account
-    menu = db.query(Menu).filter(Menu.id == menu_id, Menu.account_id == account_id).first()
-    if not menu:
+    menu = db.query_one("menus", {"id": menu_id})
+    if not menu or menu["account_id"] != account_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Menu not found"
         )
 
-    # Get all items for this menu through categories
+    # Get all categories for this menu and delete their items
+    categories = db.query_all("menu_categories", {"menu_id": menu_id})
     items_count = 0
-    for category in menu.categories:
-        items_count += len(category.items)
-        for item in category.items:
-            db.delete(item)
-    
-    db.commit()
+    for category in categories:
+        items = db.query_all("menu_items", {"category_id": category["id"]})
+        items_count += len(items)
+        db.delete_where("menu_items", {"category_id": category["id"]})
 
     logger.info(f"Deleted all {items_count} menu items from menu {menu_id} for account {account_id}")
 
     return {
-        "message": f"Deleted {items_count} menu item(s) from menu '{menu.name}'",
+        "message": f"Deleted {items_count} menu item(s) from menu '{menu['name']}'",
         "deleted_count": items_count,
         "menu_id": menu_id
     }
@@ -671,11 +651,11 @@ async def delete_all_menu_items(
 @router.post("/modifiers", response_model=MenuModifierResponse, status_code=status.HTTP_201_CREATED)
 async def create_modifier(
     modifier_data: MenuModifierCreate,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """Create a new menu modifier."""
     # Verify item exists
-    item = db.query(MenuItem).filter(MenuItem.id == modifier_data.item_id).first()
+    item = db.query_one("menu_items", {"id": modifier_data.item_id})
     if not item:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -683,23 +663,20 @@ async def create_modifier(
         )
 
     # Create modifier
-    modifier = MenuModifier(**modifier_data.model_dump())
-    db.add(modifier)
-    db.commit()
-    db.refresh(modifier)
+    modifier = db.insert("menu_modifiers", modifier_data.model_dump())
 
     return modifier
 
 
 @router.get("/accounts/{account_id}/menu-full")
-async def get_full_menu(account_id: int, db: Session = Depends(get_db)):
+async def get_full_menu(account_id: int, db: SupabaseDB = Depends(get_db)):
     """
     Get complete menu structure for a restaurant account.
 
     Returns all menus with categories, items, and modifiers.
     Used by AI to answer menu questions.
     """
-    account = db.query(RestaurantAccount).filter(RestaurantAccount.id == account_id).first()
+    account = db.query_one("restaurant_accounts", {"id": account_id})
     if not account:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -708,43 +685,55 @@ async def get_full_menu(account_id: int, db: Session = Depends(get_db)):
 
     menus_data = []
 
-    for menu in account.menus:
+    # Get all menus for this account
+    menus = db.query_all("menus", {"account_id": account_id})
+
+    for menu in menus:
         menu_dict = {
-            "id": menu.id,
-            "name": menu.name,
-            "description": menu.description,
-            "is_active": menu.is_active,
+            "id": menu["id"],
+            "name": menu["name"],
+            "description": menu["description"],
+            "is_active": menu["is_active"],
             "categories": []
         }
 
-        for category in menu.categories:
+        # Get all categories for this menu
+        categories = db.query_all("menu_categories", {"menu_id": menu["id"]})
+
+        for category in categories:
             category_dict = {
-                "id": category.id,
-                "name": category.name,
-                "description": category.description,
+                "id": category["id"],
+                "name": category["name"],
+                "description": category["description"],
                 "items": []
             }
 
-            for item in category.items:
+            # Get all items for this category
+            items = db.query_all("menu_items", {"category_id": category["id"]})
+
+            for item in items:
                 item_dict = {
-                    "id": item.id,
-                    "name": item.name,
-                    "description": item.description,
-                    "price_cents": item.price_cents,
-                    "price_display": f"${item.price_cents / 100:.2f}",
-                    "dietary_tags": item.dietary_tags or [],
-                    "is_available": item.is_available,
+                    "id": item["id"],
+                    "name": item["name"],
+                    "description": item["description"],
+                    "price_cents": item["price_cents"],
+                    "price_display": f"${item['price_cents'] / 100:.2f}",
+                    "dietary_tags": item["dietary_tags"] or [],
+                    "is_available": item["is_available"],
                     "modifiers": []
                 }
 
-                for modifier in item.modifiers:
+                # Get all modifiers for this item
+                modifiers = db.query_all("menu_modifiers", {"item_id": item["id"]})
+
+                for modifier in modifiers:
                     modifier_dict = {
-                        "id": modifier.id,
-                        "name": modifier.name,
-                        "price_adjustment_cents": modifier.price_adjustment_cents,
-                        "price_display": f"+${modifier.price_adjustment_cents / 100:.2f}" if modifier.price_adjustment_cents > 0 else "",
-                        "is_default": modifier.is_default,
-                        "modifier_group": modifier.modifier_group
+                        "id": modifier["id"],
+                        "name": modifier["name"],
+                        "price_adjustment_cents": modifier["price_adjustment_cents"],
+                        "price_display": f"+${modifier['price_adjustment_cents'] / 100:.2f}" if modifier["price_adjustment_cents"] > 0 else "",
+                        "is_default": modifier["is_default"],
+                        "modifier_group": modifier["modifier_group"]
                     }
                     item_dict["modifiers"].append(modifier_dict)
 
@@ -756,7 +745,7 @@ async def get_full_menu(account_id: int, db: Session = Depends(get_db)):
 
     return {
         "account_id": account_id,
-        "business_name": account.business_name,
+        "business_name": account["business_name"],
         "menus": menus_data
     }
 
@@ -765,18 +754,18 @@ async def get_full_menu(account_id: int, db: Session = Depends(get_db)):
 async def search_google_maps_places(
     query: str,
     location: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Search for restaurants on Google Maps.
-    
+
     This endpoint allows restaurants to search for their business on Google Maps
     to automatically import operating hours.
-    
+
     Args:
         query: Search query (e.g., "restaurant name" or "restaurant name, city")
         location: Optional location bias (e.g., "New York, NY")
-    
+
     Returns:
         List of matching places with basic information
     """
@@ -785,7 +774,7 @@ async def search_google_maps_places(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Google Maps API is not configured. Please set GOOGLE_MAPS_API_KEY environment variable."
         )
-    
+
     try:
         results = google_maps_service.search_places(query, location)
         return {
@@ -803,17 +792,17 @@ async def search_google_maps_places(
 @router.get("/google-maps/place/{place_id}")
 async def get_google_maps_place_details(
     place_id: str,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Get detailed information about a Google Maps place including operating hours.
-    
+
     This endpoint retrieves place details that can be used to auto-populate
     restaurant operating hours.
-    
+
     Args:
         place_id: Google Maps place ID
-    
+
     Returns:
         Place details including operating hours in a format suitable for our system
     """
@@ -822,7 +811,7 @@ async def get_google_maps_place_details(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Google Maps API is not configured. Please set GOOGLE_MAPS_API_KEY environment variable."
         )
-    
+
     try:
         place_details = google_maps_service.get_place_details(place_id)
         return place_details
@@ -843,55 +832,56 @@ class GoogleMapsPlaceUpdate(BaseModel):
 async def update_operating_hours_from_google(
     account_id: int,
     place_data: GoogleMapsPlaceUpdate,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Update restaurant operating hours from Google Maps place.
-    
+
     This endpoint fetches operating hours from Google Maps and updates
     the restaurant account automatically.
-    
+
     Args:
         account_id: Restaurant account ID
         place_id: Google Maps place ID
-    
+
     Returns:
         Updated restaurant account with new operating hours
     """
     # Verify account exists
-    account = db.query(RestaurantAccount).filter(RestaurantAccount.id == account_id).first()
+    account = db.query_one("restaurant_accounts", {"id": account_id})
     if not account:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Account not found"
         )
-    
+
     if not google_maps_service.is_available():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Google Maps API is not configured. Please set GOOGLE_MAPS_API_KEY environment variable."
         )
-    
+
     try:
         # Get place details
         place_details = google_maps_service.get_place_details(place_data.place_id)
         opening_hours = place_details.get('opening_hours', {})
-        
-        # Update account with operating hours
+
+        # Build update data
+        update_data = {}
         if opening_hours.get('opening_time'):
-            account.opening_time = opening_hours['opening_time']
+            update_data["opening_time"] = opening_hours['opening_time']
         if opening_hours.get('closing_time'):
-            account.closing_time = opening_hours['closing_time']
+            update_data["closing_time"] = opening_hours['closing_time']
         if opening_hours.get('operating_days'):
-            account.operating_days = opening_hours['operating_days']
-        
-        db.commit()
-        db.refresh(account)
-        
+            update_data["operating_days"] = opening_hours['operating_days']
+
+        if update_data:
+            account = db.update("restaurant_accounts", account_id, update_data)
+
         logger.info(f"Updated operating hours from Google Maps for account {account_id}")
-        
+
         return account
-    
+
     except Exception as e:
         logger.error(f"Error updating hours from Google Maps: {str(e)}")
         raise HTTPException(
@@ -910,18 +900,18 @@ async def import_menu(
     image_file: Opt[UploadFile] = File(None),
     pdf_file: Opt[UploadFile] = File(None),
     image_files: List[UploadFile] = File(...),
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Import a menu from JSON, plain text, PDF, single image, or multiple images using AI parsing.
-    
+
     This endpoint accepts menu data in multiple formats:
     - JSON: Structured menu data (will be validated and imported)
     - Text: Plain text menu description (uses AI to extract structure)
     - PDF: PDF file containing menu (extracts text and uses AI to parse)
     - Image: Single image file (JPEG, PNG) of menu (uses AI vision)
     - Images: Multiple image files (JPEG, PNG) of menu (uses AI vision on each and merges)
-    
+
     Args:
         account_id: Restaurant account ID
         menu_name: Optional menu name (if not provided, will use parsed name or "Imported Menu")
@@ -931,18 +921,18 @@ async def import_menu(
         image_file: Single image file (JPEG, PNG, WebP) of menu
         pdf_file: PDF file containing menu
         image_files: Multiple image files (JPEG, PNG, WebP) of menu
-    
+
     Returns:
         Created menu with all categories and items
     """
     # Verify account exists
-    account = db.query(RestaurantAccount).filter(RestaurantAccount.id == account_id).first()
+    account = db.query_one("restaurant_accounts", {"id": account_id})
     if not account:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Account not found"
         )
-    
+
     # Determine input type
     input_data = None
     image_data = None
@@ -950,7 +940,7 @@ async def import_menu(
     pdf_data = None
     image_list = None
     image_types = None
-    
+
     # Count how many input types are provided
     input_count = sum([
         1 if json_data else 0,
@@ -959,19 +949,19 @@ async def import_menu(
         1 if pdf_file else 0,
         1 if image_files and len(image_files) > 0 else 0
     ])
-    
+
     if input_count == 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Must provide either json_data, text_data, image_file, pdf_file, or image_files"
         )
-    
+
     if input_count > 1:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Please provide only one input type at a time"
         )
-    
+
     if pdf_file:
         # Handle PDF upload
         pdf_data = await pdf_file.read()
@@ -1008,7 +998,7 @@ async def import_menu(
         input_data = json_data
     elif text_data:
         input_data = text_data
-    
+
     try:
         # Parse menu using AI
         parsed_menu = await menu_parser.parse_menu(
@@ -1019,104 +1009,93 @@ async def import_menu(
             image_list=image_list,
             image_types=image_types
         )
-        
+
         # Use provided name or parsed name
         final_menu_name = menu_name or parsed_menu.get("name") or "Imported Menu"
         final_menu_description = menu_description or parsed_menu.get("description")
-        
+
         # Create menu
-        menu = Menu(
-            account_id=account_id,
-            name=final_menu_name,
-            description=final_menu_description,
-            is_active=True
-        )
-        db.add(menu)
-        db.flush()  # Flush to get menu ID
-        
+        menu = db.insert("menus", {
+            "account_id": account_id,
+            "name": final_menu_name,
+            "description": final_menu_description,
+            "is_active": True
+        })
+
         # Create categories and items
         categories_data = parsed_menu.get("categories", [])
         created_categories = []
         created_items = []
-        
+
         for cat_idx, category_data in enumerate(categories_data):
-            category = MenuCategory(
-                menu_id=menu.id,
-                name=category_data.get("name", f"Category {cat_idx + 1}"),
-                description=category_data.get("description"),
-                display_order=category_data.get("display_order", cat_idx)
-            )
-            db.add(category)
-            db.flush()  # Flush to get category ID
+            category = db.insert("menu_categories", {
+                "menu_id": menu["id"],
+                "name": category_data.get("name", f"Category {cat_idx + 1}"),
+                "description": category_data.get("description"),
+                "display_order": category_data.get("display_order", cat_idx)
+            })
             created_categories.append(category)
-            
+
             # Create items for this category
             items_data = category_data.get("items", [])
             for item_idx, item_data in enumerate(items_data):
-                item = MenuItem(
-                    category_id=category.id,
-                    name=item_data.get("name", f"Item {item_idx + 1}"),
-                    description=item_data.get("description"),
-                    price_cents=item_data.get("price_cents", 0),
-                    dietary_tags=item_data.get("dietary_tags", []),
-                    is_available=True,
-                    preparation_time_minutes=item_data.get("preparation_time_minutes"),
-                    display_order=item_data.get("display_order", item_idx)
-                )
-                db.add(item)
+                item = db.insert("menu_items", {
+                    "category_id": category["id"],
+                    "name": item_data.get("name", f"Item {item_idx + 1}"),
+                    "description": item_data.get("description"),
+                    "price_cents": item_data.get("price_cents", 0),
+                    "dietary_tags": item_data.get("dietary_tags", []),
+                    "is_available": True,
+                    "preparation_time_minutes": item_data.get("preparation_time_minutes"),
+                    "display_order": item_data.get("display_order", item_idx)
+                })
                 created_items.append(item)
-        
-        # Commit all changes
-        db.commit()
-        db.refresh(menu)
-        
+
         # Build response
         response_categories = []
         for category in created_categories:
-            category_items = [item for item in created_items if item.category_id == category.id]
+            category_items = [item for item in created_items if item["category_id"] == category["id"]]
             response_categories.append({
-                "id": category.id,
-                "name": category.name,
-                "description": category.description,
-                "display_order": category.display_order,
+                "id": category["id"],
+                "name": category["name"],
+                "description": category["description"],
+                "display_order": category["display_order"],
                 "items_count": len(category_items),
                 "items": [
                     {
-                        "id": item.id,
-                        "name": item.name,
-                        "description": item.description,
-                        "price_cents": item.price_cents,
-                        "price_display": f"${item.price_cents / 100:.2f}",
-                        "dietary_tags": item.dietary_tags or [],
-                        "is_available": item.is_available
+                        "id": item["id"],
+                        "name": item["name"],
+                        "description": item["description"],
+                        "price_cents": item["price_cents"],
+                        "price_display": f"${item['price_cents'] / 100:.2f}",
+                        "dietary_tags": item["dietary_tags"] or [],
+                        "is_available": item["is_available"]
                     }
                     for item in category_items
                 ]
             })
-        
+
         logger.info(f"Successfully imported menu '{final_menu_name}' for account {account_id} with {len(created_categories)} categories and {len(created_items)} items")
-        
+
         return {
-            "id": menu.id,
-            "account_id": menu.account_id,
-            "name": menu.name,
-            "description": menu.description,
-            "is_active": menu.is_active,
+            "id": menu["id"],
+            "account_id": menu["account_id"],
+            "name": menu["name"],
+            "description": menu["description"],
+            "is_active": menu["is_active"],
             "categories": response_categories,
             "total_items": len(created_items),
             "message": f"Successfully imported menu with {len(created_categories)} categories and {len(created_items)} items"
         }
-        
+
     except ValueError as e:
         logger.error(f"Menu import validation error: {str(e)}")
-        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
     except Exception as e:
         logger.error(f"Error importing menu: {str(e)}")
-        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to import menu: {str(e)}"

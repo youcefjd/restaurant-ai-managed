@@ -7,10 +7,8 @@ Handles payment intent creation, checkout sessions, and webhook events.
 import logging
 from typing import Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Request, status, Header
-from sqlalchemy.orm import Session
 
-from backend.database import get_db
-from backend.models import Booking, Customer, Restaurant, BookingStatus
+from backend.database import get_db, SupabaseDB
 from backend.services.payment_service import payment_service
 from backend.services.sms_service import sms_service
 from pydantic import BaseModel
@@ -54,7 +52,7 @@ class CheckoutSessionResponse(BaseModel):
 @router.post("/create-intent", response_model=PaymentIntentResponse)
 async def create_payment_intent(
     request: PaymentIntentRequest,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Create a Stripe payment intent for a booking deposit.
@@ -63,7 +61,7 @@ async def create_payment_intent(
     to collect payment on the frontend.
     """
     # Get booking
-    booking = db.query(Booking).filter(Booking.id == request.booking_id).first()
+    booking = db.query_one("bookings", {"id": request.booking_id})
     if not booking:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -71,8 +69,8 @@ async def create_payment_intent(
         )
 
     # Get customer and restaurant
-    customer = db.query(Customer).filter(Customer.id == booking.customer_id).first()
-    restaurant = db.query(Restaurant).filter(Restaurant.id == booking.restaurant_id).first()
+    customer = db.query_one("customers", {"id": booking["customer_id"]})
+    restaurant = db.query_one("restaurants", {"id": booking["restaurant_id"]})
 
     if not customer or not restaurant:
         raise HTTPException(
@@ -82,7 +80,7 @@ async def create_payment_intent(
 
     # Calculate deposit amount
     amount_cents = payment_service.calculate_deposit_amount(
-        booking.party_size,
+        booking["party_size"],
         request.deposit_per_person
     )
 
@@ -105,7 +103,7 @@ async def create_payment_intent(
 @router.post("/create-checkout", response_model=CheckoutSessionResponse)
 async def create_checkout_session(
     request: CheckoutSessionRequest,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Create a Stripe Checkout session for hosted payment page.
@@ -113,7 +111,7 @@ async def create_checkout_session(
     This redirects customers to a Stripe-hosted payment page.
     """
     # Get booking
-    booking = db.query(Booking).filter(Booking.id == request.booking_id).first()
+    booking = db.query_one("bookings", {"id": request.booking_id})
     if not booking:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -121,8 +119,8 @@ async def create_checkout_session(
         )
 
     # Get customer and restaurant
-    customer = db.query(Customer).filter(Customer.id == booking.customer_id).first()
-    restaurant = db.query(Restaurant).filter(Restaurant.id == booking.restaurant_id).first()
+    customer = db.query_one("customers", {"id": booking["customer_id"]})
+    restaurant = db.query_one("restaurants", {"id": booking["restaurant_id"]})
 
     if not customer or not restaurant:
         raise HTTPException(
@@ -132,7 +130,7 @@ async def create_checkout_session(
 
     # Calculate deposit amount
     amount_cents = payment_service.calculate_deposit_amount(
-        booking.party_size,
+        booking["party_size"],
         request.deposit_per_person
     )
 
@@ -156,7 +154,7 @@ async def create_checkout_session(
 async def stripe_webhook(
     request: Request,
     stripe_signature: str = Header(None, alias="stripe-signature"),
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Handle Stripe webhook events.
@@ -191,16 +189,15 @@ async def stripe_webhook(
 
         if booking_id:
             # Update booking status
-            booking = db.query(Booking).filter(Booking.id == int(booking_id)).first()
+            booking = db.query_one("bookings", {"id": int(booking_id)})
             if booking:
-                # Mark as confirmed (would need payment fields in model)
-                booking.status = BookingStatus.CONFIRMED
-                db.commit()
+                # Mark as confirmed
+                db.update("bookings", int(booking_id), {"status": "confirmed"})
 
                 # Send confirmation SMS
                 try:
-                    customer = db.query(Customer).filter(Customer.id == booking.customer_id).first()
-                    restaurant = db.query(Restaurant).filter(Restaurant.id == booking.restaurant_id).first()
+                    customer = db.query_one("customers", {"id": booking["customer_id"]})
+                    restaurant = db.query_one("restaurants", {"id": booking["restaurant_id"]})
                     if customer and restaurant:
                         sms_service.send_booking_confirmation(booking, customer, restaurant)
                 except Exception as e:
@@ -214,10 +211,9 @@ async def stripe_webhook(
 
         if booking_id:
             # Update booking status
-            booking = db.query(Booking).filter(Booking.id == int(booking_id)).first()
+            booking = db.query_one("bookings", {"id": int(booking_id)})
             if booking:
-                booking.status = BookingStatus.CANCELLED
-                db.commit()
+                db.update("bookings", int(booking_id), {"status": "cancelled"})
 
                 logger.warning(f"Payment failed for booking {booking_id}")
 
@@ -226,10 +222,9 @@ async def stripe_webhook(
         booking_id = session["metadata"].get("booking_id")
 
         if booking_id:
-            booking = db.query(Booking).filter(Booking.id == int(booking_id)).first()
+            booking = db.query_one("bookings", {"id": int(booking_id)})
             if booking:
-                booking.status = BookingStatus.CONFIRMED
-                db.commit()
+                db.update("bookings", int(booking_id), {"status": "confirmed"})
 
                 logger.info(f"Checkout session completed for booking {booking_id}")
 
@@ -241,7 +236,7 @@ async def refund_payment(
     booking_id: int,
     payment_intent_id: str,
     amount_cents: int = None,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Refund a payment for a cancelled booking.
@@ -252,7 +247,7 @@ async def refund_payment(
         amount_cents: Amount to refund (None for full refund)
     """
     # Verify booking exists and is cancelled
-    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    booking = db.query_one("bookings", {"id": booking_id})
     if not booking:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

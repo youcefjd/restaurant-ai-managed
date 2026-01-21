@@ -11,7 +11,7 @@ from typing import Dict, Any, Optional
 from decimal import Decimal
 import stripe
 
-from backend.models import Booking, Customer, Restaurant
+from backend.database import SupabaseDB
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +33,9 @@ class PaymentService:
 
     def create_payment_intent(
         self,
-        booking: Booking,
-        customer: Customer,
-        restaurant: Restaurant,
+        booking: Dict[str, Any],
+        customer: Dict[str, Any],
+        restaurant: Dict[str, Any],
         amount_cents: int,
         description: Optional[str] = None
     ) -> Dict[str, Any]:
@@ -43,9 +43,9 @@ class PaymentService:
         Create a Stripe payment intent for a booking.
 
         Args:
-            booking: Booking object
-            customer: Customer object
-            restaurant: Restaurant object
+            booking: Booking dict from Supabase
+            customer: Customer dict from Supabase
+            restaurant: Restaurant dict from Supabase
             amount_cents: Amount to charge in cents
             description: Payment description
 
@@ -63,8 +63,8 @@ class PaymentService:
             # Create payment description
             if not description:
                 description = (
-                    f"Reservation deposit for {restaurant.name} - "
-                    f"{booking.booking_date} at {booking.booking_time}"
+                    f"Reservation deposit for {restaurant['name']} - "
+                    f"{booking['booking_date']} at {booking['booking_time']}"
                 )
 
             # Create payment intent
@@ -73,20 +73,20 @@ class PaymentService:
                 currency="usd",
                 description=description,
                 metadata={
-                    "booking_id": str(booking.id),
-                    "customer_id": str(customer.id),
-                    "customer_phone": customer.phone,
-                    "restaurant_id": str(restaurant.id),
-                    "restaurant_name": restaurant.name,
-                    "booking_date": str(booking.booking_date),
-                    "booking_time": str(booking.booking_time),
-                    "party_size": str(booking.party_size)
+                    "booking_id": str(booking["id"]),
+                    "customer_id": str(customer["id"]),
+                    "customer_phone": customer["phone"],
+                    "restaurant_id": str(restaurant["id"]),
+                    "restaurant_name": restaurant["name"],
+                    "booking_date": str(booking["booking_date"]),
+                    "booking_time": str(booking["booking_time"]),
+                    "party_size": str(booking["party_size"])
                 },
                 # Optionally connect to restaurant's Stripe account for marketplace model
                 # application_fee_amount=int(amount_cents * 0.1),  # 10% platform fee
             )
 
-            logger.info(f"Payment intent created: {payment_intent.id} for booking {booking.id}")
+            logger.info(f"Payment intent created: {payment_intent.id} for booking {booking['id']}")
 
             return {
                 "status": "success",
@@ -206,9 +206,9 @@ class PaymentService:
 
     def create_checkout_session(
         self,
-        booking: Booking,
-        customer: Customer,
-        restaurant: Restaurant,
+        booking: Dict[str, Any],
+        customer: Dict[str, Any],
+        restaurant: Dict[str, Any],
         amount_cents: int,
         success_url: str,
         cancel_url: str
@@ -217,9 +217,9 @@ class PaymentService:
         Create a Stripe Checkout session for hosted payment page.
 
         Args:
-            booking: Booking object
-            customer: Customer object
-            restaurant: Restaurant object
+            booking: Booking dict from Supabase
+            customer: Customer dict from Supabase
+            restaurant: Restaurant dict from Supabase
             amount_cents: Amount to charge in cents
             success_url: URL to redirect after successful payment
             cancel_url: URL to redirect if payment is cancelled
@@ -238,10 +238,10 @@ class PaymentService:
                         "price_data": {
                             "currency": "usd",
                             "product_data": {
-                                "name": f"Reservation Deposit - {restaurant.name}",
+                                "name": f"Reservation Deposit - {restaurant['name']}",
                                 "description": (
-                                    f"Party of {booking.party_size} on "
-                                    f"{booking.booking_date} at {booking.booking_time}"
+                                    f"Party of {booking['party_size']} on "
+                                    f"{booking['booking_date']} at {booking['booking_time']}"
                                 ),
                             },
                             "unit_amount": amount_cents,
@@ -252,15 +252,15 @@ class PaymentService:
                 mode="payment",
                 success_url=success_url,
                 cancel_url=cancel_url,
-                customer_email=customer.email,
+                customer_email=customer.get("email"),
                 metadata={
-                    "booking_id": str(booking.id),
-                    "customer_id": str(customer.id),
-                    "restaurant_id": str(restaurant.id)
+                    "booking_id": str(booking["id"]),
+                    "customer_id": str(customer["id"]),
+                    "restaurant_id": str(restaurant["id"])
                 }
             )
 
-            logger.info(f"Checkout session created: {checkout_session.id} for booking {booking.id}")
+            logger.info(f"Checkout session created: {checkout_session.id} for booking {booking['id']}")
 
             return {
                 "status": "success",

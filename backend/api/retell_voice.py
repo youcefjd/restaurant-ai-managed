@@ -7,7 +7,7 @@ Handles:
 3. Agent and phone number management
 
 Architecture:
-  Retell handles: Phone → STT → TTS → Phone
+  Retell handles: Phone -> STT -> TTS -> Phone
   We handle: LLM responses via WebSocket
 
 This is much simpler than the Twilio+Deepgram+TTS stack because
@@ -25,9 +25,8 @@ from enum import Enum
 from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
 
-from backend.database import get_db
+from backend.database import get_db, SupabaseDB
 from backend.services.retell_service import retell_service
 from backend.services.conversation_handler import conversation_handler
 from backend.services.transcript_service import transcript_service
@@ -63,7 +62,7 @@ class BindPhoneRequest(BaseModel):
 # ==================== Webhook Handler ====================
 
 @router.post("/webhook")
-async def retell_webhook(request: Request, db: Session = Depends(get_db)):
+async def retell_webhook(request: Request, db: SupabaseDB = Depends(get_db)):
     """
     Handle Retell webhook events.
 
@@ -228,7 +227,24 @@ async def llm_websocket(websocket: WebSocket, call_id: str = None):
                     # Keep restaurant_id from URL if metadata doesn't have it
                     if metadata.get("restaurant_id"):
                         call_context["restaurant_id"] = metadata.get("restaurant_id")
-                    # restaurant_id might already be set from URL query param
+
+                    # If no restaurant_id yet, look up by the phone number that was called
+                    if not call_context.get("restaurant_id") and call_context.get("to_number"):
+                        db = SupabaseDB()
+                        try:
+                            # Look up restaurant by their Retell phone number
+                            restaurant = db.query_one(
+                                "restaurant_accounts",
+                                {"retell_phone_number": call_context["to_number"]}
+                            )
+                            if restaurant:
+                                call_context["restaurant_id"] = restaurant["id"]
+                                logger.info(f"Found restaurant {restaurant['id']} ({restaurant['business_name']}) by phone number {call_context['to_number']}")
+                            else:
+                                logger.warning(f"No restaurant found for phone number: {call_context['to_number']}")
+                        except Exception as e:
+                            logger.error(f"Failed to look up restaurant by phone: {e}")
+
                     call_context["metadata"] = metadata
 
                     # Update active calls
@@ -239,17 +255,16 @@ async def llm_websocket(websocket: WebSocket, call_id: str = None):
                     # Get restaurant name from database
                     restaurant_name = "our restaurant"
                     if call_context.get("restaurant_id"):
-                        from backend.database import SessionLocal
-                        from backend.models_platform import RestaurantAccount
-                        db_session = SessionLocal()
+                        db = SupabaseDB()
                         try:
-                            restaurant = db_session.query(RestaurantAccount).filter(
-                                RestaurantAccount.id == call_context["restaurant_id"]
-                            ).first()
+                            restaurant = db.query_one(
+                                "restaurant_accounts",
+                                {"id": call_context["restaurant_id"]}
+                            )
                             if restaurant:
-                                restaurant_name = restaurant.business_name
-                        finally:
-                            db_session.close()
+                                restaurant_name = restaurant["business_name"]
+                        except Exception as e:
+                            logger.error(f"Failed to get restaurant name: {e}")
 
                     greeting = f"Hi, thanks for calling {restaurant_name}. How can I help you today?"
 
@@ -402,8 +417,6 @@ async def _process_with_llm(
 
     Streams response back to Retell for low latency.
     """
-    from backend.database import SessionLocal
-
     restaurant_id = call_context.get("restaurant_id")
     from_number = call_context.get("from_number", "")
     context = call_context.get("context", {})
@@ -416,7 +429,7 @@ async def _process_with_llm(
         await _send_response(websocket, response_id, response, content_complete=True)
         return response
 
-    db = SessionLocal()
+    db = SupabaseDB()
     try:
         # Call our existing conversation handler
         result = await conversation_handler.process_message(
@@ -463,9 +476,6 @@ async def _process_with_llm(
         await _send_response(websocket, response_id, error_response, content_complete=True)
         return None  # Return None on error, don't add to history
 
-    finally:
-        db.close()
-
 
 def _update_history_from_transcript(
     call_context: Dict[str, Any],
@@ -507,17 +517,14 @@ def _update_history_from_transcript(
 @router.post("/agents")
 async def create_agent(
     request: CreateAgentRequest,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """Create a Retell agent for a restaurant."""
     if not retell_service.is_enabled():
         raise HTTPException(status_code=503, detail="Retell service not configured")
 
     # Get restaurant details
-    from backend.models_platform import RestaurantAccount
-    restaurant = db.query(RestaurantAccount).filter(
-        RestaurantAccount.id == request.restaurant_id
-    ).first()
+    restaurant = db.query_one("restaurant_accounts", {"id": request.restaurant_id})
 
     if not restaurant:
         raise HTTPException(status_code=404, detail="Restaurant not found")
@@ -534,15 +541,15 @@ async def create_agent(
 
     # Create agent
     agent = await retell_service.create_agent(
-        name=f"{restaurant.business_name} Voice Agent",
+        name=f"{restaurant['business_name']} Voice Agent",
         voice_id=request.voice_id,
         llm_websocket_url=llm_ws_url,
         webhook_url=f"https://{public_url}/api/retell/webhook",
-        ambient_sound="office",  # Slight background noise for realism
+        ambient_sound="coffee-shop",  # Slight background noise for realism
         responsiveness=0.8,  # Quick responses
         interruption_sensitivity=0.7,  # Allow interruptions
         enable_backchannel=True,  # "uh-huh", "I see"
-        boosted_keywords=[restaurant.business_name],  # Improve recognition
+        boosted_keywords=[restaurant["business_name"]],  # Improve recognition
         reminder_trigger_ms=8000,  # Remind after 8s silence
         reminder_max_count=2,
         end_call_after_silence_ms=30000,  # End after 30s silence

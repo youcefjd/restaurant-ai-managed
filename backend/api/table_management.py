@@ -6,11 +6,9 @@ Allows restaurants to manually control table availability, block time slots, etc
 from typing import List
 from datetime import datetime, time as dt_time
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
-from backend.database import get_db
-from backend.models import Table, Restaurant
+from backend.database import get_db, SupabaseDB
 from backend.services.table_availability import table_availability_service
 
 router = APIRouter()
@@ -51,14 +49,14 @@ class AvailabilityResponse(BaseModel):
 @router.post("/tables/", status_code=status.HTTP_201_CREATED)
 async def create_table(
     table_data: TableCreate,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Create a new table for a restaurant.
     Restaurants can add tables manually through the dashboard.
     """
     # Verify restaurant exists
-    restaurant = db.query(Restaurant).filter(Restaurant.id == table_data.restaurant_id).first()
+    restaurant = db.query_one("restaurants", {"id": table_data.restaurant_id})
     if not restaurant:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -66,10 +64,10 @@ async def create_table(
         )
 
     # Check if table number already exists
-    existing = db.query(Table).filter(
-        Table.restaurant_id == table_data.restaurant_id,
-        Table.table_number == table_data.table_number
-    ).first()
+    existing = db.query_one("tables", {
+        "restaurant_id": table_data.restaurant_id,
+        "table_number": table_data.table_number
+    })
 
     if existing:
         raise HTTPException(
@@ -78,24 +76,21 @@ async def create_table(
         )
 
     # Create table
-    table = Table(
-        restaurant_id=table_data.restaurant_id,
-        table_number=table_data.table_number,
-        capacity=table_data.capacity,
-        location=table_data.location,
-        is_active=True
-    )
-    db.add(table)
-    db.commit()
-    db.refresh(table)
+    table = db.insert("tables", {
+        "restaurant_id": table_data.restaurant_id,
+        "table_number": table_data.table_number,
+        "capacity": table_data.capacity,
+        "location": table_data.location,
+        "is_active": True
+    })
 
     return {
-        "id": table.id,
-        "table_number": table.table_number,
-        "capacity": table.capacity,
-        "location": table.location,
-        "is_active": table.is_active,
-        "message": f"Table {table.table_number} created successfully"
+        "id": table["id"],
+        "table_number": table["table_number"],
+        "capacity": table["capacity"],
+        "location": table["location"],
+        "is_active": table["is_active"],
+        "message": f"Table {table['table_number']} created successfully"
     }
 
 
@@ -103,25 +98,26 @@ async def create_table(
 async def list_tables(
     restaurant_id: int,
     include_inactive: bool = False,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     List all tables for a restaurant.
     Use include_inactive=true to see tables that are out of service.
     """
-    query = db.query(Table).filter(Table.restaurant_id == restaurant_id)
+    query = db.table("tables").select("*").eq("restaurant_id", restaurant_id)
 
     if not include_inactive:
-        query = query.filter(Table.is_active == True)
+        query = query.eq("is_active", True)
 
-    tables = query.order_by(Table.table_number).all()
+    result = query.order("table_number").execute()
+    tables = result.data or []
 
     return [{
-        "id": t.id,
-        "table_number": t.table_number,
-        "capacity": t.capacity,
-        "location": t.location,
-        "is_active": t.is_active
+        "id": t["id"],
+        "table_number": t["table_number"],
+        "capacity": t["capacity"],
+        "location": t["location"],
+        "is_active": t["is_active"]
     } for t in tables]
 
 
@@ -129,7 +125,7 @@ async def list_tables(
 async def update_table(
     table_id: int,
     updates: TableUpdate,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Update table details or take table out of service.
@@ -138,7 +134,7 @@ async def update_table(
     - Set is_active=false to take table out of service (maintenance, VIP reservation, etc.)
     - Update capacity if table configuration changes
     """
-    table = db.query(Table).filter(Table.id == table_id).first()
+    table = db.query_one("tables", {"id": table_id})
     if not table:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -147,27 +143,25 @@ async def update_table(
 
     # Apply updates
     update_data = updates.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(table, field, value)
 
-    db.commit()
-    db.refresh(table)
+    if update_data:
+        table = db.update("tables", table_id, update_data)
 
-    status_msg = "out of service" if not table.is_active else "active"
+    status_msg = "out of service" if not table["is_active"] else "active"
 
     return {
-        "id": table.id,
-        "table_number": table.table_number,
-        "capacity": table.capacity,
-        "is_active": table.is_active,
-        "message": f"Table {table.table_number} is now {status_msg}"
+        "id": table["id"],
+        "table_number": table["table_number"],
+        "capacity": table["capacity"],
+        "is_active": table["is_active"],
+        "message": f"Table {table['table_number']} is now {status_msg}"
     }
 
 
 @router.post("/availability/check", response_model=AvailabilityResponse)
 async def check_availability(
     request: AvailabilityCheckRequest,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Check table availability for a specific date/time and party size.
@@ -218,7 +212,7 @@ async def get_available_slots(
     restaurant_id: int,
     party_size: int,
     date: str,  # Format: YYYY-MM-DD
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Get all available time slots for a specific date and party size.
@@ -244,7 +238,7 @@ async def get_available_slots(
 async def get_table_schedule(
     table_id: int,
     date: str,  # Format: YYYY-MM-DD
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Get the full booking schedule for a specific table on a specific date.

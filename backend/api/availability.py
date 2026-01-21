@@ -2,11 +2,9 @@
 
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
 
-from backend.database import get_db
-from backend.models import Table, Booking, BookingStatus
-from backend.schemas import AvailabilityQuery, AvailabilityResponse, TimeSlot
+from backend.database import get_db, SupabaseDB
+from backend.schemas import AvailabilityQuery, AvailabilityResponse, TimeSlot, Table as TableSchema
 
 router = APIRouter()
 
@@ -14,16 +12,20 @@ router = APIRouter()
 @router.post("/check", response_model=AvailabilityResponse)
 async def check_availability(
     query: AvailabilityQuery,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """Check table availability for given date, time, and party size."""
 
-    # Get all active tables for the restaurant
-    tables = db.query(Table).filter(
-        Table.restaurant_id == query.restaurant_id,
-        Table.is_active == True,
-        Table.capacity >= query.party_size
-    ).all()
+    # Get all active tables for the restaurant with sufficient capacity
+    tables_result = db.table("tables").select("*").eq(
+        "restaurant_id", query.restaurant_id
+    ).eq(
+        "is_active", True
+    ).gte(
+        "capacity", query.party_size
+    ).execute()
+
+    tables = tables_result.data or []
 
     if not tables:
         return AvailabilityResponse(
@@ -42,16 +44,36 @@ async def check_availability(
     available_tables = []
     for table in tables:
         # Check if table has conflicting bookings
-        conflicts = db.query(Booking).filter(
-            Booking.table_id == table.id,
-            Booking.booking_date == query.requested_date,
-            Booking.status.in_([BookingStatus.PENDING, BookingStatus.CONFIRMED]),
-        ).all()
+        # Get bookings for this table on the requested date with pending or confirmed status
+        bookings_result = db.table("bookings").select("*").eq(
+            "table_id", table["id"]
+        ).eq(
+            "booking_date", query.requested_date.isoformat()
+        ).in_(
+            "status", ["pending", "confirmed"]
+        ).execute()
+
+        conflicts = bookings_result.data or []
 
         has_conflict = False
         for booking in conflicts:
-            booking_start = datetime.combine(booking.booking_date, booking.booking_time)
-            booking_end = booking_start + timedelta(minutes=booking.duration_minutes)
+            # Parse booking time - handle both string and time formats
+            booking_time = booking["booking_time"]
+            if isinstance(booking_time, str):
+                # Parse time string (format: "HH:MM:SS" or "HH:MM")
+                time_parts = booking_time.split(":")
+                booking_time_obj = datetime.strptime(booking_time[:8], "%H:%M:%S").time() if len(time_parts) == 3 else datetime.strptime(booking_time[:5], "%H:%M").time()
+            else:
+                booking_time_obj = booking_time
+
+            booking_date = booking["booking_date"]
+            if isinstance(booking_date, str):
+                booking_date_obj = datetime.strptime(booking_date, "%Y-%m-%d").date()
+            else:
+                booking_date_obj = booking_date
+
+            booking_start = datetime.combine(booking_date_obj, booking_time_obj)
+            booking_end = booking_start + timedelta(minutes=booking["duration_minutes"])
 
             # Check for time overlap
             if not (requested_end <= booking_start or requested_start >= booking_end):
@@ -59,7 +81,16 @@ async def check_availability(
                 break
 
         if not has_conflict:
-            available_tables.append(table)
+            # Convert dict to TableSchema for response
+            available_tables.append(TableSchema(
+                id=table["id"],
+                restaurant_id=table["restaurant_id"],
+                table_number=table["table_number"],
+                capacity=table["capacity"],
+                location=table.get("location"),
+                is_active=table["is_active"],
+                created_at=table["created_at"]
+            ))
 
     return AvailabilityResponse(
         requested_time=query.requested_time,

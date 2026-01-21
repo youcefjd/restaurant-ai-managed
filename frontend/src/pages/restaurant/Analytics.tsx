@@ -3,11 +3,10 @@ import { useQuery } from '@tanstack/react-query'
 import { restaurantAPI } from '../../services/api'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  LineChart, Line, PieChart, Pie, Cell, Area, AreaChart
+  PieChart, Pie, Cell, Area, AreaChart
 } from 'recharts'
 import {
-  TrendingUp, DollarSign, ShoppingBag, Clock, Users, Star,
-  Calendar, ArrowUp, ArrowDown
+  TrendingUp, DollarSign, ShoppingBag, Clock, Users, Star
 } from 'lucide-react'
 
 type TimePeriod = 7 | 30 | 90
@@ -299,7 +298,7 @@ export default function RestaurantAnalytics() {
                     paddingAngle={5}
                     dataKey="value"
                   >
-                    {orderTypeData.map((entry, index) => (
+                    {orderTypeData.map((entry) => (
                       <Cell key={entry.name} fill={entry.color} />
                     ))}
                   </Pie>

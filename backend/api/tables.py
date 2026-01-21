@@ -3,10 +3,8 @@
 from typing import List
 from datetime import date, time, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
 
-from backend.database import get_db
-from backend.models import Table, Booking, BookingStatus, Restaurant
+from backend.database import get_db, SupabaseDB
 from backend.schemas import TableCreate, TableUpdate, Table as TableResponse
 
 router = APIRouter()
@@ -16,11 +14,11 @@ router = APIRouter()
 async def create_table(
     restaurant_id: int,
     table_data: TableCreate,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """Create a new table for a restaurant."""
     # Verify restaurant exists
-    restaurant = db.query(Restaurant).filter(Restaurant.id == restaurant_id).first()
+    restaurant = db.query_one("restaurants", {"id": restaurant_id})
     if not restaurant:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -28,11 +26,11 @@ async def create_table(
         )
 
     # Check for duplicate table number
-    existing = db.query(Table).filter(
-        Table.restaurant_id == restaurant_id,
-        Table.table_number == table_data.table_number
-    ).first()
-    if existing:
+    existing = db.table("tables").select("*").eq(
+        "restaurant_id", restaurant_id
+    ).eq("table_number", table_data.table_number).execute()
+
+    if existing.data:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Table {table_data.table_number} already exists"
@@ -42,26 +40,23 @@ async def create_table(
     table_dict = table_data.model_dump()
     table_dict['restaurant_id'] = restaurant_id
 
-    table = Table(**table_dict)
-    db.add(table)
-    db.commit()
-    db.refresh(table)
+    table = db.insert("tables", table_dict)
     return table
 
 
 @router.get("/{restaurant_id}/tables/{table_id}", response_model=TableResponse)
-async def get_table(restaurant_id: int, table_id: int, db: Session = Depends(get_db)):
+async def get_table(restaurant_id: int, table_id: int, db: SupabaseDB = Depends(get_db)):
     """Get a table by ID."""
-    table = db.query(Table).filter(
-        Table.id == table_id,
-        Table.restaurant_id == restaurant_id
-    ).first()
-    if not table:
+    result = db.table("tables").select("*").eq(
+        "id", table_id
+    ).eq("restaurant_id", restaurant_id).execute()
+
+    if not result.data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Table not found"
         )
-    return table
+    return result.data[0]
 
 
 @router.get("/{restaurant_id}/tables", response_model=List[TableResponse])
@@ -69,13 +64,14 @@ async def list_tables(
     restaurant_id: int,
     skip: int = 0,
     limit: int = 100,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """List all tables for a restaurant."""
-    tables = db.query(Table).filter(
-        Table.restaurant_id == restaurant_id
-    ).offset(skip).limit(limit).all()
-    return tables
+    result = db.table("tables").select("*").eq(
+        "restaurant_id", restaurant_id
+    ).range(skip, skip + limit - 1).execute()
+
+    return result.data or []
 
 
 @router.put("/{restaurant_id}/tables/{table_id}", response_model=TableResponse)
@@ -83,43 +79,44 @@ async def update_table(
     restaurant_id: int,
     table_id: int,
     table_data: TableUpdate,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """Update a table."""
-    table = db.query(Table).filter(
-        Table.id == table_id,
-        Table.restaurant_id == restaurant_id
-    ).first()
-    if not table:
+    # Check if table exists
+    existing = db.table("tables").select("*").eq(
+        "id", table_id
+    ).eq("restaurant_id", restaurant_id).execute()
+
+    if not existing.data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Table not found"
         )
 
     update_data = table_data.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(table, field, value)
+    if update_data:
+        table = db.update("tables", table_id, update_data)
+    else:
+        table = existing.data[0]
 
-    db.commit()
-    db.refresh(table)
     return table
 
 
 @router.delete("/{restaurant_id}/tables/{table_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_table(restaurant_id: int, table_id: int, db: Session = Depends(get_db)):
+async def delete_table(restaurant_id: int, table_id: int, db: SupabaseDB = Depends(get_db)):
     """Delete a table."""
-    table = db.query(Table).filter(
-        Table.id == table_id,
-        Table.restaurant_id == restaurant_id
-    ).first()
-    if not table:
+    # Check if table exists
+    existing = db.table("tables").select("*").eq(
+        "id", table_id
+    ).eq("restaurant_id", restaurant_id).execute()
+
+    if not existing.data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Table not found"
         )
 
-    db.delete(table)
-    db.commit()
+    db.delete("tables", table_id)
     return None
 
 
@@ -129,7 +126,7 @@ async def get_available_tables_count(
     booking_date: date = Query(..., description="Date to check availability (YYYY-MM-DD)"),
     booking_time: time = Query(..., description="Time to check availability (HH:MM:SS)"),
     party_size: int = Query(..., ge=1, description="Party size"),
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Get count of available tables for a specific date, time, and party size.
@@ -141,15 +138,15 @@ async def get_available_tables_count(
         - tables_available: List of available table numbers
     """
     # Get all active tables
-    all_tables = db.query(Table).filter(
-        Table.restaurant_id == restaurant_id,
-        Table.is_active == True
-    ).all()
+    all_tables_result = db.table("tables").select("*").eq(
+        "restaurant_id", restaurant_id
+    ).eq("is_active", True).execute()
 
+    all_tables = all_tables_result.data or []
     total_tables = len(all_tables)
 
     # Filter tables that can accommodate party size
-    compatible_tables = [t for t in all_tables if t.capacity >= party_size]
+    compatible_tables = [t for t in all_tables if t["capacity"] >= party_size]
 
     # Check which tables are available at this time
     available_tables = []
@@ -158,16 +155,19 @@ async def get_available_tables_count(
 
     for table in compatible_tables:
         # Check for conflicts
-        conflicts = db.query(Booking).filter(
-            Booking.table_id == table.id,
-            Booking.booking_date == booking_date,
-            Booking.status.in_([BookingStatus.CONFIRMED, BookingStatus.PENDING])
-        ).all()
+        conflicts_result = db.table("bookings").select("*").eq(
+            "table_id", table["id"]
+        ).eq("booking_date", str(booking_date)).in_(
+            "status", ["confirmed", "pending"]
+        ).execute()
+
+        conflicts = conflicts_result.data or []
 
         has_conflict = False
         for conflict in conflicts:
-            conflict_start = datetime.combine(booking_date, conflict.booking_time)
-            conflict_end = conflict_start + timedelta(minutes=conflict.duration_minutes)
+            conflict_time = datetime.strptime(conflict["booking_time"], "%H:%M:%S").time()
+            conflict_start = datetime.combine(booking_date, conflict_time)
+            conflict_end = conflict_start + timedelta(minutes=conflict["duration_minutes"])
 
             # Check time overlap
             if not (end_datetime <= conflict_start or start_datetime >= conflict_end):
@@ -176,10 +176,10 @@ async def get_available_tables_count(
 
         if not has_conflict:
             available_tables.append({
-                "table_id": table.id,
-                "table_number": table.table_number,
-                "capacity": table.capacity,
-                "location": table.location
+                "table_id": table["id"],
+                "table_number": table["table_number"],
+                "capacity": table["capacity"],
+                "location": table["location"]
             })
 
     return {

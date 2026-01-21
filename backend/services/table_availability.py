@@ -5,10 +5,8 @@ Handles table availability checking, time slot conflicts, and automatic table as
 
 from datetime import datetime, timedelta, time as dt_time
 from typing import List, Optional, Tuple
-from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_
 
-from backend.models import Table, Booking, BookingStatus
+from backend.database import SupabaseDB
 
 # Standard reservation duration in minutes
 DEFAULT_RESERVATION_DURATION = 90  # 90 minutes as requested
@@ -19,13 +17,13 @@ class TableAvailabilityService:
 
     @staticmethod
     def find_available_table(
-        db: Session,
+        db: SupabaseDB,
         restaurant_id: int,
         party_size: int,
         booking_date,  # Can be date or datetime
         booking_time: dt_time,
         duration_minutes: int = DEFAULT_RESERVATION_DURATION
-    ) -> Optional[Table]:
+    ) -> Optional[dict]:
         """
         Find an available table for the given party size, date, and time.
 
@@ -33,11 +31,13 @@ class TableAvailabilityService:
         Priority: Smallest table that fits the party size.
         """
         # Get all active tables for this restaurant with sufficient capacity
-        suitable_tables = db.query(Table).filter(
-            Table.restaurant_id == restaurant_id,
-            Table.capacity >= party_size,
-            Table.is_active == True
-        ).order_by(Table.capacity).all()  # Order by capacity (smallest first)
+        result = db.table("tables").select("*").eq(
+            "restaurant_id", restaurant_id
+        ).gte("capacity", party_size).eq(
+            "is_active", True
+        ).order("capacity").execute()
+
+        suitable_tables = result.data or []
 
         if not suitable_tables:
             return None
@@ -46,7 +46,7 @@ class TableAvailabilityService:
         for table in suitable_tables:
             if TableAvailabilityService.is_table_available(
                 db=db,
-                table_id=table.id,
+                table_id=table["id"],
                 booking_date=booking_date,
                 booking_time=booking_time,
                 duration_minutes=duration_minutes
@@ -57,7 +57,7 @@ class TableAvailabilityService:
 
     @staticmethod
     def is_table_available(
-        db: Session,
+        db: SupabaseDB,
         table_id: int,
         booking_date,  # Can be date or datetime
         booking_time: dt_time,
@@ -79,16 +79,23 @@ class TableAvailabilityService:
         booking_end = booking_datetime + timedelta(minutes=duration_minutes)
 
         # Get all bookings for this table on this date
-        existing_bookings = db.query(Booking).filter(
-            Booking.table_id == table_id,
-            Booking.booking_date == the_date,
-            Booking.status.in_(['pending', 'confirmed'])
-        ).all()
+        result = db.table("bookings").select("*").eq(
+            "table_id", table_id
+        ).eq("booking_date", str(the_date)).in_(
+            "status", ["pending", "confirmed"]
+        ).execute()
 
-        # Check for conflicts manually (SQLite doesn't support time arithmetic in queries)
+        existing_bookings = result.data or []
+
+        # Check for conflicts manually (Supabase doesn't support time arithmetic in queries)
         for existing in existing_bookings:
-            existing_start = datetime.combine(the_date, existing.booking_time)
-            existing_end = existing_start + timedelta(minutes=existing.duration_minutes)
+            # Parse booking_time - handle both string and time formats
+            existing_time = existing["booking_time"]
+            if isinstance(existing_time, str):
+                existing_time = datetime.strptime(existing_time, "%H:%M:%S").time()
+
+            existing_start = datetime.combine(the_date, existing_time)
+            existing_end = existing_start + timedelta(minutes=existing["duration_minutes"])
 
             # Check if time ranges overlap
             if not (booking_end <= existing_start or booking_datetime >= existing_end):
@@ -98,7 +105,7 @@ class TableAvailabilityService:
 
     @staticmethod
     def get_available_time_slots(
-        db: Session,
+        db: SupabaseDB,
         restaurant_id: int,
         party_size: int,
         booking_date,  # Can be date or datetime
@@ -118,18 +125,20 @@ class TableAvailabilityService:
         end_time = dt_time(end_hour, 0)
 
         while current_time < end_time:
-            # Count available tables for this slot
-            suitable_tables = db.query(Table).filter(
-                Table.restaurant_id == restaurant_id,
-                Table.capacity >= party_size,
-                Table.is_active == True
-            ).all()
+            # Get suitable tables for this restaurant
+            result = db.table("tables").select("*").eq(
+                "restaurant_id", restaurant_id
+            ).gte("capacity", party_size).eq(
+                "is_active", True
+            ).execute()
+
+            suitable_tables = result.data or []
 
             available_count = sum(
                 1 for table in suitable_tables
                 if TableAvailabilityService.is_table_available(
                     db=db,
-                    table_id=table.id,
+                    table_id=table["id"],
                     booking_date=booking_date,
                     booking_time=current_time,
                     duration_minutes=DEFAULT_RESERVATION_DURATION
@@ -150,7 +159,7 @@ class TableAvailabilityService:
 
     @staticmethod
     def suggest_alternative_times(
-        db: Session,
+        db: SupabaseDB,
         restaurant_id: int,
         party_size: int,
         booking_date,  # Can be date or datetime
@@ -187,7 +196,7 @@ class TableAvailabilityService:
 
     @staticmethod
     def get_table_schedule(
-        db: Session,
+        db: SupabaseDB,
         table_id: int,
         schedule_date  # Can be date or datetime
     ) -> List[dict]:
@@ -199,25 +208,32 @@ class TableAvailabilityService:
         # Handle both date and datetime inputs
         the_date = schedule_date.date() if hasattr(schedule_date, 'date') else schedule_date
 
-        bookings = db.query(Booking).filter(
-            Booking.table_id == table_id,
-            Booking.booking_date == the_date,
-            Booking.status.in_(['pending', 'confirmed'])
-        ).order_by(Booking.booking_time).all()
+        result = db.table("bookings").select("*").eq(
+            "table_id", table_id
+        ).eq("booking_date", str(the_date)).in_(
+            "status", ["pending", "confirmed"]
+        ).order("booking_time").execute()
+
+        bookings = result.data or []
 
         schedule = []
         for booking in bookings:
-            booking_datetime = datetime.combine(the_date, booking.booking_time)
-            end_time = booking_datetime + timedelta(minutes=booking.duration_minutes)
+            # Parse booking_time - handle both string and time formats
+            booking_time = booking["booking_time"]
+            if isinstance(booking_time, str):
+                booking_time = datetime.strptime(booking_time, "%H:%M:%S").time()
+
+            booking_datetime = datetime.combine(the_date, booking_time)
+            end_time = booking_datetime + timedelta(minutes=booking["duration_minutes"])
 
             schedule.append({
-                'booking_id': booking.id,
-                'start_time': booking.booking_time,
+                'booking_id': booking["id"],
+                'start_time': booking_time,
                 'end_time': end_time.time(),
-                'duration_minutes': booking.duration_minutes,
-                'party_size': booking.party_size,
-                'customer_id': booking.customer_id,
-                'status': booking.status
+                'duration_minutes': booking["duration_minutes"],
+                'party_size': booking["party_size"],
+                'customer_id': booking["customer_id"],
+                'status': booking["status"]
             })
 
         return schedule

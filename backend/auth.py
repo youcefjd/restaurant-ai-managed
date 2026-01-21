@@ -9,11 +9,9 @@ from jose import JWTError, jwt
 import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy.orm import Session
 import os
 
-from backend.database import get_db
-from backend.models_platform import RestaurantAccount
+from backend.database import get_db, SupabaseDB
 
 # Security configuration
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-in-production-use-openssl-rand-hex-32")
@@ -86,14 +84,14 @@ def decode_token(token: str) -> Dict:
 
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ) -> Dict:
     """
     Get the current authenticated user from JWT token.
 
     Args:
         token: JWT token from Authorization header
-        db: Database session
+        db: Database instance
 
     Returns:
         User info dict with id, email, role, account_id
@@ -127,17 +125,17 @@ async def get_current_user(
                 "account_id": None
             }
 
-        # For restaurant users
-        account = db.query(RestaurantAccount).filter(RestaurantAccount.id == user_id).first()
+        # For restaurant users - query from Supabase
+        account = db.query_one("restaurant_accounts", {"id": user_id})
         if account is None:
             raise credentials_exception
 
         return {
-            "id": account.id,
+            "id": account["id"],
             "role": "restaurant",
-            "email": account.owner_email,
-            "account_id": account.id,
-            "business_name": account.business_name
+            "email": account["owner_email"],
+            "account_id": account["id"],
+            "business_name": account["business_name"]
         }
     except HTTPException:
         raise
@@ -147,17 +145,17 @@ async def get_current_user(
 
 async def get_current_restaurant(
     current_user: Dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
-) -> RestaurantAccount:
+    db: SupabaseDB = Depends(get_db)
+) -> Dict:
     """
     Get current restaurant account (requires restaurant role).
 
     Args:
         current_user: Current authenticated user
-        db: Database session
+        db: Database instance
 
     Returns:
-        RestaurantAccount object
+        Restaurant account dict
 
     Raises:
         HTTPException: If user is not a restaurant owner
@@ -168,9 +166,7 @@ async def get_current_restaurant(
             detail="Not authorized. Restaurant account required."
         )
 
-    account = db.query(RestaurantAccount).filter(
-        RestaurantAccount.id == current_user["account_id"]
-    ).first()
+    account = db.query_one("restaurant_accounts", {"id": current_user["account_id"]})
 
     if not account:
         raise HTTPException(
@@ -205,14 +201,14 @@ async def get_current_admin(
     return current_user
 
 
-def create_admin_user(email: str, password: str, db: Session) -> Dict:
+def create_admin_user(email: str, password: str, db: SupabaseDB) -> Dict:
     """
     Create an admin user (for initial setup only).
 
     Args:
         email: Admin email
         password: Admin password
-        db: Database session
+        db: Database instance
 
     Returns:
         Access token

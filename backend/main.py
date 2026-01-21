@@ -14,8 +14,6 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy import text
 import uvicorn
 from dotenv import load_dotenv
 import os
@@ -29,7 +27,7 @@ _env_path = os.path.join(_project_root, '.env')
 # override=True ensures .env values override any existing environment variables
 load_dotenv(_env_path, override=True)
 
-from backend.database import engine, Base
+from backend.database import init_db, check_connection, SupabaseDB
 from backend.api import restaurants, tables, customers, bookings, availability, voice, payments, deliveries, onboarding, platform_admin, stripe_connect, auth, transcripts, test_conversation, table_management, orders, retell_voice, mcp_tools
 from backend.core.exceptions import (
     BusinessLogicError,
@@ -51,12 +49,12 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting Restaurant Reservation System API")
     
-    # Create database tables
+    # Verify Supabase connection
     try:
-        Base.metadata.create_all(bind=engine)
-        logger.info("Database tables created/verified successfully")
-    except SQLAlchemyError as e:
-        logger.error(f"Failed to create database tables: {str(e)}")
+        init_db()
+        logger.info("Supabase connection verified successfully")
+    except Exception as e:
+        logger.error(f"Failed to connect to Supabase: {str(e)}")
         raise
     
     # Run service health checks (after services are initialized)
@@ -364,17 +362,22 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     )
 
 
-@app.exception_handler(SQLAlchemyError)
-async def database_error_handler(request: Request, exc: SQLAlchemyError):
-    """Handle database errors"""
-    logger.error(f"Database error: {str(exc)}", exc_info=True)
-    return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={
-            "error": "Database error",
-            "message": "A database error occurred. Please try again later."
-        }
-    )
+@app.exception_handler(Exception)
+async def database_error_handler(request: Request, exc: Exception):
+    """Handle general database/unexpected errors"""
+    # Check if it's a Supabase/database related error
+    error_str = str(exc).lower()
+    if any(x in error_str for x in ["supabase", "postgrest", "database", "connection"]):
+        logger.error(f"Database error: {str(exc)}", exc_info=True)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "error": "Database error",
+                "message": "A database error occurred. Please try again later."
+            }
+        )
+    # Re-raise other exceptions to be handled by other handlers
+    raise exc
 
 
 # Root endpoint
@@ -402,12 +405,8 @@ async def health_check() -> Dict[str, Any]:
         Dict with health status and timestamp
     """
     try:
-        # Test database connection
-        from backend.database import SessionLocal
-        db = SessionLocal()
-        db.execute(text("SELECT 1"))
-        db.close()
-        db_status = "healthy"
+        # Test Supabase connection
+        db_status = "healthy" if check_connection() else "unhealthy"
     except Exception as e:
         logger.error(f"Database health check failed: {str(e)}")
         db_status = "unhealthy"

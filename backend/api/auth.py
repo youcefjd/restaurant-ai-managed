@@ -5,15 +5,10 @@ Handles login, signup, and token refresh for both restaurants and admins.
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
 from datetime import datetime, timedelta
 
-from backend.database import get_db
-from backend.models_platform import (
-    RestaurantAccount, SubscriptionTier, SubscriptionStatus,
-    AdminNotification, NotificationType
-)
+from backend.database import get_db, SupabaseDB
 from backend.auth import (
     verify_password,
     get_password_hash,
@@ -26,6 +21,16 @@ import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+# Table names
+RESTAURANT_ACCOUNTS_TABLE = "restaurant_accounts"
+RESTAURANTS_TABLE = "restaurants"
+ADMIN_NOTIFICATIONS_TABLE = "admin_notifications"
+
+# Enum values (matching models_platform.py)
+SUBSCRIPTION_TIER_FREE = "free"
+SUBSCRIPTION_STATUS_TRIAL = "trial"
+NOTIFICATION_TYPE_RESTAURANT_SIGNUP = "restaurant_signup"
 
 
 # Pydantic models
@@ -55,7 +60,7 @@ ADMIN_PASSWORD = "admin123"  # Change this in production!
 @router.post("/signup", response_model=LoginResponse)
 async def signup_restaurant(
     signup_data: SignupRequest,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Register a new restaurant account.
@@ -66,9 +71,7 @@ async def signup_restaurant(
     - Notification sent to platform admin
     """
     # Check if email already exists
-    existing_email = db.query(RestaurantAccount).filter(
-        RestaurantAccount.owner_email == signup_data.owner_email
-    ).first()
+    existing_email = db.query_one(RESTAURANT_ACCOUNTS_TABLE, {"owner_email": signup_data.owner_email})
 
     if existing_email:
         raise HTTPException(
@@ -77,9 +80,7 @@ async def signup_restaurant(
         )
 
     # Check if phone number already exists
-    existing_phone = db.query(RestaurantAccount).filter(
-        RestaurantAccount.phone == signup_data.phone
-    ).first()
+    existing_phone = db.query_one(RESTAURANT_ACCOUNTS_TABLE, {"phone": signup_data.phone})
 
     if existing_phone:
         raise HTTPException(
@@ -91,65 +92,63 @@ async def signup_restaurant(
     # Auto-provisioning can be enabled later for paid plans
     twilio_number = None
 
-    # Create new restaurant account
-    account = RestaurantAccount(
-        business_name=signup_data.business_name,
-        owner_email=signup_data.owner_email,
-        password_hash=get_password_hash(signup_data.password),
-        phone=signup_data.phone,
-        twilio_phone_number=twilio_number,
-        subscription_tier=SubscriptionTier.FREE.value,
-        subscription_status=SubscriptionStatus.TRIAL.value,
-        platform_commission_rate=10.0,
-        commission_enabled=True,
-        trial_ends_at=datetime.now() + timedelta(days=30),
-        trial_order_limit=10,
-        trial_orders_used=0,
-        onboarding_completed=False,
-        is_active=True
-    )
+    # Calculate trial end date
+    trial_ends_at = datetime.now() + timedelta(days=30)
 
-    db.add(account)
-    db.commit()
-    db.refresh(account)
+    # Create new restaurant account
+    account_data = {
+        "business_name": signup_data.business_name,
+        "owner_email": signup_data.owner_email,
+        "password_hash": get_password_hash(signup_data.password),
+        "phone": signup_data.phone,
+        "twilio_phone_number": twilio_number,
+        "subscription_tier": SUBSCRIPTION_TIER_FREE,
+        "subscription_status": SUBSCRIPTION_STATUS_TRIAL,
+        "platform_commission_rate": 10.0,
+        "commission_enabled": True,
+        "trial_ends_at": trial_ends_at.isoformat(),
+        "trial_order_limit": 10,
+        "trial_orders_used": 0,
+        "onboarding_completed": False,
+        "is_active": True
+    }
+
+    account = db.insert(RESTAURANT_ACCOUNTS_TABLE, account_data)
 
     # Auto-create Restaurant record linked to this account
-    from backend.models import Restaurant
-    from datetime import time
-    restaurant = Restaurant(
-        account_id=account.id,
-        name=account.business_name,
-        address="Address pending",  # Will be updated during onboarding
-        phone=signup_data.phone,
-        email=account.owner_email,
-        opening_time=time(9, 0),   # Default 9 AM
-        closing_time=time(21, 0),  # Default 9 PM
-        booking_duration_minutes=90,
-        max_party_size=10
-    )
-    db.add(restaurant)
-    db.commit()
-    logger.info(f"Auto-created restaurant location for account {account.id}")
+    restaurant_data = {
+        "account_id": account["id"],
+        "name": account["business_name"],
+        "address": "Address pending",  # Will be updated during onboarding
+        "phone": signup_data.phone,
+        "email": account["owner_email"],
+        "opening_time": "09:00:00",   # Default 9 AM
+        "closing_time": "21:00:00",   # Default 9 PM
+        "booking_duration_minutes": 90,
+        "max_party_size": 10
+    }
+    db.insert(RESTAURANTS_TABLE, restaurant_data)
+    logger.info(f"Auto-created restaurant location for account {account['id']}")
 
     # Create admin notification for new signup
-    notification = AdminNotification(
-        notification_type=NotificationType.RESTAURANT_SIGNUP.value,
-        title=f"New Restaurant Signup: {account.business_name}",
-        message=f"{account.business_name} signed up with email {account.owner_email}. " +
-                f"Trial ends: {account.trial_ends_at.strftime('%B %d, %Y')}. " +
+    notification_data = {
+        "notification_type": NOTIFICATION_TYPE_RESTAURANT_SIGNUP,
+        "title": f"New Restaurant Signup: {account['business_name']}",
+        "message": f"{account['business_name']} signed up with email {account['owner_email']}. " +
+                f"Trial ends: {trial_ends_at.strftime('%B %d, %Y')}. " +
                 (f"Twilio number: {twilio_number}" if twilio_number else "No Twilio number assigned."),
-        account_id=account.id
-    )
-    db.add(notification)
-    db.commit()
+        "account_id": account["id"],
+        "is_read": False
+    }
+    db.insert(ADMIN_NOTIFICATIONS_TABLE, notification_data)
 
-    logger.info(f"New restaurant signup: {account.id} - {account.business_name}")
+    logger.info(f"New restaurant signup: {account['id']} - {account['business_name']}")
 
     # Create access token
     access_token = create_access_token(
         data={
-            "sub": str(account.id),
-            "email": account.owner_email,
+            "sub": str(account["id"]),
+            "email": account["owner_email"],
             "role": "restaurant"
         }
     )
@@ -158,14 +157,14 @@ async def signup_restaurant(
         "access_token": access_token,
         "token_type": "bearer",
         "user": {
-            "id": account.id,
-            "email": account.owner_email,
-            "business_name": account.business_name,
+            "id": account["id"],
+            "email": account["owner_email"],
+            "business_name": account["business_name"],
             "role": "restaurant",
             "twilio_phone_number": twilio_number,
-            "trial_ends_at": account.trial_ends_at.isoformat() if account.trial_ends_at else None,
-            "trial_order_limit": account.trial_order_limit,
-            "trial_orders_used": account.trial_orders_used
+            "trial_ends_at": account["trial_ends_at"] if account.get("trial_ends_at") else None,
+            "trial_order_limit": account["trial_order_limit"],
+            "trial_orders_used": account["trial_orders_used"]
         }
     }
 
@@ -173,7 +172,7 @@ async def signup_restaurant(
 @router.post("/login", response_model=LoginResponse)
 async def login_restaurant(
     form_data: OAuth2PasswordRequestForm = Depends(),
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Login for restaurant accounts.
@@ -181,9 +180,7 @@ async def login_restaurant(
     Uses OAuth2 password flow (username = email, password = password).
     """
     # Find restaurant account
-    account = db.query(RestaurantAccount).filter(
-        RestaurantAccount.owner_email == form_data.username
-    ).first()
+    account = db.query_one(RESTAURANT_ACCOUNTS_TABLE, {"owner_email": form_data.username})
 
     if not account:
         raise HTTPException(
@@ -193,7 +190,7 @@ async def login_restaurant(
         )
 
     # Check if password hash exists
-    if not account.password_hash:
+    if not account.get("password_hash"):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Account password not set. Please contact support.",
@@ -201,7 +198,7 @@ async def login_restaurant(
         )
 
     # Verify password
-    if not verify_password(form_data.password, account.password_hash):
+    if not verify_password(form_data.password, account["password_hash"]):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -209,7 +206,7 @@ async def login_restaurant(
         )
 
     # Check if account is active
-    if not account.is_active:
+    if not account.get("is_active"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account suspended. Contact support."
@@ -218,8 +215,8 @@ async def login_restaurant(
     # Create access token
     access_token = create_access_token(
         data={
-            "sub": str(account.id),
-            "email": account.owner_email,
+            "sub": str(account["id"]),
+            "email": account["owner_email"],
             "role": "restaurant"
         }
     )
@@ -228,13 +225,13 @@ async def login_restaurant(
         "access_token": access_token,
         "token_type": "bearer",
         "user": {
-            "id": account.id,
-            "email": account.owner_email,
-            "business_name": account.business_name,
+            "id": account["id"],
+            "email": account["owner_email"],
+            "business_name": account["business_name"],
             "role": "restaurant",
-            "subscription_tier": account.subscription_tier,
-            "subscription_status": account.subscription_status,
-            "trial_ends_at": account.trial_ends_at.isoformat() if account.trial_ends_at else None
+            "subscription_tier": account["subscription_tier"],
+            "subscription_status": account["subscription_status"],
+            "trial_ends_at": account["trial_ends_at"] if account.get("trial_ends_at") else None
         }
     }
 
@@ -242,7 +239,7 @@ async def login_restaurant(
 @router.post("/admin/login", response_model=LoginResponse)
 async def login_admin(
     login_data: AdminLoginRequest,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Login for platform admin.
@@ -279,7 +276,7 @@ async def login_admin(
 @router.get("/me")
 async def get_current_user_info(
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Get current authenticated user information.
@@ -292,9 +289,7 @@ async def get_current_user_info(
         }
 
     # Get fresh account data
-    account = db.query(RestaurantAccount).filter(
-        RestaurantAccount.id == current_user["account_id"]
-    ).first()
+    account = db.query_one(RESTAURANT_ACCOUNTS_TABLE, {"id": current_user["account_id"]})
 
     if not account:
         raise HTTPException(
@@ -303,12 +298,12 @@ async def get_current_user_info(
         )
 
     return {
-        "id": account.id,
-        "email": account.owner_email,
-        "business_name": account.business_name,
+        "id": account["id"],
+        "email": account["owner_email"],
+        "business_name": account["business_name"],
         "role": "restaurant",
-        "subscription_tier": account.subscription_tier,
-        "subscription_status": account.subscription_status,
-        "trial_ends_at": account.trial_ends_at.isoformat() if account.trial_ends_at else None,
-        "is_active": account.is_active
+        "subscription_tier": account["subscription_tier"],
+        "subscription_status": account["subscription_status"],
+        "trial_ends_at": account["trial_ends_at"] if account.get("trial_ends_at") else None,
+        "is_active": account["is_active"]
     }

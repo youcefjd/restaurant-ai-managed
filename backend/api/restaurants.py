@@ -2,10 +2,8 @@
 
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
 
-from backend.database import get_db
-from backend.models import Restaurant
+from backend.database import get_db, SupabaseDB
 from backend.schemas import RestaurantCreate, RestaurantUpdate, Restaurant as RestaurantResponse
 
 router = APIRouter()
@@ -14,20 +12,24 @@ router = APIRouter()
 @router.post("/", response_model=RestaurantResponse, status_code=status.HTTP_201_CREATED)
 async def create_restaurant(
     restaurant_data: RestaurantCreate,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """Create a new restaurant."""
-    restaurant = Restaurant(**restaurant_data.model_dump())
-    db.add(restaurant)
-    db.commit()
-    db.refresh(restaurant)
+    data = restaurant_data.model_dump()
+    # Convert time objects to strings for Supabase
+    if 'opening_time' in data and data['opening_time']:
+        data['opening_time'] = str(data['opening_time'])
+    if 'closing_time' in data and data['closing_time']:
+        data['closing_time'] = str(data['closing_time'])
+
+    restaurant = db.insert("restaurants", data)
     return restaurant
 
 
 @router.get("/{restaurant_id}", response_model=RestaurantResponse)
-async def get_restaurant(restaurant_id: int, db: Session = Depends(get_db)):
+async def get_restaurant(restaurant_id: int, db: SupabaseDB = Depends(get_db)):
     """Get a restaurant by ID."""
-    restaurant = db.query(Restaurant).filter(Restaurant.id == restaurant_id).first()
+    restaurant = db.query_one("restaurants", {"id": restaurant_id})
     if not restaurant:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -40,10 +42,10 @@ async def get_restaurant(restaurant_id: int, db: Session = Depends(get_db)):
 async def list_restaurants(
     skip: int = 0,
     limit: int = 100,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """List all restaurants."""
-    restaurants = db.query(Restaurant).offset(skip).limit(limit).all()
+    restaurants = db.query_all("restaurants", offset=skip, limit=limit)
     return restaurants
 
 
@@ -51,35 +53,42 @@ async def list_restaurants(
 async def update_restaurant(
     restaurant_id: int,
     restaurant_data: RestaurantUpdate,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """Update a restaurant."""
-    restaurant = db.query(Restaurant).filter(Restaurant.id == restaurant_id).first()
-    if not restaurant:
+    # Check if restaurant exists
+    existing = db.query_one("restaurants", {"id": restaurant_id})
+    if not existing:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Restaurant not found"
         )
 
     update_data = restaurant_data.model_dump(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(restaurant, field, value)
+    # Convert time objects to strings for Supabase
+    if 'opening_time' in update_data and update_data['opening_time']:
+        update_data['opening_time'] = str(update_data['opening_time'])
+    if 'closing_time' in update_data and update_data['closing_time']:
+        update_data['closing_time'] = str(update_data['closing_time'])
 
-    db.commit()
-    db.refresh(restaurant)
+    if update_data:
+        restaurant = db.update("restaurants", restaurant_id, update_data)
+    else:
+        restaurant = existing
+
     return restaurant
 
 
 @router.delete("/{restaurant_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_restaurant(restaurant_id: int, db: Session = Depends(get_db)):
+async def delete_restaurant(restaurant_id: int, db: SupabaseDB = Depends(get_db)):
     """Delete a restaurant."""
-    restaurant = db.query(Restaurant).filter(Restaurant.id == restaurant_id).first()
-    if not restaurant:
+    # Check if restaurant exists
+    existing = db.query_one("restaurants", {"id": restaurant_id})
+    if not existing:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Restaurant not found"
         )
 
-    db.delete(restaurant)
-    db.commit()
+    db.delete("restaurants", restaurant_id)
     return None

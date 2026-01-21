@@ -5,19 +5,18 @@ Service for saving and managing conversation transcripts.
 import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime
-from sqlalchemy.orm import Session
 
-from backend.models_platform import Transcript, TranscriptType
+from backend.database import SupabaseDB
 
 logger = logging.getLogger(__name__)
 
 
 class TranscriptService:
     """Service for managing conversation transcripts."""
-    
+
     @staticmethod
     def save_transcript(
-        db: Session,
+        db: SupabaseDB,
         account_id: int,
         transcript_type: str,
         customer_phone: str,
@@ -27,12 +26,12 @@ class TranscriptService:
         summary: Optional[str] = None,
         outcome: Optional[str] = None,
         duration_seconds: Optional[int] = None
-    ) -> Transcript:
+    ) -> Dict[str, Any]:
         """
         Save or update a transcript.
-        
+
         Args:
-            db: Database session
+            db: Database instance
             account_id: Restaurant account ID
             transcript_type: "sms" or "voice"
             customer_phone: Customer's phone number
@@ -42,91 +41,90 @@ class TranscriptService:
             summary: Optional summary of the conversation
             outcome: Optional outcome (booking_created, order_placed, etc.)
             duration_seconds: Optional call duration (for voice)
-        
+
         Returns:
-            Created or updated Transcript object
+            Created or updated transcript dict
         """
         # Check if transcript already exists
-        existing = db.query(Transcript).filter(
-            Transcript.conversation_id == conversation_id,
-            Transcript.account_id == account_id
-        ).first()
-        
+        existing = db.query_one("transcripts", {
+            "conversation_id": conversation_id,
+            "account_id": account_id
+        })
+
         if existing:
             # Update existing transcript
-            existing.messages = messages
-            existing.summary = summary
-            existing.outcome = outcome
+            update_data = {
+                "messages": messages,
+                "summary": summary,
+                "outcome": outcome,
+                "updated_at": datetime.now().isoformat()
+            }
             if duration_seconds is not None:
-                existing.duration_seconds = duration_seconds
-            existing.updated_at = datetime.now()
-            db.commit()
-            db.refresh(existing)
-            logger.info(f"Updated transcript {existing.id} for conversation {conversation_id}")
-            return existing
+                update_data["duration_seconds"] = duration_seconds
+
+            updated = db.update("transcripts", existing["id"], update_data)
+            logger.info(f"Updated transcript {updated['id']} for conversation {conversation_id}")
+            return updated
         else:
             # Create new transcript
-            transcript = Transcript(
-                account_id=account_id,
-                transcript_type=transcript_type,
-                customer_phone=customer_phone,
-                twilio_phone=twilio_phone,
-                conversation_id=conversation_id,
-                messages=messages,
-                summary=summary,
-                outcome=outcome,
-                duration_seconds=duration_seconds
-            )
-            db.add(transcript)
-            db.commit()
-            db.refresh(transcript)
-            logger.info(f"Created transcript {transcript.id} for conversation {conversation_id}")
+            insert_data = {
+                "account_id": account_id,
+                "transcript_type": transcript_type,
+                "customer_phone": customer_phone,
+                "twilio_phone": twilio_phone,
+                "conversation_id": conversation_id,
+                "messages": messages,
+                "summary": summary,
+                "outcome": outcome,
+                "duration_seconds": duration_seconds
+            }
+            transcript = db.insert("transcripts", insert_data)
+            logger.info(f"Created transcript {transcript['id']} for conversation {conversation_id}")
             return transcript
-    
+
     @staticmethod
     def add_message_to_transcript(
-        db: Session,
+        db: SupabaseDB,
         conversation_id: str,
         account_id: int,
         role: str,
         content: str
-    ) -> Optional[Transcript]:
+    ) -> Optional[Dict[str, Any]]:
         """
         Add a message to an existing transcript.
-        
+
         Args:
-            db: Database session
+            db: Database instance
             conversation_id: Conversation ID
             account_id: Restaurant account ID
             role: "user" or "assistant"
             content: Message content
-        
+
         Returns:
-            Updated Transcript object or None if not found
+            Updated transcript dict or None if not found
         """
-        transcript = db.query(Transcript).filter(
-            Transcript.conversation_id == conversation_id,
-            Transcript.account_id == account_id
-        ).first()
-        
+        transcript = db.query_one("transcripts", {
+            "conversation_id": conversation_id,
+            "account_id": account_id
+        })
+
         if not transcript:
             return None
-        
+
         # Add new message
-        if not transcript.messages:
-            transcript.messages = []
-        
-        transcript.messages.append({
+        messages = transcript.get("messages") or []
+        messages.append({
             "role": role,
             "content": content,
             "timestamp": datetime.now().isoformat()
         })
-        
-        transcript.updated_at = datetime.now()
-        db.commit()
-        db.refresh(transcript)
-        
-        return transcript
+
+        updated = db.update("transcripts", transcript["id"], {
+            "messages": messages,
+            "updated_at": datetime.now().isoformat()
+        })
+
+        return updated
 
 
 # Global instance

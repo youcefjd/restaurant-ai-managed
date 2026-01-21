@@ -6,15 +6,12 @@ and updating order status.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
 from starlette import status as http_status
-from sqlalchemy.orm import Session
-from sqlalchemy import desc, or_, func
 from pydantic import BaseModel
 from typing import List, Optional, Dict
 from datetime import datetime, date, timedelta
 from collections import defaultdict
 
-from backend.database import get_db
-from backend.models import Order, OrderStatus, OrderType, PaymentStatus
+from backend.database import get_db, SupabaseDB
 from backend.auth import get_current_user
 
 import json
@@ -22,6 +19,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
+
+# Valid status values (replacing enum access)
+ORDER_STATUSES = ["pending", "confirmed", "preparing", "ready", "out_for_delivery", "picked_up", "delivered", "completed", "cancelled"]
+ORDER_TYPES = ["takeout", "delivery"]
+PAYMENT_STATUSES = ["unpaid", "paid", "refunded"]
 
 
 # Pydantic models
@@ -77,33 +79,35 @@ class UpdatePaymentStatusRequest(BaseModel):
 def parse_order_items(order_items_str: str) -> List[dict]:
     """Parse order items from JSON string."""
     try:
+        if isinstance(order_items_str, list):
+            return order_items_str
         return json.loads(order_items_str) if order_items_str else []
     except json.JSONDecodeError:
         return []
 
 
-def order_to_response(order: Order) -> OrderResponse:
-    """Convert Order model to response."""
+def order_to_response(order: dict) -> OrderResponse:
+    """Convert order dict to response."""
     return OrderResponse(
-        id=order.id,
-        order_type=order.order_type,
-        status=order.status,
-        payment_status=order.payment_status,
-        payment_method=order.payment_method,
-        customer_name=order.customer_name,
-        customer_phone=order.customer_phone,
-        customer_email=order.customer_email,
-        scheduled_time=order.scheduled_time,
-        delivery_address=order.delivery_address,
-        order_items=parse_order_items(order.order_items),
-        subtotal=order.subtotal,
-        tax=order.tax,
-        delivery_fee=order.delivery_fee,
-        total=order.total,
-        special_instructions=order.special_instructions,
-        conversation_id=order.conversation_id,
-        created_at=order.created_at,
-        updated_at=order.updated_at
+        id=order["id"],
+        order_type=order.get("order_type", "takeout"),
+        status=order.get("status", "pending"),
+        payment_status=order.get("payment_status", "unpaid"),
+        payment_method=order.get("payment_method"),
+        customer_name=order.get("customer_name"),
+        customer_phone=order.get("customer_phone"),
+        customer_email=order.get("customer_email"),
+        scheduled_time=order.get("scheduled_time"),
+        delivery_address=order.get("delivery_address"),
+        order_items=parse_order_items(order.get("order_items", "[]")),
+        subtotal=order.get("subtotal", 0),
+        tax=order.get("tax", 0),
+        delivery_fee=order.get("delivery_fee", 0),
+        total=order.get("total", 0),
+        special_instructions=order.get("special_instructions"),
+        conversation_id=order.get("conversation_id"),
+        created_at=order.get("created_at"),
+        updated_at=order.get("updated_at")
     )
 
 
@@ -118,7 +122,7 @@ async def list_orders(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     List orders for the current restaurant account.
@@ -134,41 +138,52 @@ async def list_orders(
     account_id = current_user["account_id"]
 
     # Build query
-    query = db.query(Order).filter(Order.account_id == account_id)
+    query = db.table("orders").select("*", count="exact").eq("account_id", account_id)
 
     # Apply filters
     if order_type:
-        query = query.filter(Order.order_type == order_type)
+        query = query.eq("order_type", order_type)
 
     if status:
-        query = query.filter(Order.status == status)
+        query = query.eq("status", status)
 
     if payment_status:
-        query = query.filter(Order.payment_status == payment_status)
+        query = query.eq("payment_status", payment_status)
 
     if date_from:
-        query = query.filter(Order.order_date >= datetime.combine(date_from, datetime.min.time()))
+        query = query.gte("order_date", datetime.combine(date_from, datetime.min.time()).isoformat())
 
     if date_to:
-        query = query.filter(Order.order_date <= datetime.combine(date_to, datetime.max.time()))
+        query = query.lte("order_date", datetime.combine(date_to, datetime.max.time()).isoformat())
 
     if search:
-        search_term = f"%{search}%"
-        query = query.filter(
-            or_(
-                Order.customer_name.ilike(search_term),
-                Order.customer_phone.ilike(search_term)
-            )
-        )
+        # Supabase uses ilike for case-insensitive search
+        query = query.or_(f"customer_name.ilike.%{search}%,customer_phone.ilike.%{search}%")
 
     # Get total count
-    total = query.count()
+    count_result = query.execute()
+    total = count_result.count or 0
 
     # Apply pagination and ordering
-    orders = query.order_by(desc(Order.created_at))\
-        .offset((page - 1) * page_size)\
-        .limit(page_size)\
-        .all()
+    offset = (page - 1) * page_size
+    result = db.table("orders").select("*").eq("account_id", account_id)
+
+    # Re-apply filters for the paginated query
+    if order_type:
+        result = result.eq("order_type", order_type)
+    if status:
+        result = result.eq("status", status)
+    if payment_status:
+        result = result.eq("payment_status", payment_status)
+    if date_from:
+        result = result.gte("order_date", datetime.combine(date_from, datetime.min.time()).isoformat())
+    if date_to:
+        result = result.lte("order_date", datetime.combine(date_to, datetime.max.time()).isoformat())
+    if search:
+        result = result.or_(f"customer_name.ilike.%{search}%,customer_phone.ilike.%{search}%")
+
+    result = result.order("created_at", desc=True).range(offset, offset + page_size - 1).execute()
+    orders = result.data or []
 
     return OrderListResponse(
         orders=[order_to_response(o) for o in orders],
@@ -181,7 +196,7 @@ async def list_orders(
 @router.get("/today", response_model=List[OrderResponse])
 async def get_today_orders(
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Get all orders for today (for dashboard view).
@@ -194,13 +209,18 @@ async def get_today_orders(
 
     account_id = current_user["account_id"]
     today = date.today()
+    today_start = datetime.combine(today, datetime.min.time()).isoformat()
+    today_end = datetime.combine(today, datetime.max.time()).isoformat()
 
-    orders = db.query(Order).filter(
-        Order.account_id == account_id,
-        Order.order_date >= datetime.combine(today, datetime.min.time()),
-        Order.order_date <= datetime.combine(today, datetime.max.time())
-    ).order_by(Order.scheduled_time.asc().nullsfirst(), desc(Order.created_at)).all()
+    result = db.table("orders").select("*")\
+        .eq("account_id", account_id)\
+        .gte("order_date", today_start)\
+        .lte("order_date", today_end)\
+        .order("scheduled_time", desc=False, nullsfirst=True)\
+        .order("created_at", desc=True)\
+        .execute()
 
+    orders = result.data or []
     return [order_to_response(o) for o in orders]
 
 
@@ -208,7 +228,7 @@ async def get_today_orders(
 async def get_upcoming_orders(
     limit: int = Query(10, ge=1, le=50),
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Get upcoming scheduled orders (for dashboard view).
@@ -222,21 +242,27 @@ async def get_upcoming_orders(
         )
 
     account_id = current_user["account_id"]
-    now = datetime.now()
+    now = datetime.now().isoformat()
 
-    orders = db.query(Order).filter(
-        Order.account_id == account_id,
-        Order.scheduled_time >= now,
-        Order.status.notin_([OrderStatus.CANCELLED.value, OrderStatus.COMPLETED.value, OrderStatus.PICKED_UP.value])
-    ).order_by(Order.scheduled_time.asc()).limit(limit).all()
+    # Statuses to exclude
+    excluded_statuses = ["cancelled", "completed", "picked_up"]
 
+    result = db.table("orders").select("*")\
+        .eq("account_id", account_id)\
+        .gte("scheduled_time", now)\
+        .not_.in_("status", excluded_statuses)\
+        .order("scheduled_time", desc=False)\
+        .limit(limit)\
+        .execute()
+
+    orders = result.data or []
     return [order_to_response(o) for o in orders]
 
 
 @router.get("/active", response_model=List[OrderResponse])
 async def get_active_orders(
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Get all active orders (not completed/cancelled).
@@ -249,19 +275,16 @@ async def get_active_orders(
 
     account_id = current_user["account_id"]
 
-    active_statuses = [
-        OrderStatus.PENDING.value,
-        OrderStatus.CONFIRMED.value,
-        OrderStatus.PREPARING.value,
-        OrderStatus.READY.value,
-        OrderStatus.OUT_FOR_DELIVERY.value
-    ]
+    active_statuses = ["pending", "confirmed", "preparing", "ready", "out_for_delivery"]
 
-    orders = db.query(Order).filter(
-        Order.account_id == account_id,
-        Order.status.in_(active_statuses)
-    ).order_by(Order.scheduled_time.asc().nullsfirst(), Order.created_at.asc()).all()
+    result = db.table("orders").select("*")\
+        .eq("account_id", account_id)\
+        .in_("status", active_statuses)\
+        .order("scheduled_time", desc=False, nullsfirst=True)\
+        .order("created_at", desc=False)\
+        .execute()
 
+    orders = result.data or []
     return [order_to_response(o) for o in orders]
 
 
@@ -270,7 +293,7 @@ async def get_order_stats(
     date_from: Optional[date] = Query(None),
     date_to: Optional[date] = Query(None),
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Get order statistics for the restaurant.
@@ -283,28 +306,29 @@ async def get_order_stats(
 
     account_id = current_user["account_id"]
 
-    # Base query
-    query = db.query(Order).filter(Order.account_id == account_id)
+    # Build query
+    query = db.table("orders").select("*").eq("account_id", account_id)
 
     if date_from:
-        query = query.filter(Order.order_date >= datetime.combine(date_from, datetime.min.time()))
+        query = query.gte("order_date", datetime.combine(date_from, datetime.min.time()).isoformat())
     if date_to:
-        query = query.filter(Order.order_date <= datetime.combine(date_to, datetime.max.time()))
+        query = query.lte("order_date", datetime.combine(date_to, datetime.max.time()).isoformat())
 
-    orders = query.all()
+    result = query.execute()
+    orders = result.data or []
 
     # Calculate stats
     total_orders = len(orders)
-    total_revenue = sum(o.total for o in orders if o.status not in [OrderStatus.CANCELLED.value])
-    takeout_orders = len([o for o in orders if o.order_type == OrderType.TAKEOUT.value])
-    delivery_orders = len([o for o in orders if o.order_type == OrderType.DELIVERY.value])
-    paid_orders = len([o for o in orders if o.payment_status == PaymentStatus.PAID.value])
-    unpaid_orders = len([o for o in orders if o.payment_status == PaymentStatus.UNPAID.value])
+    total_revenue = sum(o.get("total", 0) for o in orders if o.get("status") != "cancelled")
+    takeout_orders = len([o for o in orders if o.get("order_type") == "takeout"])
+    delivery_orders = len([o for o in orders if o.get("order_type") == "delivery"])
+    paid_orders = len([o for o in orders if o.get("payment_status") == "paid"])
+    unpaid_orders = len([o for o in orders if o.get("payment_status") == "unpaid"])
 
     # Status breakdown
     status_counts = {}
-    for status in OrderStatus:
-        status_counts[status.value] = len([o for o in orders if o.status == status.value])
+    for status in ORDER_STATUSES:
+        status_counts[status] = len([o for o in orders if o.get("status") == status])
 
     return {
         "total_orders": total_orders,
@@ -321,7 +345,7 @@ async def get_order_stats(
 async def get_order(
     order_id: int,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Get a specific order by ID.
@@ -334,10 +358,7 @@ async def get_order(
 
     account_id = current_user["account_id"]
 
-    order = db.query(Order).filter(
-        Order.id == order_id,
-        Order.account_id == account_id
-    ).first()
+    order = db.query_one("orders", {"id": order_id, "account_id": account_id})
 
     if not order:
         raise HTTPException(
@@ -353,7 +374,7 @@ async def update_order_status(
     order_id: int,
     request: UpdateOrderStatusRequest,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Update order status.
@@ -374,10 +395,7 @@ async def update_order_status(
 
     account_id = current_user["account_id"]
 
-    order = db.query(Order).filter(
-        Order.id == order_id,
-        Order.account_id == account_id
-    ).first()
+    order = db.query_one("orders", {"id": order_id, "account_id": account_id})
 
     if not order:
         raise HTTPException(
@@ -386,21 +404,21 @@ async def update_order_status(
         )
 
     # Validate status
-    try:
-        new_status = OrderStatus(request.status)
-    except ValueError:
+    new_status = request.status
+    if new_status not in ORDER_STATUSES:
         raise HTTPException(
             status_code=http_status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid status: {request.status}"
         )
 
-    order.status = new_status.value
-    db.commit()
-    db.refresh(order)
+    updated_order = db.update("orders", order_id, {
+        "status": new_status,
+        "updated_at": datetime.now().isoformat()
+    })
 
-    logger.info(f"Order {order_id} status updated to {new_status.value}")
+    logger.info(f"Order {order_id} status updated to {new_status}")
 
-    return order_to_response(order)
+    return order_to_response(updated_order)
 
 
 @router.patch("/{order_id}/payment", response_model=OrderResponse)
@@ -408,7 +426,7 @@ async def update_payment_status(
     order_id: int,
     request: UpdatePaymentStatusRequest,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Update order payment status.
@@ -421,10 +439,7 @@ async def update_payment_status(
 
     account_id = current_user["account_id"]
 
-    order = db.query(Order).filter(
-        Order.id == order_id,
-        Order.account_id == account_id
-    ).first()
+    order = db.query_one("orders", {"id": order_id, "account_id": account_id})
 
     if not order:
         raise HTTPException(
@@ -433,24 +448,25 @@ async def update_payment_status(
         )
 
     # Validate payment status
-    try:
-        new_status = PaymentStatus(request.payment_status)
-    except ValueError:
+    new_status = request.payment_status
+    if new_status not in PAYMENT_STATUSES:
         raise HTTPException(
             status_code=http_status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid payment status: {request.payment_status}"
         )
 
-    order.payment_status = new_status.value
+    update_data = {
+        "payment_status": new_status,
+        "updated_at": datetime.now().isoformat()
+    }
     if request.payment_method:
-        order.payment_method = request.payment_method
+        update_data["payment_method"] = request.payment_method
 
-    db.commit()
-    db.refresh(order)
+    updated_order = db.update("orders", order_id, update_data)
 
-    logger.info(f"Order {order_id} payment status updated to {new_status.value}")
+    logger.info(f"Order {order_id} payment status updated to {new_status}")
 
-    return order_to_response(order)
+    return order_to_response(updated_order)
 
 
 # ============== Analytics Endpoints ==============
@@ -488,7 +504,7 @@ async def get_popular_items(
     days: int = Query(30, ge=1, le=365, description="Number of days to analyze"),
     limit: int = Query(10, ge=1, le=50, description="Number of items to return"),
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Get the most popular menu items based on quantity sold.
@@ -500,20 +516,22 @@ async def get_popular_items(
         )
 
     account_id = current_user["account_id"]
-    start_date = datetime.now() - timedelta(days=days)
+    start_date = (datetime.now() - timedelta(days=days)).isoformat()
 
-    # Get completed orders in the time range
-    orders = db.query(Order).filter(
-        Order.account_id == account_id,
-        Order.created_at >= start_date,
-        Order.status.notin_([OrderStatus.CANCELLED.value])
-    ).all()
+    # Get completed orders in the time range (excluding cancelled)
+    result = db.table("orders").select("*")\
+        .eq("account_id", account_id)\
+        .gte("created_at", start_date)\
+        .neq("status", "cancelled")\
+        .execute()
+
+    orders = result.data or []
 
     # Aggregate items
     item_stats = defaultdict(lambda: {"quantity": 0, "revenue": 0, "orders": 0})
 
     for order in orders:
-        items = parse_order_items(order.order_items)
+        items = parse_order_items(order.get("order_items", "[]"))
         order_items_seen = set()  # Track unique items per order for order count
 
         for item in items:
@@ -550,7 +568,7 @@ async def get_popular_items(
 async def get_order_trends(
     days: int = Query(30, ge=1, le=365, description="Number of days to analyze"),
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Get daily order trends (order count, revenue, average order value).
@@ -563,24 +581,30 @@ async def get_order_trends(
 
     account_id = current_user["account_id"]
     start_date = datetime.now() - timedelta(days=days)
+    start_date_iso = start_date.isoformat()
 
     # Get orders in the time range (excluding cancelled)
-    orders = db.query(Order).filter(
-        Order.account_id == account_id,
-        Order.created_at >= start_date,
-        Order.status.notin_([OrderStatus.CANCELLED.value])
-    ).all()
+    result = db.table("orders").select("*")\
+        .eq("account_id", account_id)\
+        .gte("created_at", start_date_iso)\
+        .neq("status", "cancelled")\
+        .execute()
+
+    orders = result.data or []
 
     # Group by date
     daily_stats = defaultdict(lambda: {"count": 0, "revenue": 0})
 
     for order in orders:
-        order_date = order.created_at.strftime("%Y-%m-%d")
-        daily_stats[order_date]["count"] += 1
-        daily_stats[order_date]["revenue"] += order.total or 0
+        created_at = order.get("created_at", "")
+        if created_at:
+            # Parse ISO format datetime string
+            order_date = created_at[:10]  # Get YYYY-MM-DD part
+            daily_stats[order_date]["count"] += 1
+            daily_stats[order_date]["revenue"] += order.get("total", 0) or 0
 
     # Fill in missing dates with zeros
-    result = []
+    result_list = []
     current = start_date.date()
     end = datetime.now().date()
 
@@ -589,7 +613,7 @@ async def get_order_trends(
         stats = daily_stats.get(date_str, {"count": 0, "revenue": 0})
         avg = stats["revenue"] // stats["count"] if stats["count"] > 0 else 0
 
-        result.append(DailyTrendResponse(
+        result_list.append(DailyTrendResponse(
             date=date_str,
             order_count=stats["count"],
             revenue_cents=stats["revenue"],
@@ -597,14 +621,14 @@ async def get_order_trends(
         ))
         current += timedelta(days=1)
 
-    return result
+    return result_list
 
 
 @router.get("/analytics/summary", response_model=AnalyticsSummaryResponse)
 async def get_analytics_summary(
     days: int = Query(30, ge=1, le=365, description="Number of days to analyze"),
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Get comprehensive analytics summary including popular items, trends, and metrics.
@@ -618,25 +642,28 @@ async def get_analytics_summary(
     account_id = current_user["account_id"]
     start_date = datetime.now() - timedelta(days=days)
     end_date = datetime.now()
+    start_date_iso = start_date.isoformat()
 
     # Get orders in the time range (excluding cancelled)
-    orders = db.query(Order).filter(
-        Order.account_id == account_id,
-        Order.created_at >= start_date,
-        Order.status.notin_([OrderStatus.CANCELLED.value])
-    ).all()
+    result = db.table("orders").select("*")\
+        .eq("account_id", account_id)\
+        .gte("created_at", start_date_iso)\
+        .neq("status", "cancelled")\
+        .execute()
+
+    orders = result.data or []
 
     # Basic stats
     total_orders = len(orders)
-    total_revenue = sum(o.total or 0 for o in orders)
+    total_revenue = sum(o.get("total", 0) or 0 for o in orders)
     avg_order_value = total_revenue // total_orders if total_orders > 0 else 0
-    takeout_orders = len([o for o in orders if o.order_type == OrderType.TAKEOUT.value])
-    delivery_orders = len([o for o in orders if o.order_type == OrderType.DELIVERY.value])
+    takeout_orders = len([o for o in orders if o.get("order_type") == "takeout"])
+    delivery_orders = len([o for o in orders if o.get("order_type") == "delivery"])
 
     # Popular items
     item_stats = defaultdict(lambda: {"quantity": 0, "revenue": 0, "orders": 0})
     for order in orders:
-        items = parse_order_items(order.order_items)
+        items = parse_order_items(order.get("order_items", "[]"))
         order_items_seen = set()
 
         for item in items:
@@ -670,9 +697,11 @@ async def get_analytics_summary(
     # Daily trends
     daily_stats = defaultdict(lambda: {"count": 0, "revenue": 0})
     for order in orders:
-        order_date = order.created_at.strftime("%Y-%m-%d")
-        daily_stats[order_date]["count"] += 1
-        daily_stats[order_date]["revenue"] += order.total or 0
+        created_at = order.get("created_at", "")
+        if created_at:
+            order_date = created_at[:10]  # Get YYYY-MM-DD part
+            daily_stats[order_date]["count"] += 1
+            daily_stats[order_date]["revenue"] += order.get("total", 0) or 0
 
     daily_trends = []
     current = start_date.date()
@@ -694,11 +723,17 @@ async def get_analytics_summary(
     # Peak hours
     peak_hours = defaultdict(int)
     for order in orders:
-        hour = order.created_at.hour
-        peak_hours[hour] += 1
+        created_at = order.get("created_at", "")
+        if created_at:
+            # Parse hour from ISO datetime string
+            try:
+                hour = int(created_at[11:13])  # Get HH from YYYY-MM-DDTHH:MM:SS
+                peak_hours[hour] += 1
+            except (ValueError, IndexError):
+                pass
 
     # Repeat customer rate
-    customer_phones = [o.customer_phone for o in orders if o.customer_phone]
+    customer_phones = [o.get("customer_phone") for o in orders if o.get("customer_phone")]
     unique_customers = len(set(customer_phones))
     repeat_rate = 0.0
     if unique_customers > 0 and len(customer_phones) > unique_customers:

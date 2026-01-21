@@ -3,11 +3,9 @@
 from typing import Optional
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
 
-from backend.database import get_db
+from backend.database import get_db, SupabaseDB
 from backend.services.conversation_handler import conversation_handler
-from backend.models_platform import RestaurantAccount
 
 router = APIRouter()
 
@@ -32,16 +30,14 @@ class ConversationTestResponse(BaseModel):
 @router.post("/test-conversation", response_model=ConversationTestResponse)
 async def test_conversation(
     request: ConversationTestRequest,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Test conversation handler directly without Twilio TwiML
     For end-to-end testing only
     """
     # Get restaurant account
-    account = db.query(RestaurantAccount).filter(
-        RestaurantAccount.id == request.account_id
-    ).first()
+    account = db.query_one("restaurant_accounts", {"id": request.account_id})
 
     if not account:
         return ConversationTestResponse(
@@ -55,7 +51,7 @@ async def test_conversation(
     result = await conversation_handler.process_message(
         message=request.message,
         phone=request.phone,
-        restaurant_id=account.id,
+        restaurant_id=account["id"],
         context=context,
         db=db
     )

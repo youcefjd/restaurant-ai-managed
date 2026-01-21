@@ -5,7 +5,6 @@ Pydantic schemas for delivery and order management.
 from datetime import datetime
 from typing import Optional, List
 from pydantic import BaseModel, Field
-from backend.models import OrderStatus, DeliveryStatus
 
 
 # Order Schemas

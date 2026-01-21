@@ -7,12 +7,9 @@ Handles restaurant onboarding to Stripe and marketplace payment processing.
 import logging
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Request
-from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 
-from backend.database import get_db
-from backend.models_platform import RestaurantAccount
-from backend.models import Order, Customer, Restaurant
+from backend.database import get_db, SupabaseDB
 from backend.services.stripe_connect_service import stripe_connect_service
 
 router = APIRouter()
@@ -47,7 +44,7 @@ class BalanceResponse(BaseModel):
 @router.post("/onboard")
 async def onboard_to_stripe(
     request_data: ConnectOnboardingRequest,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Start Stripe Connect onboarding for a restaurant.
@@ -56,9 +53,7 @@ async def onboard_to_stripe(
     Restaurant owner completes verification through Stripe's hosted flow.
     """
     # Get restaurant account
-    account = db.query(RestaurantAccount).filter(
-        RestaurantAccount.id == request_data.account_id
-    ).first()
+    account = db.query_one("restaurant_accounts", {"id": request_data.account_id})
 
     if not account:
         raise HTTPException(
@@ -67,10 +62,10 @@ async def onboard_to_stripe(
         )
 
     # Check if already has Stripe account
-    if account.stripe_account_id:
+    if account.get("stripe_account_id"):
         # Just create a new onboarding link
         result = stripe_connect_service.create_account_link(
-            account_id=account.stripe_account_id,
+            account_id=account["stripe_account_id"],
             refresh_url=request_data.refresh_url,
             return_url=request_data.return_url
         )
@@ -79,7 +74,7 @@ async def onboard_to_stripe(
             return {
                 "status": "existing_account",
                 "onboarding_url": result["url"],
-                "stripe_account_id": account.stripe_account_id
+                "stripe_account_id": account["stripe_account_id"]
             }
         else:
             raise HTTPException(
@@ -89,8 +84,8 @@ async def onboard_to_stripe(
 
     # Create new Stripe Connect account
     result = stripe_connect_service.create_connected_account(
-        business_name=account.business_name,
-        owner_email=account.owner_email,
+        business_name=account["business_name"],
+        owner_email=account["owner_email"],
         country="US"
     )
 
@@ -101,10 +96,9 @@ async def onboard_to_stripe(
         )
 
     # Save Stripe account ID
-    account.stripe_account_id = result["account_id"]
-    db.commit()
+    db.update("restaurant_accounts", account["id"], {"stripe_account_id": result["account_id"]})
 
-    logger.info(f"Created Stripe Connect account for {account.business_name}: {result['account_id']}")
+    logger.info(f"Created Stripe Connect account for {account['business_name']}: {result['account_id']}")
 
     # Create onboarding link
     link_result = stripe_connect_service.create_account_link(
@@ -129,7 +123,7 @@ async def onboard_to_stripe(
 @router.get("/status/{account_id}")
 async def get_stripe_status(
     account_id: int,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Get Stripe Connect onboarding status for a restaurant.
@@ -137,9 +131,7 @@ async def get_stripe_status(
     Shows whether they can accept payments and what requirements remain.
     """
     # Get restaurant account
-    account = db.query(RestaurantAccount).filter(
-        RestaurantAccount.id == account_id
-    ).first()
+    account = db.query_one("restaurant_accounts", {"id": account_id})
 
     if not account:
         raise HTTPException(
@@ -147,19 +139,19 @@ async def get_stripe_status(
             detail="Restaurant account not found"
         )
 
-    if not account.stripe_account_id:
+    if not account.get("stripe_account_id"):
         return {
             "status": "not_onboarded",
             "message": "Restaurant has not started Stripe Connect onboarding"
         }
 
     # Get account status from Stripe
-    result = stripe_connect_service.get_account_status(account.stripe_account_id)
+    result = stripe_connect_service.get_account_status(account["stripe_account_id"])
 
     if result["status"] == "success":
         return {
             "status": "onboarded",
-            "stripe_account_id": account.stripe_account_id,
+            "stripe_account_id": account["stripe_account_id"],
             "charges_enabled": result["charges_enabled"],
             "payouts_enabled": result["payouts_enabled"],
             "details_submitted": result["details_submitted"],
@@ -175,7 +167,7 @@ async def get_stripe_status(
 @router.post("/charge")
 async def create_marketplace_charge(
     payment_request: ConnectPaymentRequest,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Create a marketplace payment with automatic commission split.
@@ -184,7 +176,7 @@ async def create_marketplace_charge(
     restaurant receives remainder automatically.
     """
     # Get order
-    order = db.query(Order).filter(Order.id == payment_request.order_id).first()
+    order = db.query_one("orders", {"id": payment_request.order_id})
     if not order:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -192,16 +184,14 @@ async def create_marketplace_charge(
         )
 
     # Get restaurant and account
-    restaurant = db.query(Restaurant).filter(Restaurant.id == order.restaurant_id).first()
-    if not restaurant or not restaurant.account_id:
+    restaurant = db.query_one("restaurants", {"id": order["restaurant_id"]})
+    if not restaurant or not restaurant.get("account_id"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Restaurant not properly configured"
         )
 
-    account = db.query(RestaurantAccount).filter(
-        RestaurantAccount.id == restaurant.account_id
-    ).first()
+    account = db.query_one("restaurant_accounts", {"id": restaurant["account_id"]})
 
     if not account:
         raise HTTPException(
@@ -209,25 +199,25 @@ async def create_marketplace_charge(
             detail="Restaurant account not found"
         )
 
-    if not account.stripe_account_id:
+    if not account.get("stripe_account_id"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Restaurant has not completed Stripe Connect onboarding"
         )
 
     # Calculate commission
-    platform_fee = int(order.total * (account.platform_commission_rate / 100))
+    platform_fee = int(order["total"] * (account["platform_commission_rate"] / 100))
 
     # Create payment intent with transfer
     result = stripe_connect_service.create_payment_intent_with_transfer(
-        amount_cents=order.total,
-        connected_account_id=account.stripe_account_id,
+        amount_cents=order["total"],
+        connected_account_id=account["stripe_account_id"],
         platform_fee_cents=platform_fee,
-        description=f"Order #{order.id} - {account.business_name}",
+        description=f"Order #{order['id']} - {account['business_name']}",
         metadata={
-            "order_id": str(order.id),
-            "restaurant_account_id": str(account.id),
-            "customer_id": str(order.customer_id)
+            "order_id": str(order["id"]),
+            "restaurant_account_id": str(account["id"]),
+            "customer_id": str(order["customer_id"])
         }
     )
 
@@ -237,12 +227,12 @@ async def create_marketplace_charge(
             "payment_intent_id": result["payment_intent_id"],
             "client_secret": result["client_secret"],
             "breakdown": {
-                "total_cents": order.total,
-                "total_display": f"${order.total / 100:.2f}",
+                "total_cents": order["total"],
+                "total_display": f"${order['total'] / 100:.2f}",
                 "platform_commission_cents": platform_fee,
                 "platform_commission_display": f"${platform_fee / 100:.2f}",
-                "restaurant_receives_cents": order.total - platform_fee,
-                "restaurant_receives_display": f"${(order.total - platform_fee) / 100:.2f}"
+                "restaurant_receives_cents": order["total"] - platform_fee,
+                "restaurant_receives_display": f"${(order['total'] - platform_fee) / 100:.2f}"
             }
         }
     else:
@@ -255,7 +245,7 @@ async def create_marketplace_charge(
 @router.get("/balance/{account_id}", response_model=BalanceResponse)
 async def get_restaurant_balance(
     account_id: int,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Get a restaurant's available and pending balance.
@@ -263,9 +253,7 @@ async def get_restaurant_balance(
     Shows how much money they have available for payout.
     """
     # Get restaurant account
-    account = db.query(RestaurantAccount).filter(
-        RestaurantAccount.id == account_id
-    ).first()
+    account = db.query_one("restaurant_accounts", {"id": account_id})
 
     if not account:
         raise HTTPException(
@@ -273,14 +261,14 @@ async def get_restaurant_balance(
             detail="Restaurant account not found"
         )
 
-    if not account.stripe_account_id:
+    if not account.get("stripe_account_id"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Restaurant has not completed Stripe Connect onboarding"
         )
 
     # Get balance from Stripe
-    result = stripe_connect_service.get_balance(account.stripe_account_id)
+    result = stripe_connect_service.get_balance(account["stripe_account_id"])
 
     if result["status"] == "success":
         return BalanceResponse(
@@ -299,7 +287,7 @@ async def get_restaurant_balance(
 @router.post("/webhook")
 async def stripe_connect_webhook(
     request: Request,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Handle Stripe Connect webhook events.
@@ -360,7 +348,7 @@ async def stripe_connect_webhook(
 @router.get("/dashboard-link/{account_id}")
 async def get_stripe_dashboard_link(
     account_id: int,
-    db: Session = Depends(get_db)
+    db: SupabaseDB = Depends(get_db)
 ):
     """
     Get a login link to restaurant's Stripe Express dashboard.
@@ -368,9 +356,7 @@ async def get_stripe_dashboard_link(
     Restaurants can view their payouts, transactions, and settings.
     """
     # Get restaurant account
-    account = db.query(RestaurantAccount).filter(
-        RestaurantAccount.id == account_id
-    ).first()
+    account = db.query_one("restaurant_accounts", {"id": account_id})
 
     if not account:
         raise HTTPException(
@@ -378,7 +364,7 @@ async def get_stripe_dashboard_link(
             detail="Restaurant account not found"
         )
 
-    if not account.stripe_account_id:
+    if not account.get("stripe_account_id"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Restaurant has not completed Stripe Connect onboarding"
@@ -387,7 +373,7 @@ async def get_stripe_dashboard_link(
     try:
         import stripe
         # Create login link for Express dashboard
-        login_link = stripe.Account.create_login_link(account.stripe_account_id)
+        login_link = stripe.Account.create_login_link(account["stripe_account_id"])
 
         return {
             "status": "success",

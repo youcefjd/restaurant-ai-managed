@@ -115,8 +115,13 @@ export default function RestaurantLogin() {
 
         {/* Demo Credentials */}
         <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <p className="text-sm text-blue-800 font-medium mb-2">Demo Account:</p>
-          <p className="text-xs text-blue-700">Create a new account with the signup link above</p>
+          <p className="text-sm text-blue-800 font-medium mb-2">Test Accounts (password: test123)</p>
+          <div className="space-y-1 text-xs text-blue-700">
+            <p><span className="font-medium">chinese@test.com</span> - Golden Dragon (Chinese)</p>
+            <p><span className="font-medium">mexican@test.com</span> - Casa del Sol (Mexican)</p>
+            <p><span className="font-medium">italian@test.com</span> - Bella Italia (Italian)</p>
+            <p><span className="font-medium">french@test.com</span> - Le Petit Bistro (French)</p>
+          </div>
         </div>
       </div>
     </div>

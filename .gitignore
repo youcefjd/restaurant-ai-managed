@@ -48,6 +48,9 @@ build/
 htmlcov/
 *.test
 
+# Generated files
+kitchen_orders/
+
 # Frontend build
 frontend-new/dist/
 frontend-new/build/

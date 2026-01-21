@@ -115,7 +115,7 @@ class RetellService:
         if llm_websocket_url:
             payload["response_engine"] = {
                 "type": "custom-llm",
-                "url": llm_websocket_url
+                "llm_websocket_url": llm_websocket_url
             }
         elif system_prompt:
             payload["response_engine"] = {

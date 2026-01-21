@@ -30,7 +30,7 @@ _env_path = os.path.join(_project_root, '.env')
 load_dotenv(_env_path, override=True)
 
 from backend.database import engine, Base
-from backend.api import restaurants, tables, customers, bookings, availability, voice, payments, deliveries, onboarding, platform_admin, stripe_connect, auth, transcripts, test_conversation, table_management, orders, retell_voice
+from backend.api import restaurants, tables, customers, bookings, availability, voice, payments, deliveries, onboarding, platform_admin, stripe_connect, auth, transcripts, test_conversation, table_management, orders, retell_voice, mcp_tools
 from backend.core.exceptions import (
     BusinessLogicError,
     ResourceNotFoundError,
@@ -535,6 +535,32 @@ app.include_router(
     prefix="/api/restaurant",
     tags=["Restaurant Orders"]
 )
+
+# MCP Tools for Retell AI voice agent
+app.include_router(
+    mcp_tools.router,
+    prefix="/api",
+    tags=["MCP Tools"]
+)
+
+# Set up MCP server for Retell AI integration
+try:
+    from fastapi_mcp import FastApiMCP
+
+    # Create MCP server exposing only the MCP tools endpoints
+    mcp = FastApiMCP(
+        app,
+        name="Restaurant Voice Agent MCP",
+        description="MCP tools for restaurant ordering via voice",
+        # Only expose the MCP tools endpoints
+        include_tags=["MCP Tools"]
+    )
+    mcp.mount()
+    logger.info("MCP server mounted at /mcp")
+except ImportError:
+    logger.warning("fastapi-mcp not installed - MCP server not available")
+except Exception as e:
+    logger.error(f"Failed to set up MCP server: {e}")
 
 
 # 404 handler for undefined routes

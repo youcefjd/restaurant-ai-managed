@@ -145,7 +145,8 @@ async def retell_webhook(request: Request, db: Session = Depends(get_db)):
 # ==================== Custom LLM WebSocket ====================
 
 @router.websocket("/llm-websocket/{call_id}")
-async def llm_websocket(websocket: WebSocket, call_id: str):
+@router.websocket("/llm-websocket")
+async def llm_websocket(websocket: WebSocket, call_id: str = None):
     """
     WebSocket endpoint for custom LLM responses.
 
@@ -153,16 +154,32 @@ async def llm_websocket(websocket: WebSocket, call_id: str):
     Retell handles STT and TTS - we just provide the "brain".
     """
     await websocket.accept()
-    logger.info(f"LLM WebSocket connected for call: {call_id}")
+
+    # Extract restaurant_id from query params if present
+    query_params = dict(websocket.query_params)
+    restaurant_id_from_url = query_params.get("restaurant_id")
+    if restaurant_id_from_url:
+        try:
+            restaurant_id_from_url = int(restaurant_id_from_url)
+        except ValueError:
+            restaurant_id_from_url = None
+
+    # call_id may come from path or from Retell's first message
+    effective_call_id = call_id or "pending"
+    logger.info(f"LLM WebSocket connected, call_id: {effective_call_id}, restaurant_id: {restaurant_id_from_url}")
 
     # Get or create call context
-    call_context = active_calls.get(call_id, {
-        "call_id": call_id,
+    call_context = active_calls.get(effective_call_id, {
+        "call_id": effective_call_id,
         "conversation_history": [],
         "context": {},
-        "restaurant_id": None,
+        "restaurant_id": restaurant_id_from_url,
         "from_number": None
     })
+
+    # Ensure restaurant_id from URL is set
+    if restaurant_id_from_url and not call_context.get("restaurant_id"):
+        call_context["restaurant_id"] = restaurant_id_from_url
 
     # Track response IDs to handle interruptions
     current_response_id = 0
@@ -176,7 +193,11 @@ async def llm_websocket(websocket: WebSocket, call_id: str):
                 "call_details": True
             }
         }
-        await websocket.send_json(config_message)
+        try:
+            await websocket.send_json(config_message)
+        except:
+            logger.info("Connection closed before config could be sent")
+            return
 
         while True:
             try:
@@ -189,28 +210,57 @@ async def llm_websocket(websocket: WebSocket, call_id: str):
                 if interaction_type == "call_details":
                     # Extract call details
                     call_details = data.get("call", {})
+                    actual_call_id = call_details.get("call_id", effective_call_id)
+
+                    # Update call_id if we got a real one
+                    if actual_call_id != effective_call_id:
+                        call_context["call_id"] = actual_call_id
+                        # Remove old pending entry if exists
+                        if effective_call_id in active_calls:
+                            del active_calls[effective_call_id]
+                        effective_call_id = actual_call_id
+
                     call_context["from_number"] = call_details.get("from_number")
                     call_context["to_number"] = call_details.get("to_number")
                     call_context["agent_id"] = call_details.get("agent_id")
                     metadata = call_details.get("metadata", {})
-                    call_context["restaurant_id"] = metadata.get("restaurant_id")
+
+                    # Keep restaurant_id from URL if metadata doesn't have it
+                    if metadata.get("restaurant_id"):
+                        call_context["restaurant_id"] = metadata.get("restaurant_id")
+                    # restaurant_id might already be set from URL query param
                     call_context["metadata"] = metadata
 
                     # Update active calls
-                    active_calls[call_id] = call_context
+                    active_calls[effective_call_id] = call_context
 
                     logger.info(f"Call details received: {call_context['from_number']} -> restaurant {call_context['restaurant_id']}")
 
-                    # Send greeting
-                    restaurant_name = metadata.get("restaurant_name", "our restaurant")
+                    # Get restaurant name from database
+                    restaurant_name = "our restaurant"
+                    if call_context.get("restaurant_id"):
+                        from backend.database import SessionLocal
+                        from backend.models_platform import RestaurantAccount
+                        db_session = SessionLocal()
+                        try:
+                            restaurant = db_session.query(RestaurantAccount).filter(
+                                RestaurantAccount.id == call_context["restaurant_id"]
+                            ).first()
+                            if restaurant:
+                                restaurant_name = restaurant.business_name
+                        finally:
+                            db_session.close()
+
                     greeting = f"Hi, thanks for calling {restaurant_name}. How can I help you today?"
 
-                    await _send_response(
+                    sent = await _send_response(
                         websocket,
                         response_id=0,
                         content=greeting,
                         content_complete=True
                     )
+                    if not sent:
+                        break  # Connection closed
 
                     # Add to history
                     call_context["conversation_history"].append({
@@ -220,10 +270,13 @@ async def llm_websocket(websocket: WebSocket, call_id: str):
 
                 elif interaction_type == "ping_pong":
                     # Respond to ping
-                    await websocket.send_json({
-                        "response_type": "ping_pong",
-                        "timestamp": data.get("timestamp")
-                    })
+                    try:
+                        await websocket.send_json({
+                            "response_type": "ping_pong",
+                            "timestamp": data.get("timestamp")
+                        })
+                    except:
+                        break  # Connection closed
 
                 elif interaction_type == "update_only":
                     # Just update transcript, no response needed
@@ -275,10 +328,20 @@ async def llm_websocket(websocket: WebSocket, call_id: str):
                         })
 
             except WebSocketDisconnect:
-                logger.info(f"WebSocket disconnected for call: {call_id}")
+                logger.info(f"WebSocket disconnected for call: {effective_call_id}")
+                break
+            except RuntimeError as e:
+                # WebSocket closed - break out of loop
+                if "not connected" in str(e).lower():
+                    logger.info(f"WebSocket closed for call: {effective_call_id}")
+                    break
+                logger.error(f"Runtime error: {e}", exc_info=True)
                 break
             except Exception as e:
                 logger.error(f"Error processing message: {e}", exc_info=True)
+                # Check if it's a connection error
+                if "not connected" in str(e).lower() or "closed" in str(e).lower():
+                    break
                 # Try to send error response
                 try:
                     await _send_response(
@@ -288,13 +351,16 @@ async def llm_websocket(websocket: WebSocket, call_id: str):
                         content_complete=True
                     )
                 except:
-                    pass
+                    break  # Can't send, connection is dead
 
     except Exception as e:
         logger.error(f"WebSocket error: {e}", exc_info=True)
 
     finally:
-        logger.info(f"LLM WebSocket closed for call: {call_id}")
+        # Clean up active call
+        if effective_call_id in active_calls:
+            del active_calls[effective_call_id]
+        logger.info(f"LLM WebSocket closed for call: {effective_call_id}")
 
 
 async def _send_response(
@@ -303,8 +369,8 @@ async def _send_response(
     content: str,
     content_complete: bool = False,
     end_call: bool = False
-):
-    """Send a response to Retell."""
+) -> bool:
+    """Send a response to Retell. Returns False if connection is closed."""
     message = {
         "response_type": "response",
         "response_id": response_id,
@@ -312,7 +378,16 @@ async def _send_response(
         "content_complete": content_complete,
         "end_call": end_call
     }
-    await websocket.send_json(message)
+    try:
+        await websocket.send_json(message)
+        return True
+    except RuntimeError as e:
+        # WebSocket already closed
+        logger.debug(f"Cannot send response, WebSocket closed: {e}")
+        return False
+    except Exception as e:
+        logger.debug(f"Error sending response: {e}")
+        return False
 
 
 async def _process_with_llm(
@@ -384,8 +459,9 @@ async def _process_with_llm(
     except Exception as e:
         logger.error(f"LLM processing error: {e}", exc_info=True)
         error_response = "I'm sorry, I had trouble understanding. Could you repeat that?"
+        # Try to send error response, but don't fail if connection is closed
         await _send_response(websocket, response_id, error_response, content_complete=True)
-        return error_response
+        return None  # Return None on error, don't add to history
 
     finally:
         db.close()
@@ -666,9 +742,13 @@ async def get_call(call_id: str):
 @router.get("/health")
 async def retell_health():
     """Health check for Retell integration."""
+    import os
+    api_key = os.getenv("RETELL_API_KEY", "")
     return {
         "service": "retell",
         "enabled": retell_service.is_enabled(),
+        "api_key_set": bool(api_key),
+        "api_key_preview": api_key[:10] + "..." if api_key else "NOT SET",
         "active_calls": len(active_calls),
         "status": "healthy" if retell_service.is_enabled() else "disabled"
     }

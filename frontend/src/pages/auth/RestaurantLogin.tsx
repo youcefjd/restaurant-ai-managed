@@ -25,40 +25,46 @@ export default function RestaurantLogin() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'var(--bg-primary)' }}>
+      {/* Ambient background */}
+      <div className="bg-ambient">
+        <div className="ambient-blob ambient-blob-cyan w-[500px] h-[500px] -top-[200px] -left-[200px] opacity-20" />
+        <div className="ambient-blob ambient-blob-pink w-[400px] h-[400px] bottom-[10%] -right-[150px] opacity-15" />
+      </div>
+
+      <div className="w-full max-w-md relative z-10">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-xl mb-4">
-            <Phone className="w-8 h-8 text-white" />
+          <div className="icon-box icon-box-lg icon-box-cyan rounded-2xl mx-auto mb-4">
+            <Phone className="w-8 h-8" />
           </div>
-          <h1 className="text-3xl font-bold text-gray-900">RestaurantAI</h1>
-          <p className="text-gray-500 mt-2">Restaurant Portal Login</p>
+          <h1 className="text-3xl font-bold text-white">RestaurantAI</h1>
+          <p className="mt-2" style={{ color: 'var(--text-muted)' }}>Restaurant Portal Login</p>
         </div>
 
         {/* Login Card */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
+        <div className="glass-card p-8">
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Error Message */}
             {error && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-red-700">{error}</p>
+              <div className="rounded-xl p-4 flex items-start gap-3" style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+                <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-red-400">{error}</p>
               </div>
             )}
 
             {/* Email Input */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="label-glass">
                 Email Address
               </label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5" style={{ color: 'var(--text-muted)' }} />
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="input-glass pl-10"
                   placeholder="your@email.com"
                   required
                   autoComplete="email"
@@ -68,16 +74,16 @@ export default function RestaurantLogin() {
 
             {/* Password Input */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="label-glass">
                 Password
               </label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5" style={{ color: 'var(--text-muted)' }} />
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="input-glass pl-10"
                   placeholder="Enter your password"
                   required
                   autoComplete="current-password"
@@ -89,11 +95,11 @@ export default function RestaurantLogin() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 px-4 text-white bg-blue-600 hover:bg-blue-700 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="btn-primary w-full py-3 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? (
                 <>
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
                   Signing in...
                 </>
               ) : (
@@ -106,17 +112,17 @@ export default function RestaurantLogin() {
 
             {/* Signup Link */}
             <div className="text-center">
-              <p className="text-sm text-gray-500">
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
                 Don't have an account?{' '}
-                <Link to="/signup" className="text-blue-600 font-medium hover:underline">
+                <Link to="/signup" className="font-medium hover:underline" style={{ color: 'var(--accent-cyan)' }}>
                   Sign up for free trial
                 </Link>
               </p>
             </div>
 
             {/* Admin Link */}
-            <div className="pt-4 border-t border-gray-200 text-center">
-              <Link to="/admin-login" className="text-sm text-gray-500 hover:text-gray-700 transition-colors">
+            <div className="pt-4 text-center" style={{ borderTop: '1px solid var(--border-glass)' }}>
+              <Link to="/admin-login" className="text-sm transition-colors hover:text-white" style={{ color: 'var(--text-muted)' }}>
                 Platform Admin Login
               </Link>
             </div>
@@ -124,8 +130,8 @@ export default function RestaurantLogin() {
         </div>
 
         {/* Demo Credentials */}
-        <div className="mt-6 bg-blue-50 border border-blue-200 rounded-xl p-4">
-          <p className="text-sm text-blue-700 font-medium mb-3">Test Accounts (password: test123)</p>
+        <div className="mt-6 glass-card p-4" style={{ background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.1) 0%, var(--bg-card) 100%)' }}>
+          <p className="text-sm font-medium mb-3" style={{ color: 'var(--accent-cyan)' }}>Test Accounts (password: test123)</p>
           <div className="grid grid-cols-2 gap-2">
             {[
               { email: 'chinese@test.com', name: 'Golden Dragon' },
@@ -140,10 +146,11 @@ export default function RestaurantLogin() {
                   setEmail(account.email)
                   setPassword('test123')
                 }}
-                className="text-left p-2 rounded-lg bg-white border border-blue-200 hover:border-blue-400 hover:bg-blue-50 transition-colors"
+                className="text-left p-2 rounded-xl transition-all hover:scale-[1.02]"
+                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)' }}
               >
-                <p className="text-xs font-mono text-blue-700">{account.email}</p>
-                <p className="text-xs text-gray-500">{account.name}</p>
+                <p className="text-xs font-mono" style={{ color: 'var(--accent-cyan)' }}>{account.email}</p>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{account.name}</p>
               </button>
             ))}
           </div>

@@ -7,7 +7,9 @@ import {
   BarChart3,
   Settings,
   LogOut,
-  Phone
+  Phone,
+  Search,
+  Bell
 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 
@@ -29,18 +31,25 @@ export default function RestaurantLayout() {
     : null
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <div className="min-h-screen flex" style={{ background: 'var(--bg-primary)' }}>
+      {/* Ambient background */}
+      <div className="bg-ambient">
+        <div className="ambient-blob ambient-blob-cyan w-96 h-96 -top-48 -left-48 opacity-20" />
+        <div className="ambient-blob ambient-blob-pink w-96 h-96 top-1/2 -right-48 opacity-15" />
+        <div className="ambient-blob ambient-blob-purple w-64 h-64 bottom-0 left-1/3 opacity-10" />
+      </div>
+
       {/* Sidebar */}
-      <aside className="w-64 bg-white border-r border-gray-200 flex-shrink-0 flex flex-col">
+      <aside className="w-64 flex-shrink-0 glass-sidebar relative z-10">
         {/* Brand header */}
-        <div className="p-6 border-b border-gray-200">
+        <div className="p-5" style={{ borderBottom: '1px solid var(--border-glass)' }}>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center">
-              <Phone className="w-5 h-5 text-white" />
+            <div className="icon-box icon-box-md icon-box-cyan rounded-xl">
+              <Phone className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="font-semibold text-gray-900">RestaurantAI</h1>
-              <p className="text-xs text-gray-500 truncate max-w-[140px]">
+              <h1 className="font-semibold text-white">RestaurantAI</h1>
+              <p className="text-xs truncate max-w-[140px]" style={{ color: 'var(--text-muted)' }}>
                 {user?.business_name || 'Restaurant Portal'}
               </p>
             </div>
@@ -55,49 +64,48 @@ export default function RestaurantLayout() {
               <NavLink
                 key={item.to}
                 to={item.to}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium text-sm transition-colors ${
-                  isActive
-                    ? 'bg-blue-50 text-blue-700'
-                    : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                }`}
+                className={isActive ? 'nav-item-active' : 'nav-item'}
               >
-                <item.icon className={`w-5 h-5 ${isActive ? 'text-blue-600' : ''}`} />
+                <item.icon className="w-5 h-5" />
                 <span className="flex-1">{item.label}</span>
+                {isActive && (
+                  <div className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--accent-cyan)' }} />
+                )}
               </NavLink>
             )
           })}
         </nav>
 
         {/* Footer section */}
-        <div className="p-3 space-y-2 border-t border-gray-200">
+        <div className="p-3 space-y-3" style={{ borderTop: '1px solid var(--border-glass)' }}>
           {/* Trial status */}
           {daysLeft !== null && (
-            <div className="p-4 rounded-lg bg-blue-50 border border-blue-100">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-blue-700">Free Trial</span>
-                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">
+            <div className="glass-card p-4">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Free Trial</span>
+                <span className="badge badge-cyan text-xs">
                   {daysLeft} days left
                 </span>
               </div>
-              <div className="h-1.5 bg-blue-100 rounded-full overflow-hidden">
+              <div className="progress-bar">
                 <div
                   style={{ width: `${Math.max(10, (daysLeft / 14) * 100)}%` }}
-                  className="h-full bg-blue-600 rounded-full transition-all"
+                  className="progress-bar-fill progress-bar-cyan"
                 />
               </div>
             </div>
           )}
 
           {/* Voice status indicator */}
-          <div className="p-4 rounded-lg bg-gray-50 border border-gray-200">
+          <div className="glass-card p-4">
             <div className="flex items-center gap-3">
               <div className="relative">
-                <Phone className="w-5 h-5 text-gray-600" />
-                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                <Phone className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} />
+                <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full animate-pulse-glow" style={{ background: 'var(--accent-mint)' }} />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-gray-700">Voice AI Active</p>
-                <p className="text-xs text-gray-500 truncate">Ready to take calls</p>
+                <p className="text-xs font-medium text-white">Voice AI Active</p>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Ready to take calls</p>
               </div>
             </div>
           </div>
@@ -105,35 +113,56 @@ export default function RestaurantLayout() {
           {/* Logout button */}
           <button
             onClick={logout}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-600 hover:bg-red-50 hover:text-red-600 transition-colors"
+            className="w-full nav-item hover:text-red-400 group"
           >
-            <LogOut className="w-5 h-5" />
-            <span className="font-medium text-sm">Logout</span>
+            <LogOut className="w-5 h-5 group-hover:text-red-400" />
+            <span>Logout</span>
           </button>
         </div>
       </aside>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
+      <div className="flex-1 flex flex-col min-h-screen overflow-hidden relative z-10">
         {/* Header */}
-        <header className="sticky top-0 z-10 bg-white border-b border-gray-200">
-          <div className="px-8 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <h2 className="text-xl font-semibold text-gray-900">
+        <header className="sticky top-0 z-10 px-6 py-4" style={{ background: 'rgba(15, 15, 20, 0.8)', backdropFilter: 'blur(20px)', borderBottom: '1px solid var(--border-glass)' }}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              {/* Search bar */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                <input
+                  type="text"
+                  placeholder="Search something here..."
+                  className="input-glass pl-10 pr-4 py-2 w-80 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4">
+              {/* Page title */}
+              <div className="text-right mr-4">
+                <h2 className="text-lg font-semibold text-white">
                   {navItems.find(item => item.to === location.pathname)?.label || 'Dashboard'}
                 </h2>
-                <div className="flex items-center gap-1 text-gray-500 text-sm">
-                  <span className="text-gray-400">/</span>
-                  <span>{user?.business_name}</span>
-                </div>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{user?.business_name}</p>
               </div>
 
-              <div className="flex items-center gap-3">
-                {/* Live indicator */}
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-50 border border-green-200">
-                  <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                  <span className="text-xs font-medium text-green-700">Live</span>
+              {/* Live indicator */}
+              <div className="flex items-center gap-2 badge badge-mint">
+                <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: 'var(--accent-mint)' }} />
+                <span>Live</span>
+              </div>
+
+              {/* Notifications */}
+              <button className="btn-glass p-2 rounded-xl relative">
+                <Bell className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} />
+                <span className="absolute top-1 right-1 w-2 h-2 rounded-full" style={{ background: 'var(--accent-pink)' }} />
+              </button>
+
+              {/* User avatar */}
+              <div className="w-10 h-10 rounded-xl overflow-hidden" style={{ background: 'linear-gradient(135deg, var(--accent-cyan), var(--accent-purple))' }}>
+                <div className="w-full h-full flex items-center justify-center text-sm font-bold text-white">
+                  {user?.business_name?.charAt(0) || 'R'}
                 </div>
               </div>
             </div>
@@ -141,7 +170,7 @@ export default function RestaurantLayout() {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-auto p-8">
+        <main className="flex-1 overflow-auto p-6">
           <Outlet />
         </main>
       </div>

@@ -25,40 +25,46 @@ export default function AdminLogin() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'var(--bg-primary)' }}>
+      {/* Ambient background */}
+      <div className="bg-ambient">
+        <div className="ambient-blob ambient-blob-purple w-[500px] h-[500px] -top-[200px] -right-[200px] opacity-20" />
+        <div className="ambient-blob ambient-blob-pink w-[400px] h-[400px] bottom-[10%] -left-[150px] opacity-15" />
+      </div>
+
+      <div className="w-full max-w-md relative z-10">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-900 rounded-xl mb-4">
-            <Shield className="w-8 h-8 text-white" />
+          <div className="icon-box icon-box-lg rounded-2xl mx-auto mb-4" style={{ background: 'rgba(167, 139, 250, 0.15)', color: 'var(--accent-purple)' }}>
+            <Shield className="w-8 h-8" />
           </div>
-          <h1 className="text-3xl font-bold text-gray-900">Platform Admin</h1>
-          <p className="text-gray-500 mt-2">Secure Admin Access</p>
+          <h1 className="text-3xl font-bold text-white">Platform Admin</h1>
+          <p className="mt-2" style={{ color: 'var(--text-muted)' }}>Secure Admin Access</p>
         </div>
 
         {/* Login Card */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
+        <div className="glass-card p-8">
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Error Message */}
             {error && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-red-700">{error}</p>
+              <div className="rounded-xl p-4 flex items-start gap-3" style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+                <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-red-400">{error}</p>
               </div>
             )}
 
             {/* Email Input */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="label-glass">
                 Admin Email
               </label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5" style={{ color: 'var(--text-muted)' }} />
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent"
+                  className="input-glass pl-10"
                   placeholder="admin@restaurantai.com"
                   required
                   autoComplete="email"
@@ -68,16 +74,16 @@ export default function AdminLogin() {
 
             {/* Password Input */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="label-glass">
                 Password
               </label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5" style={{ color: 'var(--text-muted)' }} />
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent"
+                  className="input-glass pl-10"
                   placeholder="Enter your password"
                   required
                   autoComplete="current-password"
@@ -89,7 +95,8 @@ export default function AdminLogin() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 px-4 text-white bg-gray-900 hover:bg-gray-800 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="w-full py-3 px-4 rounded-xl font-medium transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ background: 'linear-gradient(135deg, var(--accent-purple) 0%, #8b5cf6 100%)', color: '#fff', boxShadow: '0 4px 15px rgba(167, 139, 250, 0.3)' }}
             >
               {loading ? (
                 <>
@@ -105,7 +112,8 @@ export default function AdminLogin() {
             <div className="text-center">
               <Link
                 to="/"
-                className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+                className="inline-flex items-center gap-2 text-sm transition-colors hover:text-white"
+                style={{ color: 'var(--text-muted)' }}
               >
                 <ArrowLeft className="w-4 h-4" />
                 Back to home
@@ -115,18 +123,19 @@ export default function AdminLogin() {
         </div>
 
         {/* Demo Credentials */}
-        <div className="mt-6 bg-amber-50 border border-amber-200 rounded-xl p-4">
-          <p className="text-sm text-amber-700 font-medium mb-2">Demo Admin Credentials:</p>
+        <div className="mt-6 glass-card p-4" style={{ background: 'linear-gradient(135deg, rgba(255, 184, 108, 0.1) 0%, var(--bg-card) 100%)' }}>
+          <p className="text-sm font-medium mb-2" style={{ color: 'var(--accent-orange)' }}>Demo Admin Credentials:</p>
           <button
             type="button"
             onClick={() => {
               setEmail('admin@restaurantai.com')
               setPassword('admin123')
             }}
-            className="w-full text-left p-2 rounded-lg bg-white border border-amber-200 hover:border-amber-400 hover:bg-amber-50 transition-colors"
+            className="w-full text-left p-2 rounded-xl transition-all hover:scale-[1.02]"
+            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)' }}
           >
-            <p className="text-xs font-mono text-amber-700">admin@restaurantai.com</p>
-            <p className="text-xs text-gray-500">Password: admin123</p>
+            <p className="text-xs font-mono" style={{ color: 'var(--accent-orange)' }}>admin@restaurantai.com</p>
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Password: admin123</p>
           </button>
         </div>
       </div>

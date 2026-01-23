@@ -2,15 +2,17 @@
 Stripe Connect API endpoints for marketplace payments.
 
 Handles restaurant onboarding to Stripe and marketplace payment processing.
+Most endpoints require authentication (either admin or restaurant owner).
 """
 
 import logging
-from typing import Optional
+from typing import Optional, Dict
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel, Field
 
 from backend.database import get_db, SupabaseDB
 from backend.services.stripe_connect_service import stripe_connect_service
+from backend.auth import get_current_user
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -44,7 +46,8 @@ class BalanceResponse(BaseModel):
 @router.post("/onboard")
 async def onboard_to_stripe(
     request_data: ConnectOnboardingRequest,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    current_user: Dict = Depends(get_current_user)
 ):
     """
     Start Stripe Connect onboarding for a restaurant.
@@ -123,7 +126,8 @@ async def onboard_to_stripe(
 @router.get("/status/{account_id}")
 async def get_stripe_status(
     account_id: int,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    current_user: Dict = Depends(get_current_user)
 ):
     """
     Get Stripe Connect onboarding status for a restaurant.
@@ -167,7 +171,8 @@ async def get_stripe_status(
 @router.post("/charge")
 async def create_marketplace_charge(
     payment_request: ConnectPaymentRequest,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    current_user: Dict = Depends(get_current_user)
 ):
     """
     Create a marketplace payment with automatic commission split.
@@ -245,7 +250,8 @@ async def create_marketplace_charge(
 @router.get("/balance/{account_id}", response_model=BalanceResponse)
 async def get_restaurant_balance(
     account_id: int,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    current_user: Dict = Depends(get_current_user)
 ):
     """
     Get a restaurant's available and pending balance.
@@ -348,7 +354,8 @@ async def stripe_connect_webhook(
 @router.get("/dashboard-link/{account_id}")
 async def get_stripe_dashboard_link(
     account_id: int,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    current_user: Dict = Depends(get_current_user)
 ):
     """
     Get a login link to restaurant's Stripe Express dashboard.

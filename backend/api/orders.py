@@ -13,6 +13,7 @@ from collections import defaultdict
 
 from backend.database import get_db, SupabaseDB
 from backend.auth import get_current_user
+from backend.utils.datetime_utils import utc_now, utc_now_iso, days_ago
 
 import json
 import logging
@@ -242,7 +243,7 @@ async def get_upcoming_orders(
         )
 
     account_id = current_user["account_id"]
-    now = datetime.now().isoformat()
+    now = utc_now_iso()
 
     # Statuses to exclude
     excluded_statuses = ["cancelled", "completed", "picked_up"]
@@ -411,9 +412,30 @@ async def update_order_status(
             detail=f"Invalid status: {request.status}"
         )
 
+    # Validate status transition
+    current_status = order.get("status", "pending")
+    valid_transitions = {
+        "pending": ["confirmed", "preparing", "completed", "cancelled"],
+        "confirmed": ["preparing", "ready", "completed", "cancelled"],
+        "preparing": ["ready", "completed", "cancelled"],
+        "ready": ["picked_up", "out_for_delivery", "completed", "cancelled"],
+        "out_for_delivery": ["delivered", "completed", "cancelled"],
+        "picked_up": ["completed"],
+        "delivered": ["completed"],
+        "completed": [],  # Terminal state
+        "cancelled": [],  # Terminal state
+    }
+
+    allowed_next = valid_transitions.get(current_status, [])
+    if new_status != current_status and new_status not in allowed_next:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot transition from '{current_status}' to '{new_status}'. Valid transitions: {allowed_next}"
+        )
+
     updated_order = db.update("orders", order_id, {
         "status": new_status,
-        "updated_at": datetime.now().isoformat()
+        "updated_at": utc_now_iso()
     })
 
     logger.info(f"Order {order_id} status updated to {new_status}")
@@ -457,7 +479,7 @@ async def update_payment_status(
 
     update_data = {
         "payment_status": new_status,
-        "updated_at": datetime.now().isoformat()
+        "updated_at": utc_now_iso()
     }
     if request.payment_method:
         update_data["payment_method"] = request.payment_method
@@ -516,13 +538,16 @@ async def get_popular_items(
         )
 
     account_id = current_user["account_id"]
-    start_date = (datetime.now() - timedelta(days=days)).isoformat()
+    start_date = days_ago(days).isoformat()
 
     # Get completed orders in the time range (excluding cancelled)
-    result = db.table("orders").select("*")\
+    # Only select needed fields + limit to prevent memory issues at scale
+    result = db.table("orders").select("order_items")\
         .eq("account_id", account_id)\
         .gte("created_at", start_date)\
         .neq("status", "cancelled")\
+        .order("created_at", desc=True)\
+        .limit(10000)\
         .execute()
 
     orders = result.data or []
@@ -580,14 +605,17 @@ async def get_order_trends(
         )
 
     account_id = current_user["account_id"]
-    start_date = datetime.now() - timedelta(days=days)
+    start_date = days_ago(days)
     start_date_iso = start_date.isoformat()
 
     # Get orders in the time range (excluding cancelled)
-    result = db.table("orders").select("*")\
+    # Only select needed fields + limit to prevent memory issues at scale
+    result = db.table("orders").select("created_at,total")\
         .eq("account_id", account_id)\
         .gte("created_at", start_date_iso)\
         .neq("status", "cancelled")\
+        .order("created_at", desc=True)\
+        .limit(10000)\
         .execute()
 
     orders = result.data or []
@@ -606,7 +634,7 @@ async def get_order_trends(
     # Fill in missing dates with zeros
     result_list = []
     current = start_date.date()
-    end = datetime.now().date()
+    end = utc_now().date()
 
     while current <= end:
         date_str = current.strftime("%Y-%m-%d")
@@ -640,15 +668,18 @@ async def get_analytics_summary(
         )
 
     account_id = current_user["account_id"]
-    start_date = datetime.now() - timedelta(days=days)
-    end_date = datetime.now()
+    start_date = days_ago(days)
+    end_date = utc_now()
     start_date_iso = start_date.isoformat()
 
     # Get orders in the time range (excluding cancelled)
-    result = db.table("orders").select("*")\
+    # Only select needed fields + limit to prevent memory issues at scale
+    result = db.table("orders").select("created_at,total,order_type,customer_phone,order_items")\
         .eq("account_id", account_id)\
         .gte("created_at", start_date_iso)\
         .neq("status", "cancelled")\
+        .order("created_at", desc=True)\
+        .limit(10000)\
         .execute()
 
     orders = result.data or []

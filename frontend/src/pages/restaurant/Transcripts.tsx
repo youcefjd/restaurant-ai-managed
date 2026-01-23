@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '../../contexts/AuthContext'
-import { MessageSquare, Phone, MessageCircle, Calendar, Clock, Search } from 'lucide-react'
-import api from '../../services/api'
-import LoadingTRex from '../../components/LoadingTRex'
+import { restaurantAPI } from '../../services/api'
+import { MessageSquare, Phone, MessageCircle, Calendar, Clock, Search, X } from 'lucide-react'
+import PageHeader from '../../components/ui/PageHeader'
 
 interface Transcript {
   id: number
@@ -25,54 +26,38 @@ interface Transcript {
 
 export default function Transcripts() {
   const { user } = useAuth()
-  const [transcripts, setTranscripts] = useState<Transcript[]>([])
-  const [selectedTranscript, setSelectedTranscript] = useState<Transcript | null>(null)
-  const [loading, setLoading] = useState(true)
+  const accountId = user?.id
   const [filter, setFilter] = useState<'all' | 'sms' | 'voice'>('all')
   const [searchQuery, setSearchQuery] = useState('')
+  const [selectedTranscript, setSelectedTranscript] = useState<Transcript | null>(null)
 
-  useEffect(() => {
-    if (user?.id) {
-      loadTranscripts()
-    }
-  }, [user, filter])
-
-  const loadTranscripts = async () => {
-    if (!user?.id) return
-    
-    try {
-      setLoading(true)
-      const params = new URLSearchParams()
-      if (filter !== 'all') {
-        params.append('transcript_type', filter)
-      }
-      
-      const response = await api.get(`/onboarding/accounts/${user.id}/transcripts?${params.toString()}`)
-      setTranscripts(response.data.transcripts || [])
-    } catch (error) {
-      console.error('Failed to load transcripts:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const filteredTranscripts = transcripts.filter(t => {
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase()
-      return (
-        t.customer_phone.toLowerCase().includes(query) ||
-        t.messages.some(m => m.content.toLowerCase().includes(query))
-      )
-    }
-    return true
+  const { data: transcriptsResponse, isLoading } = useQuery({
+    queryKey: ['transcripts', accountId, filter],
+    queryFn: () => {
+      const params = filter !== 'all' ? { transcript_type: filter } : undefined
+      return restaurantAPI.getTranscripts(accountId!, params)
+    },
+    enabled: !!accountId,
+    staleTime: 60000,
+    select: (response) => response.data.transcripts || [],
   })
+
+  const transcripts: Transcript[] = transcriptsResponse || []
+
+  const filteredTranscripts = useMemo(() => {
+    if (!searchQuery) return transcripts
+    const query = searchQuery.toLowerCase()
+    return transcripts.filter(t =>
+      t.customer_phone.toLowerCase().includes(query) ||
+      t.messages.some(m => m.content.toLowerCase().includes(query))
+    )
+  }, [transcripts, searchQuery])
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
     return date.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
-      year: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
     })
@@ -87,111 +72,77 @@ export default function Transcripts() {
 
   const getOutcomeBadge = (outcome: string | null) => {
     if (!outcome) return null
-    
-    const colors: Record<string, string> = {
-      booking_created: 'bg-green-100 text-green-800',
-      order_placed: 'bg-blue-100 text-blue-800',
-      inquiry: 'bg-gray-100 text-gray-800'
-    }
-    
-    const labels: Record<string, string> = {
-      booking_created: 'Booking Created',
-      order_placed: 'Order Placed',
-      inquiry: 'Inquiry'
-    }
-    
-    return (
-      <span className={`px-2 py-1 rounded-full text-xs font-medium ${colors[outcome] || 'bg-gray-100 text-gray-800'}`}>
-        {labels[outcome] || outcome}
-      </span>
-    )
+    const badgeClass = outcome === 'booking_created' ? 'badge-success'
+      : outcome === 'order_placed' ? 'badge-info' : 'badge-warning'
+    const label = outcome === 'booking_created' ? 'Booking'
+      : outcome === 'order_placed' ? 'Order' : outcome
+    return <span className={`badge ${badgeClass}`}>{label}</span>
   }
 
-  if (loading) {
-    return <LoadingTRex message="Loading transcripts" />
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="spinner" />
+      </div>
+    )
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Transcripts</h1>
-          <p className="text-gray-600 mt-1">View SMS and voice call conversations</p>
-        </div>
-      </div>
+      <PageHeader
+        title="Transcripts"
+        subtitle="View SMS and voice call conversations"
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Sidebar - Transcript List */}
-        <div className="lg:col-span-1 bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col">
+        <div className="lg:col-span-1 card p-0 flex flex-col max-h-[calc(100vh-200px)]">
           {/* Filters */}
-          <div className="p-4 border-b border-gray-200 space-y-3">
+          <div className="p-4 border-b border-[--border] space-y-3">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-dim w-4 h-4" />
               <input
                 type="text"
                 placeholder="Search transcripts..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="pl-10"
               />
             </div>
-            
+
             <div className="flex gap-2">
-              <button
-                onClick={() => setFilter('all')}
-                className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  filter === 'all'
-                    ? 'bg-primary-100 text-primary-700'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                All
-              </button>
-              <button
-                onClick={() => setFilter('sms')}
-                className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  filter === 'sms'
-                    ? 'bg-primary-100 text-primary-700'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                SMS
-              </button>
-              <button
-                onClick={() => setFilter('voice')}
-                className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  filter === 'voice'
-                    ? 'bg-primary-100 text-primary-700'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                Voice
-              </button>
+              {(['all', 'sms', 'voice'] as const).map((type) => (
+                <button
+                  key={type}
+                  onClick={() => setFilter(type)}
+                  className={`btn btn-sm flex-1 ${filter === type ? 'btn-primary' : 'btn-secondary'}`}
+                >
+                  {type.charAt(0).toUpperCase() + type.slice(1)}
+                </button>
+              ))}
             </div>
           </div>
 
           {/* Transcript List */}
           <div className="flex-1 overflow-y-auto">
             {filteredTranscripts.length === 0 ? (
-              <div className="p-8 text-center text-gray-500">
-                <MessageSquare className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                <p>No transcripts found</p>
+              <div className="p-8 text-center">
+                <MessageSquare className="w-10 h-10 mx-auto mb-2 text-dim" />
+                <p className="text-dim">No transcripts found</p>
               </div>
             ) : (
-              <div className="divide-y divide-gray-200">
+              <div className="divide-y divide-[--border]">
                 {filteredTranscripts.map((transcript) => (
                   <button
                     key={transcript.id}
                     onClick={() => setSelectedTranscript(transcript)}
-                    className={`w-full p-4 text-left hover:bg-gray-50 transition-colors ${
-                      selectedTranscript?.id === transcript.id ? 'bg-primary-50 border-l-4 border-primary-500' : ''
+                    className={`w-full p-4 text-left hover:bg-white/5 transition-colors ${
+                      selectedTranscript?.id === transcript.id ? 'bg-accent/10 border-l-2 border-accent' : ''
                     }`}
                   >
                     <div className="flex items-start gap-3">
                       <div className={`p-2 rounded-lg ${
-                        transcript.transcript_type === 'voice'
-                          ? 'bg-blue-100 text-blue-600'
-                          : 'bg-green-100 text-green-600'
+                        transcript.transcript_type === 'voice' ? 'bg-accent/20 text-accent' : 'bg-success/20 text-success'
                       }`}>
                         {transcript.transcript_type === 'voice' ? (
                           <Phone className="w-4 h-4" />
@@ -201,17 +152,11 @@ export default function Transcripts() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between mb-1">
-                          <p className="text-sm font-medium text-gray-900 truncate">
-                            {transcript.customer_phone}
-                          </p>
+                          <p className="text-sm font-medium truncate">{transcript.customer_phone}</p>
                           {getOutcomeBadge(transcript.outcome)}
                         </div>
-                        <p className="text-xs text-gray-500 mb-1">
-                          {transcript.message_count} messages
-                        </p>
-                        <p className="text-xs text-gray-400">
-                          {formatDate(transcript.created_at)}
-                        </p>
+                        <p className="text-xs text-dim">{transcript.message_count} messages</p>
+                        <p className="text-xs text-dim">{formatDate(transcript.created_at)}</p>
                       </div>
                     </div>
                   </button>
@@ -222,17 +167,15 @@ export default function Transcripts() {
         </div>
 
         {/* Right Panel - Transcript Details */}
-        <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200">
+        <div className="lg:col-span-2 card p-0 flex flex-col max-h-[calc(100vh-200px)]">
           {selectedTranscript ? (
-            <div className="p-6 h-full flex flex-col">
+            <>
               {/* Header */}
-              <div className="border-b border-gray-200 pb-4 mb-4">
+              <div className="p-4 border-b border-[--border]">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-3">
                     <div className={`p-2 rounded-lg ${
-                      selectedTranscript.transcript_type === 'voice'
-                        ? 'bg-blue-100 text-blue-600'
-                        : 'bg-green-100 text-green-600'
+                      selectedTranscript.transcript_type === 'voice' ? 'bg-accent/20 text-accent' : 'bg-success/20 text-success'
                     }`}>
                       {selectedTranscript.transcript_type === 'voice' ? (
                         <Phone className="w-5 h-5" />
@@ -241,16 +184,21 @@ export default function Transcripts() {
                       )}
                     </div>
                     <div>
-                      <h2 className="text-lg font-semibold text-gray-900">
+                      <h2 className="font-semibold">
                         {selectedTranscript.transcript_type === 'voice' ? 'Voice Call' : 'SMS Conversation'}
                       </h2>
-                      <p className="text-sm text-gray-500">{selectedTranscript.customer_phone}</p>
+                      <p className="text-sm text-dim">{selectedTranscript.customer_phone}</p>
                     </div>
                   </div>
-                  {getOutcomeBadge(selectedTranscript.outcome)}
+                  <div className="flex items-center gap-2">
+                    {getOutcomeBadge(selectedTranscript.outcome)}
+                    <button onClick={() => setSelectedTranscript(null)} className="text-dim hover:text-white lg:hidden">
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
                 </div>
-                
-                <div className="flex items-center gap-4 text-sm text-gray-600 mt-3">
+
+                <div className="flex items-center gap-4 text-sm text-dim">
                   <div className="flex items-center gap-1">
                     <Calendar className="w-4 h-4" />
                     {formatDate(selectedTranscript.created_at)}
@@ -261,30 +209,24 @@ export default function Transcripts() {
                       {formatDuration(selectedTranscript.duration_seconds)}
                     </div>
                   )}
-                  <div className="text-gray-400">
-                    {selectedTranscript.message_count} messages
-                  </div>
+                  <span>{selectedTranscript.message_count} messages</span>
                 </div>
               </div>
 
               {/* Messages */}
-              <div className="flex-1 overflow-y-auto space-y-4">
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {selectedTranscript.messages.map((message, index) => (
                   <div
                     key={index}
                     className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
                     <div
-                      className={`max-w-[80%] rounded-lg p-4 ${
-                        message.role === 'user'
-                          ? 'bg-primary-600 text-white'
-                          : 'bg-gray-100 text-gray-900'
+                      className={`max-w-[80%] rounded-lg p-3 ${
+                        message.role === 'user' ? 'bg-accent text-white' : 'bg-white/5'
                       }`}
                     >
                       <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                      <p className={`text-xs mt-2 ${
-                        message.role === 'user' ? 'text-primary-100' : 'text-gray-500'
-                      }`}>
+                      <p className={`text-xs mt-2 ${message.role === 'user' ? 'text-white/60' : 'text-dim'}`}>
                         {new Date(message.timestamp).toLocaleTimeString('en-US', {
                           hour: '2-digit',
                           minute: '2-digit'
@@ -297,17 +239,19 @@ export default function Transcripts() {
 
               {/* Summary */}
               {selectedTranscript.summary && (
-                <div className="mt-4 pt-4 border-t border-gray-200">
-                  <h3 className="text-sm font-semibold text-gray-900 mb-2">Summary</h3>
-                  <p className="text-sm text-gray-600">{selectedTranscript.summary}</p>
+                <div className="p-4 border-t border-[--border]">
+                  <h3 className="text-sm font-medium mb-2">Summary</h3>
+                  <p className="text-sm text-dim">{selectedTranscript.summary}</p>
                 </div>
               )}
-            </div>
+            </>
           ) : (
-            <div className="p-12 text-center text-gray-500">
-              <MessageSquare className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-              <p className="text-lg font-medium">Select a transcript to view details</p>
-              <p className="text-sm mt-1">Choose a conversation from the list to see the full transcript</p>
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center">
+                <MessageSquare className="w-12 h-12 mx-auto mb-4 text-dim" />
+                <p className="font-medium">Select a transcript</p>
+                <p className="text-sm text-dim mt-1">Choose a conversation from the list</p>
+              </div>
             </div>
           )}
         </div>

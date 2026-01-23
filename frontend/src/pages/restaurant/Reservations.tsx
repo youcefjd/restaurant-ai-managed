@@ -3,7 +3,7 @@ import { restaurantAPI } from '../../services/api'
 import { Calendar, Clock, Users, CheckCircle, XCircle } from 'lucide-react'
 import { useState } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
-import LoadingTRex from '../../components/LoadingTRex'
+import PageHeader from '../../components/ui/PageHeader'
 
 export default function RestaurantReservations() {
   const { user } = useAuth()
@@ -43,15 +43,15 @@ export default function RestaurantReservations() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'confirmed':
-        return 'bg-green-100 text-green-700'
+        return 'badge-success'
       case 'pending':
-        return 'bg-orange-100 text-orange-700'
+        return 'badge-warning'
       case 'cancelled':
-        return 'bg-red-100 text-red-700'
+        return 'badge-danger'
       case 'completed':
-        return 'bg-blue-100 text-blue-700'
+        return 'badge-info'
       default:
-        return 'bg-gray-100 text-gray-700'
+        return 'badge-info'
     }
   }
 
@@ -59,90 +59,87 @@ export default function RestaurantReservations() {
     switch (status) {
       case 'confirmed':
       case 'completed':
-        return <CheckCircle className="w-5 h-5 text-green-600" />
+        return <CheckCircle className="w-5 h-5 text-success" />
       case 'cancelled':
-        return <XCircle className="w-5 h-5 text-red-600" />
+        return <XCircle className="w-5 h-5 text-danger" />
       default:
-        return <Clock className="w-5 h-5 text-orange-600" />
+        return <Clock className="w-5 h-5 text-warning" />
     }
   }
 
   if (isLoading) {
-    return <LoadingTRex message="Loading reservations" />
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="spinner" />
+      </div>
+    )
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Table Reservations</h1>
-          <p className="text-gray-600 mt-1">Manage table bookings</p>
-        </div>
-
-        <div className="flex gap-2">
+      <PageHeader
+        title="Table Reservations"
+        subtitle="Manage table bookings"
+        actions={
           <select
             value={dateFilter}
             onChange={(e) => setDateFilter(e.target.value)}
-            className="px-4 py-2 rounded-lg border border-gray-200 bg-white"
+            className="w-auto"
           >
             <option value="all">All Dates</option>
             <option value="today">Today</option>
             <option value="upcoming">Upcoming</option>
           </select>
+        }
+      />
 
-          {['all', 'confirmed', 'pending', 'completed', 'cancelled'].map((status) => (
-            <button
-              key={status}
-              onClick={() => setStatusFilter(status)}
-              className={`px-4 py-2 rounded-lg capitalize transition-colors ${
-                statusFilter === status
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-200'
-              }`}
-            >
-              {status}
-            </button>
-          ))}
-        </div>
+      {/* Status Filter */}
+      <div className="flex gap-2 flex-wrap">
+        {['all', 'confirmed', 'pending', 'completed', 'cancelled'].map((status) => (
+          <button
+            key={status}
+            onClick={() => setStatusFilter(status)}
+            className={`btn btn-sm capitalize ${
+              statusFilter === status ? 'btn-primary' : 'btn-secondary'
+            }`}
+          >
+            {status}
+          </button>
+        ))}
       </div>
 
       {bookingData.length === 0 ? (
         <div className="card text-center py-12">
-          <Calendar className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-          <p className="text-gray-500">No reservations found</p>
+          <Calendar className="w-10 h-10 text-dim mx-auto mb-4" />
+          <p className="text-dim">No reservations found</p>
         </div>
       ) : (
-        <div className="grid gap-4">
+        <div className="space-y-3">
           {bookingData.map((booking: any) => (
             <div key={booking.id} className="card">
               <div className="flex items-start justify-between">
-                <div className="flex items-start gap-4">
+                <div className="flex items-start gap-3">
                   {getStatusIcon(booking.status)}
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="font-semibold text-lg">
-                        Reservation #{booking.id}
-                      </h3>
-                      <span className={`text-xs px-2 py-1 rounded-full ${getStatusColor(booking.status)}`}>
+                      <h3 className="font-medium">Reservation #{booking.id}</h3>
+                      <span className={`badge ${getStatusColor(booking.status)}`}>
                         {booking.status}
                       </span>
                     </div>
 
-                    {/* Customer Info */}
-                    <p className="text-sm text-gray-600 mt-1">
+                    <p className="text-sm text-dim mt-1">
                       {booking.customer?.name || 'Guest'} • {booking.customer?.phone || 'No phone'}
                     </p>
 
-                    {/* Date & Time */}
-                    <div className="flex items-center gap-4 mt-2 text-sm text-gray-700">
+                    <div className="flex items-center gap-4 mt-2 text-sm text-dim flex-wrap">
                       <div className="flex items-center gap-1">
                         <Calendar className="w-4 h-4" />
                         <span>
                           {new Date(booking.booking_date).toLocaleDateString('en-US', {
                             weekday: 'short',
                             month: 'short',
-                            day: 'numeric',
-                            year: 'numeric'
+                            day: 'numeric'
                           })}
                         </span>
                       </div>
@@ -156,45 +153,34 @@ export default function RestaurantReservations() {
                       </div>
                     </div>
 
-                    {/* Table Info */}
                     {booking.table_id && (
-                      <p className="text-sm text-gray-600 mt-2">
-                        <span className="font-medium">Table:</span> #{booking.table_id}
-                      </p>
+                      <p className="text-sm text-dim mt-2">Table #{booking.table_id}</p>
                     )}
 
-                    {/* Special Requests */}
                     {booking.special_requests && (
-                      <p className="text-sm text-gray-700 mt-2 bg-yellow-50 p-2 rounded border border-yellow-200">
-                        <span className="font-medium">📝 Note:</span> {booking.special_requests}
+                      <p className="text-sm mt-2 p-2 rounded-lg bg-warning/10 border border-warning/20 text-warning">
+                        Note: {booking.special_requests}
                       </p>
                     )}
                   </div>
                 </div>
 
-                {/* Actions */}
-                <div className="text-right">
-                  {booking.status === 'confirmed' && (
-                    <div className="flex gap-2 mt-3">
-                      <button
-                        onClick={() =>
-                          updateStatusMutation.mutate({ id: booking.id, status: 'completed' })
-                        }
-                        className="text-sm px-3 py-1 bg-green-100 text-green-700 rounded hover:bg-green-200"
-                      >
-                        Complete
-                      </button>
-                      <button
-                        onClick={() =>
-                          updateStatusMutation.mutate({ id: booking.id, status: 'cancelled' })
-                        }
-                        className="text-sm px-3 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  )}
-                </div>
+                {booking.status === 'confirmed' && (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => updateStatusMutation.mutate({ id: booking.id, status: 'completed' })}
+                      className="btn btn-sm btn-success"
+                    >
+                      Complete
+                    </button>
+                    <button
+                      onClick={() => updateStatusMutation.mutate({ id: booking.id, status: 'cancelled' })}
+                      className="btn btn-sm btn-danger"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           ))}

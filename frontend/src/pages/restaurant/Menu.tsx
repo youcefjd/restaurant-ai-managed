@@ -1,285 +1,557 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { restaurantAPI } from '../../services/api'
-import { Plus, Edit, Trash2, Sparkles, ChevronDown, ChevronUp } from 'lucide-react'
+import { Plus, Edit, Trash2, ChevronDown, ChevronRight, X } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
-import CreateMenuModal from '../../components/CreateMenuModal'
-import EditMenuModal from '../../components/EditMenuModal'
-import LoadingTRex from '../../components/LoadingTRex'
 
 export default function RestaurantMenu() {
   const { user } = useAuth()
   const accountId = user?.id
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
-  const [createModalStep, setCreateModalStep] = useState<'create-name' | 'auto-generate'>('create-name')
-  const [editingMenu, setEditingMenu] = useState<{ id: number; name: string; description?: string } | null>(null)
-  const [expandedMenuIds, setExpandedMenuIds] = useState<Set<number>>(new Set())
+  const [expandedMenuId, setExpandedMenuId] = useState<number | null>(null)
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [editingMenu, setEditingMenu] = useState<any>(null)
+  const [addingItemToCategory, setAddingItemToCategory] = useState<{ menuId: number; categoryId: number } | null>(null)
+  const [editingItem, setEditingItem] = useState<any>(null)
 
   const queryClient = useQueryClient()
 
-  const { data: menuData, isLoading } = useQuery({
+  const { data: menuData, isLoading, isFetching } = useQuery({
     queryKey: ['menu', accountId],
     queryFn: () => restaurantAPI.getMenu(accountId!),
     enabled: !!accountId,
-    placeholderData: (previousData) => previousData, // Keep previous data while refetching
-    refetchOnMount: 'always', // Refetch on mount but keep previous data visible
+    staleTime: 60000,
+    gcTime: 300000, // Keep in cache for 5 minutes
+    placeholderData: (prev) => prev, // Keep previous data while fetching
   })
 
   const menu = menuData?.data
 
   const deleteMenuMutation = useMutation({
     mutationFn: (menuId: number) => restaurantAPI.deleteMenu(menuId),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['menu', accountId] })
-      await queryClient.refetchQueries({ queryKey: ['menu', accountId] })
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['menu', accountId] }),
+  })
+
+  const deleteItemMutation = useMutation({
+    mutationFn: (itemId: number) => restaurantAPI.deleteMenuItem(itemId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['menu', accountId] }),
+  })
+
+  const createMenuMutation = useMutation({
+    mutationFn: (data: { name: string; description: string }) =>
+      restaurantAPI.createMenu(accountId!, { menu_name: data.name, menu_description: data.description }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['menu', accountId] })
+      setShowCreateModal(false)
     },
   })
 
-  const handleDeleteMenu = (menuId: number, menuName: string) => {
-    if (window.confirm(`Are you sure you want to delete "${menuName}"? This action cannot be undone and will delete all categories and items in this menu.`)) {
-      deleteMenuMutation.mutate(menuId)
-    }
-  }
-
-  const handleEditMenu = (menuObj: any) => {
-    setEditingMenu({
-      id: menuObj.id,
-      name: menuObj.name,
-      description: menuObj.description || '',
-    })
-  }
-
-  const toggleMenuExpansion = (menuId: number, e: React.MouseEvent) => {
-    // Prevent expansion when clicking edit/delete buttons
-    if ((e.target as HTMLElement).closest('button')) {
-      return
-    }
-    
-    setExpandedMenuIds(prev => {
-      const newSet = new Set(prev)
-      if (newSet.has(menuId)) {
-        newSet.delete(menuId)
-      } else {
-        newSet.add(menuId)
-      }
-      return newSet
-    })
-  }
-
-  if (isLoading) {
-    return <LoadingTRex message="Loading menu" />
-  }
-
-  if (!menu?.menus || menu.menus.length === 0) {
+  // Only show full spinner on initial load (no cached data)
+  if (isLoading && !menuData) {
     return (
-      <>
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold">Menu</h1>
-              <p className="text-gray-600 mt-1">Manage your restaurant menu</p>
-            </div>
-            <div className="flex gap-3">
-              <button 
-                onClick={() => {
-                  setCreateModalStep('create-name')
-                  setIsCreateModalOpen(true)
-                }} 
-                className="btn btn-primary"
-              >
-                <Plus className="w-5 h-5 mr-2" /> Create New Menu
-              </button>
-              <button 
-                onClick={() => {
-                  setCreateModalStep('auto-generate')
-                  setIsCreateModalOpen(true)
-                }} 
-                className="btn btn-secondary"
-              >
-                <Sparkles className="w-5 h-5 mr-2" /> Auto-Generate Menu
-              </button>
-            </div>
-          </div>
-          <div className="card text-center py-12">
-            <p className="text-gray-500">No menus created yet. Create your first menu to get started.</p>
-          </div>
-        </div>
-        {accountId && (
-          <CreateMenuModal
-            isOpen={isCreateModalOpen}
-            onClose={() => setIsCreateModalOpen(false)}
-            accountId={accountId}
-            initialStep={createModalStep}
-          />
-        )}
-      </>
+      <div className="flex items-center justify-center h-64">
+        <div className="spinner" />
+      </div>
     )
   }
 
+  const menus = menu?.menus || []
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Menu</h1>
-          <p className="text-gray-600 mt-1">{menu.business_name}</p>
-        </div>
-        <div className="flex gap-3">
-          <button 
-            onClick={() => {
-              setCreateModalStep('create-name')
-              setIsCreateModalOpen(true)
-            }} 
-            className="btn btn-primary"
-          >
-            <Plus className="w-5 h-5 mr-2" /> Create New Menu
-          </button>
-          <button 
-            onClick={() => {
-              setCreateModalStep('auto-generate')
-              setIsCreateModalOpen(true)
-            }} 
-            className="btn btn-secondary"
-          >
-            <Sparkles className="w-5 h-5 mr-2" /> Auto-Generate Menu
-          </button>
-        </div>
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          Your Menus
+          {isFetching && <div className="spinner" style={{ width: '1rem', height: '1rem' }} />}
+        </h2>
+        <button onClick={() => setShowCreateModal(true)} className="btn btn-primary flex items-center gap-2">
+          <Plus className="w-4 h-4" />
+          New Menu
+        </button>
       </div>
 
-      <div className="space-y-3">
-        {menu.menus.map((menuObj: any) => {
-          const isExpanded = expandedMenuIds.has(menuObj.id)
-          const allItems = menuObj.categories?.flatMap((cat: any) => 
-            cat.items?.map((item: any) => ({ ...item, categoryName: cat.name, categoryId: cat.id })) || []
-          ) || []
-          
-          return (
-            <div
-              key={menuObj.id}
-              className="card overflow-hidden transition-all"
-            >
-              {/* Menu Header - Clickable */}
-              <div
-                onClick={(e) => toggleMenuExpansion(menuObj.id, e)}
-                className="flex items-center justify-between p-4 hover:bg-gray-50 cursor-pointer transition-colors"
-              >
-                <div className="flex items-center gap-3 flex-1">
-                  {isExpanded ? (
-                    <ChevronUp className="w-5 h-5 text-gray-400 flex-shrink-0" />
-                  ) : (
-                    <ChevronDown className="w-5 h-5 text-gray-400 flex-shrink-0" />
-                  )}
-                  <div className="flex-1">
-                    <h3 className="text-lg font-semibold">{menuObj.name}</h3>
-                    {menuObj.description && (
-                      <p className="text-sm text-gray-500 mt-1">{menuObj.description}</p>
-                    )}
-                    {!isExpanded && allItems.length > 0 && (
-                      <p className="text-xs text-gray-400 mt-1">{allItems.length} item(s)</p>
-                    )}
+      {/* Menu List */}
+      {menus.length === 0 ? (
+        <div className="card text-center py-12">
+          <p className="text-dim">No menus yet. Create your first menu to get started.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {menus.map((menuObj: any) => {
+            const isExpanded = expandedMenuId === menuObj.id
+            const itemCount = menuObj.categories?.reduce((sum: number, cat: any) => sum + (cat.items?.length || 0), 0) || 0
+
+            return (
+              <div key={menuObj.id} className="card p-0">
+                {/* Menu Header */}
+                <div
+                  onClick={() => setExpandedMenuId(isExpanded ? null : menuObj.id)}
+                  className="flex items-center justify-between p-4 cursor-pointer hover:bg-white/5"
+                >
+                  <div className="flex items-center gap-3">
+                    {isExpanded ? <ChevronDown className="w-4 h-4 text-dim" /> : <ChevronRight className="w-4 h-4 text-dim" />}
+                    <div>
+                      <h3 className="font-medium">{menuObj.name}</h3>
+                      <p className="text-xs text-dim">{itemCount} items</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                    <button
+                      onClick={() => setEditingMenu(menuObj)}
+                      className="btn btn-sm btn-secondary flex items-center gap-1"
+                    >
+                      <Edit className="w-3 h-3" /> Edit
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (confirm(`Delete "${menuObj.name}"?`)) {
+                          deleteMenuMutation.mutate(menuObj.id)
+                        }
+                      }}
+                      className="btn btn-sm btn-danger flex items-center gap-1"
+                      disabled={deleteMenuMutation.isPending}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
                   </div>
                 </div>
-                <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
-                  <button
-                    onClick={() => handleEditMenu(menuObj)}
-                    className="px-4 py-2 text-primary-600 border border-primary-200 rounded-lg hover:bg-primary-50 transition-colors flex items-center gap-2"
-                  >
-                    <Edit className="w-4 h-4" />
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleDeleteMenu(menuObj.id, menuObj.name)}
-                    disabled={deleteMenuMutation.isPending}
-                    className="px-4 py-2 text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    {deleteMenuMutation.isPending ? 'Deleting...' : 'Delete'}
-                  </button>
-                </div>
-              </div>
 
-              {/* Expanded Content - Menu Items */}
-              {isExpanded && (
-                <div className="border-t border-gray-200 p-4 bg-gray-50">
-                  {allItems.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
-                      <p>No menu items yet. Click "Edit" to add items to this menu.</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-6">
-                      {menuObj.categories?.map((category: any) => {
-                        const categoryItems = category.items || []
-                        if (categoryItems.length === 0) return null
-
-                        return (
-                          <div key={category.id} className="space-y-3">
-                            <h4 className="text-md font-semibold text-gray-800 border-b border-gray-300 pb-2">
-                              {category.name}
-                            </h4>
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                              {categoryItems.map((item: any) => (
-                                <div
-                                  key={item.id}
-                                  className="bg-white rounded-lg p-4 border border-gray-200 hover:shadow-md transition-shadow"
-                                >
-                                  <div className="flex items-start justify-between mb-2">
-                                    <div className="flex-1">
-                                      <h5 className="font-semibold text-gray-900">{item.name}</h5>
-                                      {item.description && (
-                                        <p className="text-sm text-gray-600 mt-1 line-clamp-2">
-                                          {item.description}
-                                        </p>
-                                      )}
-                                    </div>
-                                    <p className="text-lg font-bold text-primary-600 ml-3">
-                                      ${((item.price_cents || 0) / 100).toFixed(2)}
-                                    </p>
-                                  </div>
-                                  {item.dietary_tags && item.dietary_tags.length > 0 && (
-                                    <div className="flex flex-wrap gap-1 mt-2">
-                                      {item.dietary_tags.map((tag: string) => (
-                                        <span
-                                          key={tag}
-                                          className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded"
-                                        >
-                                          {tag}
-                                        </span>
-                                      ))}
-                                    </div>
+                {/* Expanded Items */}
+                {isExpanded && (
+                  <div className="border-t border-[--border] p-4 space-y-4">
+                    {menuObj.categories?.map((category: any) => (
+                      <div key={category.id}>
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="text-sm font-medium text-dim">{category.name}</h4>
+                          <button
+                            onClick={() => setAddingItemToCategory({ menuId: menuObj.id, categoryId: category.id })}
+                            className="text-xs text-accent hover:underline"
+                          >
+                            + Add Item
+                          </button>
+                        </div>
+                        {category.items?.length > 0 ? (
+                          <div className="space-y-2">
+                            {category.items.map((item: any) => (
+                              <div key={item.id} className="flex items-center justify-between py-2 px-3 rounded bg-white/5 group">
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-medium">{item.name}</p>
+                                  {item.description && (
+                                    <p className="text-xs text-dim truncate max-w-md">{item.description}</p>
                                   )}
                                 </div>
-                              ))}
-                            </div>
+                                <div className="flex items-center gap-3">
+                                  <p className="font-medium">${((item.price_cents || 0) / 100).toFixed(2)}</p>
+                                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button
+                                      onClick={() => setEditingItem({ ...item, categoryId: category.id })}
+                                      className="p-1 hover:bg-white/10 rounded"
+                                      title="Edit item"
+                                    >
+                                      <Edit className="w-3.5 h-3.5 text-dim hover:text-white" />
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        if (confirm(`Delete "${item.name}"?`)) {
+                                          deleteItemMutation.mutate(item.id)
+                                        }
+                                      }}
+                                      className="p-1 hover:bg-white/10 rounded"
+                                      title="Delete item"
+                                      disabled={deleteItemMutation.isPending}
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5 text-dim hover:text-error" />
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
                           </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
+                        ) : (
+                          <p className="text-xs text-dim py-2">No items in this category</p>
+                        )}
+                      </div>
+                    ))}
+                    {(!menuObj.categories || menuObj.categories.length === 0) && (
+                      <p className="text-sm text-dim text-center py-4">No categories yet. Click Edit to add categories and items.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {/* Create Menu Modal */}
-      {accountId && (
+      {showCreateModal && (
         <CreateMenuModal
-          isOpen={isCreateModalOpen}
-          onClose={() => setIsCreateModalOpen(false)}
-          accountId={accountId}
-          initialStep={createModalStep}
+          onClose={() => setShowCreateModal(false)}
+          onSubmit={(name, description) => createMenuMutation.mutate({ name, description })}
+          isLoading={createMenuMutation.isPending}
         />
       )}
 
       {/* Edit Menu Modal */}
-      {accountId && editingMenu && (
+      {editingMenu && accountId && (
         <EditMenuModal
-          isOpen={!!editingMenu}
-          onClose={() => setEditingMenu(null)}
-          accountId={accountId}
           menu={editingMenu}
+          accountId={accountId}
+          onClose={() => setEditingMenu(null)}
         />
       )}
+
+      {/* Add Item Modal */}
+      {addingItemToCategory && accountId && (
+        <AddItemModal
+          categoryId={addingItemToCategory.categoryId}
+          accountId={accountId}
+          onClose={() => setAddingItemToCategory(null)}
+        />
+      )}
+
+      {/* Edit Item Modal */}
+      {editingItem && accountId && (
+        <EditItemModal
+          item={editingItem}
+          accountId={accountId}
+          onClose={() => setEditingItem(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+// Simple Create Menu Modal
+function CreateMenuModal({ onClose, onSubmit, isLoading }: {
+  onClose: () => void
+  onSubmit: (name: string, description: string) => void
+  isLoading: boolean
+}) {
+  const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b border-[--border]">
+          <h3 className="font-semibold">Create Menu</h3>
+          <button onClick={onClose} className="text-dim hover:text-white">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <form
+          onSubmit={e => {
+            e.preventDefault()
+            if (name.trim()) onSubmit(name, description)
+          }}
+          className="p-4 space-y-4"
+        >
+          <div>
+            <label className="text-sm text-dim block mb-1">Menu Name *</label>
+            <input
+              type="text"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="e.g., Lunch Menu"
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="text-sm text-dim block mb-1">Description</label>
+            <textarea
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              placeholder="Optional description"
+              rows={2}
+            />
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button type="button" onClick={onClose} className="btn btn-secondary">
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={!name.trim() || isLoading}>
+              {isLoading ? 'Creating...' : 'Create Menu'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// Simple Edit Menu Modal
+function EditMenuModal({ menu, accountId, onClose }: {
+  menu: any
+  accountId: number
+  onClose: () => void
+}) {
+  const [name, setName] = useState(menu.name)
+  const [newCategory, setNewCategory] = useState('')
+  const queryClient = useQueryClient()
+
+  const updateMutation = useMutation({
+    mutationFn: () => restaurantAPI.updateMenu(menu.id, { menu_name: name }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['menu', accountId] })
+      onClose()
+    },
+  })
+
+  const addCategoryMutation = useMutation({
+    mutationFn: (catName: string) => restaurantAPI.createCategory(menu.id, { name: catName }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['menu', accountId] })
+      setNewCategory('')
+    },
+  })
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b border-[--border]">
+          <h3 className="font-semibold">Edit Menu</h3>
+          <button onClick={onClose} className="text-dim hover:text-white">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="p-4 space-y-4">
+          {/* Menu Name */}
+          <div>
+            <label className="text-sm text-dim block mb-1">Menu Name</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={name}
+                onChange={e => setName(e.target.value)}
+              />
+              <button
+                onClick={() => updateMutation.mutate()}
+                className="btn btn-primary"
+                disabled={updateMutation.isPending || name === menu.name}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+
+          {/* Categories */}
+          <div>
+            <label className="text-sm text-dim block mb-2">Categories</label>
+            <div className="space-y-2 mb-3">
+              {menu.categories?.map((cat: any) => (
+                <div key={cat.id} className="flex items-center justify-between py-2 px-3 rounded bg-white/5">
+                  <span>{cat.name}</span>
+                  <span className="text-xs text-dim">{cat.items?.length || 0} items</span>
+                </div>
+              ))}
+              {(!menu.categories || menu.categories.length === 0) && (
+                <p className="text-sm text-dim">No categories yet</p>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newCategory}
+                onChange={e => setNewCategory(e.target.value)}
+                placeholder="New category name"
+              />
+              <button
+                onClick={() => newCategory.trim() && addCategoryMutation.mutate(newCategory.trim())}
+                className="btn btn-secondary"
+                disabled={!newCategory.trim() || addCategoryMutation.isPending}
+              >
+                Add
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Simple Add Item Modal
+function AddItemModal({ categoryId, accountId, onClose }: {
+  categoryId: number
+  accountId: number
+  onClose: () => void
+}) {
+  const [name, setName] = useState('')
+  const [price, setPrice] = useState('')
+  const [description, setDescription] = useState('')
+  const queryClient = useQueryClient()
+
+  const addItemMutation = useMutation({
+    mutationFn: () =>
+      restaurantAPI.createMenuItem({
+        category_id: categoryId,
+        name,
+        price_cents: Math.round(parseFloat(price) * 100),
+        description,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['menu', accountId] })
+      onClose()
+    },
+  })
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b border-[--border]">
+          <h3 className="font-semibold">Add Menu Item</h3>
+          <button onClick={onClose} className="text-dim hover:text-white">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <form
+          onSubmit={e => {
+            e.preventDefault()
+            if (name.trim() && price) addItemMutation.mutate()
+          }}
+          className="p-4 space-y-4"
+        >
+          <div>
+            <label className="text-sm text-dim block mb-1">Item Name *</label>
+            <input
+              type="text"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="e.g., Cheeseburger"
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="text-sm text-dim block mb-1">Price *</label>
+            <input
+              type="number"
+              step="0.01"
+              value={price}
+              onChange={e => setPrice(e.target.value)}
+              placeholder="9.99"
+            />
+          </div>
+          <div>
+            <label className="text-sm text-dim block mb-1">Description</label>
+            <textarea
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              placeholder="Optional description"
+              rows={2}
+            />
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button type="button" onClick={onClose} className="btn btn-secondary">
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={!name.trim() || !price || addItemMutation.isPending}
+            >
+              {addItemMutation.isPending ? 'Adding...' : 'Add Item'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// Edit Item Modal
+function EditItemModal({ item, accountId, onClose }: {
+  item: any
+  accountId: number
+  onClose: () => void
+}) {
+  const [name, setName] = useState(item.name)
+  const [price, setPrice] = useState(((item.price_cents || 0) / 100).toString())
+  const [description, setDescription] = useState(item.description || '')
+  const [isAvailable, setIsAvailable] = useState(item.is_available !== false)
+  const queryClient = useQueryClient()
+
+  const updateItemMutation = useMutation({
+    mutationFn: () =>
+      restaurantAPI.updateMenuItem(item.id, {
+        name,
+        price_cents: Math.round(parseFloat(price) * 100),
+        description,
+        is_available: isAvailable,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['menu', accountId] })
+      onClose()
+    },
+  })
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b border-[--border]">
+          <h3 className="font-semibold">Edit Menu Item</h3>
+          <button onClick={onClose} className="text-dim hover:text-white">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <form
+          onSubmit={e => {
+            e.preventDefault()
+            if (name.trim() && price) updateItemMutation.mutate()
+          }}
+          className="p-4 space-y-4"
+        >
+          <div>
+            <label className="text-sm text-dim block mb-1">Item Name *</label>
+            <input
+              type="text"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="text-sm text-dim block mb-1">Price *</label>
+            <input
+              type="number"
+              step="0.01"
+              value={price}
+              onChange={e => setPrice(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-sm text-dim block mb-1">Description</label>
+            <textarea
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              placeholder="Optional description"
+              rows={2}
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="item-available"
+              checked={isAvailable}
+              onChange={e => setIsAvailable(e.target.checked)}
+              className="w-4 h-4"
+            />
+            <label htmlFor="item-available" className="text-sm">Available for ordering</label>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button type="button" onClick={onClose} className="btn btn-secondary">
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={!name.trim() || !price || updateItemMutation.isPending}
+            >
+              {updateItemMutation.isPending ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   )
 }

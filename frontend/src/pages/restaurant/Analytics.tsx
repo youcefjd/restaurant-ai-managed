@@ -1,379 +1,266 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { restaurantAPI } from '../../services/api'
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Area, AreaChart
-} from 'recharts'
-import {
-  TrendingUp, DollarSign, ShoppingBag, Clock, Users, Star
-} from 'lucide-react'
-import LoadingTRex from '../../components/LoadingTRex'
+import { DollarSign, ShoppingBag, TrendingUp, Users, Clock } from 'lucide-react'
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import PageHeader from '../../components/ui/PageHeader'
+import StatCard from '../../components/ui/StatCard'
+import TimePeriodFilter from '../../components/ui/TimePeriodFilter'
 
 type TimePeriod = 7 | 30 | 90
-
-interface PopularItem {
-  item_name: string
-  quantity_sold: number
-  revenue_cents: number
-  order_count: number
-}
-
-interface DailyTrend {
-  date: string
-  order_count: number
-  revenue_cents: number
-  avg_order_value_cents: number
-}
-
-interface AnalyticsSummary {
-  period_start: string
-  period_end: string
-  total_orders: number
-  total_revenue_cents: number
-  avg_order_value_cents: number
-  takeout_orders: number
-  delivery_orders: number
-  popular_items: PopularItem[]
-  daily_trends: DailyTrend[]
-  peak_hours: Record<number, number>
-  repeat_customer_rate: number
-}
-
-const COLORS = ['#2563eb', '#7c3aed', '#db2777', '#ea580c', '#16a34a', '#0891b2', '#4f46e5', '#c026d3']
 
 export default function RestaurantAnalytics() {
   const [timePeriod, setTimePeriod] = useState<TimePeriod>(30)
 
-  const { data: analyticsData, isLoading, error } = useQuery({
+  const { data: analyticsData, isLoading } = useQuery({
     queryKey: ['analytics-summary', timePeriod],
     queryFn: () => restaurantAPI.getAnalyticsSummary(timePeriod),
+    staleTime: 60000,
+    select: (response) => response.data,
   })
 
-  const analytics: AnalyticsSummary | undefined = analyticsData?.data
+  const { data: trendsData } = useQuery({
+    queryKey: ['analytics-trends', timePeriod],
+    queryFn: () => restaurantAPI.getOrderTrends(timePeriod),
+    staleTime: 60000,
+    select: (response) => response.data,
+  })
 
-  // Format currency
-  const formatCurrency = (cents: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(cents / 100)
+  const { data: popularItemsData } = useQuery({
+    queryKey: ['analytics-popular-items', timePeriod],
+    queryFn: () => restaurantAPI.getPopularItems(timePeriod, 10),
+    staleTime: 60000,
+    select: (response) => response.data,
+  })
+
+  const formatCurrency = (cents: number) => `$${(cents / 100).toFixed(2)}`
+
+  // Calculate peak hour
+  const peakHourData = useMemo(() => {
+    if (!analyticsData?.peak_hours) return null
+    const entries = Object.entries(analyticsData.peak_hours)
+    if (entries.length === 0) return null
+    return entries.reduce(
+      (max, [hour, count]) => (count as number > max.count ? { hour: parseInt(hour), count: count as number } : max),
+      { hour: 0, count: 0 }
+    )
+  }, [analyticsData?.peak_hours])
+
+  const formatHour = (hour: number) => {
+    const h = hour % 12 || 12
+    return `${h}${hour < 12 ? 'am' : 'pm'}`
   }
 
-  // Format date for chart
-  const formatChartDate = (dateStr: string) => {
-    const date = new Date(dateStr)
-    if (timePeriod <= 7) {
-      return date.toLocaleDateString('en-US', { weekday: 'short' })
-    } else if (timePeriod <= 30) {
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-    } else {
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-    }
-  }
-
-  // Prepare chart data
-  const chartData = analytics?.daily_trends.map(d => ({
-    date: formatChartDate(d.date),
-    fullDate: d.date,
-    orders: d.order_count,
-    revenue: d.revenue_cents / 100,
-    avgOrder: d.avg_order_value_cents / 100,
-  })) || []
-
-  // Only show every Nth label to avoid crowding
-  const skipLabels = timePeriod > 30 ? 7 : timePeriod > 14 ? 3 : 1
-
-  // Prepare peak hours data
-  const peakHoursData = analytics ? Object.entries(analytics.peak_hours)
-    .map(([hour, count]) => ({
-      hour: parseInt(hour),
-      hourLabel: `${parseInt(hour) % 12 || 12}${parseInt(hour) < 12 ? 'am' : 'pm'}`,
-      orders: count,
+  // Generate heatmap data for peak hours
+  const peakHoursGrid = useMemo(() => {
+    if (!analyticsData?.peak_hours) return []
+    const hours = Array.from({ length: 24 }, (_, i) => i)
+    const maxCount = Math.max(...Object.values(analyticsData.peak_hours as Record<string, number>), 1)
+    return hours.map(hour => ({
+      hour,
+      count: (analyticsData.peak_hours as Record<string, number>)[hour] || 0,
+      intensity: ((analyticsData.peak_hours as Record<string, number>)[hour] || 0) / maxCount,
     }))
-    .sort((a, b) => a.hour - b.hour) : []
+  }, [analyticsData?.peak_hours])
 
-  // Order type distribution for pie chart
-  const orderTypeData = analytics ? [
-    { name: 'Takeout', value: analytics.takeout_orders, color: '#2563eb' },
-    { name: 'Delivery', value: analytics.delivery_orders, color: '#7c3aed' },
-  ].filter(d => d.value > 0) : []
+  // Format trends for chart
+  const chartData = useMemo(() => {
+    if (!trendsData || trendsData.length === 0) return []
+    return trendsData.map((day: any) => ({
+      date: new Date(day.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      revenue: day.revenue_cents / 100,
+      orders: day.order_count,
+    }))
+  }, [trendsData])
 
   if (isLoading) {
-    return <LoadingTRex message="Loading analytics" />
-  }
-
-  if (error) {
     return (
-      <div className="text-center py-12 text-red-600">
-        Failed to load analytics. Please try again.
+      <div className="flex items-center justify-center h-64">
+        <div className="spinner" />
       </div>
     )
   }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">Analytics Dashboard</h1>
-          <p className="text-gray-600 mt-1">Insights and performance metrics</p>
-        </div>
-
-        {/* Time Period Selector */}
-        <div className="flex gap-2">
-          {([7, 30, 90] as TimePeriod[]).map((days) => (
-            <button
-              key={days}
-              onClick={() => setTimePeriod(days)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                timePeriod === days
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              {days === 7 ? '7 Days' : days === 30 ? '30 Days' : '90 Days'}
-            </button>
-          ))}
-        </div>
-      </div>
+      <PageHeader
+        title="Analytics"
+        subtitle={`Performance over the last ${timePeriod} days`}
+        actions={<TimePeriodFilter value={timePeriod} onChange={setTimePeriod} />}
+      />
 
       {/* Key Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="card">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Total Revenue</p>
-              <p className="text-2xl font-bold mt-1">
-                {formatCurrency(analytics?.total_revenue_cents || 0)}
-              </p>
-              <p className="text-xs text-gray-500 mt-1">Last {timePeriod} days</p>
-            </div>
-            <div className="p-3 rounded-lg bg-green-50">
-              <DollarSign className="w-5 h-5 text-green-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Total Orders</p>
-              <p className="text-2xl font-bold mt-1">{analytics?.total_orders || 0}</p>
-              <p className="text-xs text-gray-500 mt-1">Last {timePeriod} days</p>
-            </div>
-            <div className="p-3 rounded-lg bg-blue-50">
-              <ShoppingBag className="w-5 h-5 text-blue-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Avg Order Value</p>
-              <p className="text-2xl font-bold mt-1">
-                {formatCurrency(analytics?.avg_order_value_cents || 0)}
-              </p>
-              <p className="text-xs text-gray-500 mt-1">Per order</p>
-            </div>
-            <div className="p-3 rounded-lg bg-purple-50">
-              <TrendingUp className="w-5 h-5 text-purple-600" />
-            </div>
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm text-gray-600">Repeat Customers</p>
-              <p className="text-2xl font-bold mt-1">{analytics?.repeat_customer_rate || 0}%</p>
-              <p className="text-xs text-gray-500 mt-1">Return rate</p>
-            </div>
-            <div className="p-3 rounded-lg bg-orange-50">
-              <Users className="w-5 h-5 text-orange-600" />
-            </div>
-          </div>
-        </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard
+          label="Revenue"
+          value={formatCurrency(analyticsData?.total_revenue_cents || 0)}
+          icon={DollarSign}
+        />
+        <StatCard
+          label="Orders"
+          value={analyticsData?.total_orders || 0}
+          icon={ShoppingBag}
+        />
+        <StatCard
+          label="Avg Order"
+          value={formatCurrency(analyticsData?.avg_order_value_cents || 0)}
+          icon={TrendingUp}
+        />
+        <StatCard
+          label="Repeat Rate"
+          value={`${analyticsData?.repeat_customer_rate || 0}%`}
+          icon={Users}
+        />
       </div>
 
-      {/* Revenue Trend Chart */}
-      <div className="card">
-        <h2 className="text-lg font-semibold mb-4">Revenue Trend</h2>
-        {chartData.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={chartData}>
-              <defs>
-                <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#2563eb" stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor="#2563eb" stopOpacity={0}/>
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis
-                dataKey="date"
-                tick={{ fontSize: 12 }}
-                interval={skipLabels - 1}
-              />
-              <YAxis
-                tick={{ fontSize: 12 }}
-                tickFormatter={(value) => `$${value}`}
-              />
-              <Tooltip
-                formatter={(value: number) => [`$${value.toFixed(2)}`, 'Revenue']}
-                labelFormatter={(label) => `Date: ${label}`}
-              />
-              <Area
-                type="monotone"
-                dataKey="revenue"
-                stroke="#2563eb"
-                strokeWidth={2}
-                fill="url(#colorRevenue)"
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        ) : (
-          <div className="text-center py-12 text-gray-500">
-            No order data available for this period
+      {/* Revenue Chart */}
+      {chartData.length > 0 && (
+        <div className="card">
+          <h3 className="font-medium mb-4">Revenue Trend</h3>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData}>
+                <defs>
+                  <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="var(--accent)" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="var(--accent)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <XAxis
+                  dataKey="date"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: 'var(--text-dim)', fontSize: 12 }}
+                />
+                <YAxis
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: 'var(--text-dim)', fontSize: 12 }}
+                  tickFormatter={(value) => `$${value}`}
+                />
+                <Tooltip
+                  contentStyle={{
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '8px',
+                  }}
+                  labelStyle={{ color: 'var(--text)' }}
+                  formatter={(value: number) => [`$${value.toFixed(2)}`, 'Revenue']}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="revenue"
+                  stroke="var(--accent)"
+                  strokeWidth={2}
+                  fill="url(#colorRevenue)"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Two Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Popular Items */}
+        {/* Peak Hours Heatmap */}
         <div className="card">
-          <div className="flex items-center gap-2 mb-4">
-            <Star className="w-5 h-5 text-yellow-500" />
-            <h2 className="text-lg font-semibold">Popular Items</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-medium flex items-center gap-2">
+              <Clock className="w-4 h-4" />
+              Peak Hours
+            </h3>
+            {peakHourData && peakHourData.count > 0 && (
+              <span className="text-sm text-dim">
+                Busiest: {formatHour(peakHourData.hour)} ({peakHourData.count} orders)
+              </span>
+            )}
           </div>
-          {analytics?.popular_items && analytics.popular_items.length > 0 ? (
-            <div className="space-y-3">
-              {analytics.popular_items.slice(0, 8).map((item, index) => (
-                <div key={item.item_name} className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold`}
-                    style={{ backgroundColor: COLORS[index % COLORS.length] }}>
-                    {index + 1}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate">{item.item_name}</p>
-                    <p className="text-sm text-gray-500">
-                      {item.quantity_sold} sold · {item.order_count} orders
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-semibold text-green-600">
-                      {formatCurrency(item.revenue_cents)}
-                    </p>
-                  </div>
+          {peakHoursGrid.length > 0 ? (
+            <div className="grid grid-cols-12 gap-1">
+              {peakHoursGrid.map(({ hour, count, intensity }) => (
+                <div
+                  key={hour}
+                  className="aspect-square rounded flex items-center justify-center text-xs"
+                  style={{
+                    backgroundColor: intensity > 0 ? `rgba(59, 130, 246, ${0.2 + intensity * 0.6})` : 'rgba(255,255,255,0.05)',
+                  }}
+                  title={`${formatHour(hour)}: ${count} orders`}
+                >
+                  {hour % 6 === 0 && (
+                    <span className="text-[10px] text-dim">{formatHour(hour)}</span>
+                  )}
                 </div>
               ))}
             </div>
           ) : (
-            <div className="text-center py-8 text-gray-500">
-              No items sold in this period
-            </div>
+            <p className="text-dim text-sm py-4 text-center">No data</p>
           )}
+          <p className="text-xs text-dim mt-3 text-center">24-hour view (hover for details)</p>
         </div>
 
-        {/* Order Distribution */}
+        {/* Order Types */}
         <div className="card">
-          <div className="flex items-center gap-2 mb-4">
-            <ShoppingBag className="w-5 h-5 text-blue-500" />
-            <h2 className="text-lg font-semibold">Order Types</h2>
-          </div>
-          {orderTypeData.length > 0 ? (
-            <div className="flex items-center justify-center">
-              <ResponsiveContainer width="100%" height={200}>
-                <PieChart>
-                  <Pie
-                    data={orderTypeData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={80}
-                    paddingAngle={5}
-                    dataKey="value"
-                  >
-                    {orderTypeData.map((entry) => (
-                      <Cell key={entry.name} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value: number) => [value, 'Orders']} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="space-y-2">
-                {orderTypeData.map((entry) => (
-                  <div key={entry.name} className="flex items-center gap-2">
-                    <div
-                      className="w-3 h-3 rounded-full"
-                      style={{ backgroundColor: entry.color }}
-                    />
-                    <span className="text-sm">{entry.name}: {entry.value}</span>
-                  </div>
-                ))}
+          <h3 className="font-medium mb-4">Order Types</h3>
+          <div className="space-y-4">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm">Takeout</span>
+                <span className="font-medium">{analyticsData?.takeout_orders || 0}</span>
+              </div>
+              <div className="h-2 rounded-full bg-white/5 overflow-hidden">
+                <div
+                  className="h-full bg-accent rounded-full"
+                  style={{
+                    width: `${analyticsData?.total_orders ? (analyticsData.takeout_orders / analyticsData.total_orders) * 100 : 0}%`,
+                  }}
+                />
               </div>
             </div>
-          ) : (
-            <div className="text-center py-8 text-gray-500">
-              No orders in this period
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm">Delivery</span>
+                <span className="font-medium">{analyticsData?.delivery_orders || 0}</span>
+              </div>
+              <div className="h-2 rounded-full bg-white/5 overflow-hidden">
+                <div
+                  className="h-full bg-success rounded-full"
+                  style={{
+                    width: `${analyticsData?.total_orders ? (analyticsData.delivery_orders / analyticsData.total_orders) * 100 : 0}%`,
+                  }}
+                />
+              </div>
             </div>
-          )}
+          </div>
         </div>
       </div>
 
-      {/* Peak Hours */}
+      {/* Popular Items */}
       <div className="card">
-        <div className="flex items-center gap-2 mb-4">
-          <Clock className="w-5 h-5 text-purple-500" />
-          <h2 className="text-lg font-semibold">Peak Hours</h2>
-        </div>
-        {peakHoursData.length > 0 ? (
-          <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={peakHoursData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="hourLabel" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip
-                formatter={(value: number) => [value, 'Orders']}
-                labelFormatter={(label) => `Time: ${label}`}
-              />
-              <Bar dataKey="orders" fill="#7c3aed" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        ) : (
-          <div className="text-center py-8 text-gray-500">
-            No order timing data available
+        <h3 className="font-medium mb-4">Top Selling Items</h3>
+        {popularItemsData && popularItemsData.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Item</th>
+                  <th className="text-right">Qty Sold</th>
+                  <th className="text-right">Revenue</th>
+                </tr>
+              </thead>
+              <tbody>
+                {popularItemsData.slice(0, 10).map((item: any, idx: number) => (
+                  <tr key={item.item_name}>
+                    <td className="text-dim">{idx + 1}</td>
+                    <td className="font-medium">{item.item_name}</td>
+                    <td className="text-right">{item.quantity_sold}</td>
+                    <td className="text-right text-success">{formatCurrency(item.revenue_cents)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        )}
-      </div>
-
-      {/* Daily Orders Chart */}
-      <div className="card">
-        <h2 className="text-lg font-semibold mb-4">Daily Orders</h2>
-        {chartData.length > 0 ? (
-          <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis
-                dataKey="date"
-                tick={{ fontSize: 12 }}
-                interval={skipLabels - 1}
-              />
-              <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip
-                formatter={(value: number, name: string) => [
-                  name === 'orders' ? value : `$${value.toFixed(2)}`,
-                  name === 'orders' ? 'Orders' : 'Avg Order'
-                ]}
-              />
-              <Bar dataKey="orders" fill="#2563eb" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
         ) : (
-          <div className="text-center py-8 text-gray-500">
-            No order data available
-          </div>
+          <p className="text-dim text-sm py-8 text-center">No items sold in this period</p>
         )}
       </div>
     </div>

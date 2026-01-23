@@ -3,15 +3,20 @@ Platform admin dashboard endpoints.
 
 Provides platform-level management capabilities for monitoring
 all restaurants, revenue, subscriptions, and analytics.
+
+All endpoints require admin authentication.
 """
 
 import logging
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from backend.database import get_db, SupabaseDB
+from backend.auth import get_current_admin
+from backend.services.audit_service import get_audit_service
+from backend.utils.datetime_utils import utc_now, days_ago
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -47,6 +52,8 @@ class RestaurantAccountSummary(BaseModel):
     total_orders: int = 0
     total_revenue_cents: int = 0
     commission_owed_cents: int = 0
+    platform_commission_rate: float = 10.0
+    commission_enabled: bool = True
     created_at: datetime
 
     class Config:
@@ -101,7 +108,10 @@ class RestaurantCreate(BaseModel):
 # Endpoints
 
 @router.get("/stats", response_model=PlatformStats)
-async def get_platform_stats(db: SupabaseDB = Depends(get_db)):
+async def get_platform_stats(
+    db: SupabaseDB = Depends(get_db),
+    admin: Dict = Depends(get_current_admin)
+):
     """
     Get platform-wide statistics.
 
@@ -144,7 +154,8 @@ async def list_all_restaurants(
     is_active: Optional[bool] = Query(None, description="Filter by active status"),
     skip: int = 0,
     limit: int = 100,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    admin: Dict = Depends(get_current_admin)
 ):
     """
     List all restaurant accounts on the platform.
@@ -197,6 +208,8 @@ async def list_all_restaurants(
             total_orders=total_orders,
             total_revenue_cents=total_revenue,
             commission_owed_cents=commission,
+            platform_commission_rate=commission_rate,
+            commission_enabled=account.get("commission_enabled", True),
             created_at=account["created_at"]
         )
         results.append(summary)
@@ -207,7 +220,8 @@ async def list_all_restaurants(
 @router.post("/restaurants", response_model=RestaurantAccountSummary, status_code=201)
 async def create_restaurant(
     restaurant_data: RestaurantCreate,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    admin: Dict = Depends(get_current_admin)
 ):
     """
     Create a new restaurant account.
@@ -240,6 +254,19 @@ async def create_restaurant(
 
     account = db.insert("restaurant_accounts", account_data)
 
+    # Audit log the restaurant creation
+    audit = get_audit_service(db)
+    audit.log_create(
+        admin_email=admin.get("email", "unknown"),
+        resource_type="restaurant",
+        resource_id=str(account["id"]),
+        new_value={
+            "business_name": account["business_name"],
+            "owner_email": account["owner_email"],
+            "subscription_tier": account["subscription_tier"]
+        }
+    )
+
     return RestaurantAccountSummary(
         id=account["id"],
         business_name=account["business_name"],
@@ -252,12 +279,18 @@ async def create_restaurant(
         total_orders=0,
         total_revenue_cents=0,
         commission_owed_cents=0,
+        platform_commission_rate=account.get("platform_commission_rate", 10.0),
+        commission_enabled=account.get("commission_enabled", True),
         created_at=account["created_at"]
     )
 
 
 @router.get("/restaurants/{account_id}/details")
-async def get_restaurant_details(account_id: int, db: SupabaseDB = Depends(get_db)):
+async def get_restaurant_details(
+    account_id: int,
+    db: SupabaseDB = Depends(get_db),
+    admin: Dict = Depends(get_current_admin)
+):
     """
     Get detailed information about a specific restaurant account.
 
@@ -362,7 +395,8 @@ async def get_restaurant_details(account_id: int, db: SupabaseDB = Depends(get_d
 async def get_revenue_breakdown(
     start_date: Optional[datetime] = Query(None, description="Start date for revenue period"),
     end_date: Optional[datetime] = Query(None, description="End date for revenue period"),
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    admin: Dict = Depends(get_current_admin)
 ):
     """
     Get platform revenue breakdown for a time period.
@@ -371,47 +405,62 @@ async def get_revenue_breakdown(
     """
     # Default to last 30 days
     if not start_date:
-        start_date = datetime.now() - timedelta(days=30)
+        start_date = days_ago(30)
     if not end_date:
-        end_date = datetime.now()
+        end_date = utc_now()
 
     # Get all orders in period using Supabase filtering
-    query = db.table("orders").select("*").gte("order_date", start_date.isoformat()).lte("order_date", end_date.isoformat())
+    # Only select needed fields + limit to prevent memory issues at scale
+    query = db.table("orders").select("restaurant_id,total")\
+        .gte("order_date", start_date.isoformat())\
+        .lte("order_date", end_date.isoformat())\
+        .limit(50000)
     result = query.execute()
     orders = result.data or []
 
     total_orders = len(orders)
     gross_revenue = sum(order.get("total", 0) or 0 for order in orders)
 
-    # Calculate per-restaurant breakdown
+    # Pre-fetch all restaurants and accounts to avoid N+1 queries
+    # This is O(2) queries instead of O(2N) for N orders
+    restaurants_result = db.table("restaurants").select("id,account_id").execute()
+    restaurants_map = {r["id"]: r.get("account_id") for r in (restaurants_result.data or [])}
+
+    accounts_result = db.table("restaurant_accounts").select("id,business_name,platform_commission_rate").execute()
+    accounts_map = {a["id"]: a for a in (accounts_result.data or [])}
+
+    # Calculate per-restaurant breakdown using lookup maps
     restaurant_revenue = {}
     for order in orders:
         restaurant_id = order.get("restaurant_id")
         if not restaurant_id:
             continue
 
-        restaurant = db.query_one("restaurants", {"id": restaurant_id})
-        if restaurant and restaurant.get("account_id"):
-            account = db.query_one("restaurant_accounts", {"id": restaurant["account_id"]})
-            if account:
-                account_id = account["id"]
-                if account_id not in restaurant_revenue:
-                    commission_rate = account.get("platform_commission_rate", 10.0) or 10.0
-                    restaurant_revenue[account_id] = {
-                        "account_id": account_id,
-                        "business_name": account["business_name"],
-                        "orders": 0,
-                        "revenue_cents": 0,
-                        "commission_rate": float(commission_rate),
-                        "commission_cents": 0
-                    }
+        account_id = restaurants_map.get(restaurant_id)
+        if not account_id:
+            continue
 
-                order_total = order.get("total", 0) or 0
-                restaurant_revenue[account_id]["orders"] += 1
-                restaurant_revenue[account_id]["revenue_cents"] += order_total
-                restaurant_revenue[account_id]["commission_cents"] += int(
-                    order_total * (restaurant_revenue[account_id]["commission_rate"] / 100)
-                )
+        account = accounts_map.get(account_id)
+        if not account:
+            continue
+
+        if account_id not in restaurant_revenue:
+            commission_rate = account.get("platform_commission_rate", 10.0) or 10.0
+            restaurant_revenue[account_id] = {
+                "account_id": account_id,
+                "business_name": account["business_name"],
+                "orders": 0,
+                "revenue_cents": 0,
+                "commission_rate": float(commission_rate),
+                "commission_cents": 0
+            }
+
+        order_total = order.get("total", 0) or 0
+        restaurant_revenue[account_id]["orders"] += 1
+        restaurant_revenue[account_id]["revenue_cents"] += order_total
+        restaurant_revenue[account_id]["commission_cents"] += int(
+            order_total * (restaurant_revenue[account_id]["commission_rate"] / 100)
+        )
 
     # Calculate total commission
     total_commission = sum(r["commission_cents"] for r in restaurant_revenue.values())
@@ -432,7 +481,8 @@ async def get_revenue_breakdown(
 async def update_subscription(
     account_id: int,
     subscription_data: SubscriptionUpdate,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    admin: Dict = Depends(get_current_admin)
 ):
     """
     Update a restaurant's subscription tier or status.
@@ -484,7 +534,8 @@ async def update_subscription(
 async def update_commission_settings(
     account_id: int,
     commission_data: CommissionSettings,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    admin: Dict = Depends(get_current_admin)
 ):
     """
     Update a restaurant's commission settings.
@@ -507,6 +558,10 @@ async def update_commission_settings(
             detail="Restaurant account not found"
         )
 
+    # Store old values for audit log
+    old_commission_rate = account.get("platform_commission_rate", 10.0)
+    old_commission_enabled = account.get("commission_enabled", True)
+
     # Update commission settings
     update_data = {
         "platform_commission_rate": commission_data.platform_commission_rate
@@ -515,6 +570,20 @@ async def update_commission_settings(
         update_data["commission_enabled"] = commission_data.commission_enabled
 
     account = db.update("restaurant_accounts", account_id, update_data)
+
+    # Audit log the commission change
+    audit = get_audit_service(db)
+    audit.log_action(
+        admin_email=admin.get("email", "unknown"),
+        action="commission_update",
+        resource_type="restaurant",
+        resource_id=str(account_id),
+        old_value={
+            "platform_commission_rate": old_commission_rate,
+            "commission_enabled": old_commission_enabled
+        },
+        new_value=update_data
+    )
 
     # Get stats for response
     locations = db.query_all("restaurants", {"account_id": account_id})
@@ -550,12 +619,18 @@ async def update_commission_settings(
         total_orders=total_orders,
         total_revenue_cents=total_revenue,
         commission_owed_cents=commission,
+        platform_commission_rate=account.get("platform_commission_rate", 10.0),
+        commission_enabled=account.get("commission_enabled", True),
         created_at=account["created_at"]
     )
 
 
 @router.post("/restaurants/{account_id}/suspend")
-async def suspend_restaurant(account_id: int, db: SupabaseDB = Depends(get_db)):
+async def suspend_restaurant(
+    account_id: int,
+    db: SupabaseDB = Depends(get_db),
+    admin: Dict = Depends(get_current_admin)
+):
     """
     Suspend a restaurant account.
 
@@ -573,6 +648,14 @@ async def suspend_restaurant(account_id: int, db: SupabaseDB = Depends(get_db)):
         "subscription_status": "suspended"
     })
 
+    # Audit log the suspension
+    audit = get_audit_service(db)
+    audit.log_suspend(
+        admin_email=admin.get("email", "unknown"),
+        resource_type="restaurant",
+        resource_id=str(account_id)
+    )
+
     logger.warning(f"Restaurant account suspended: {account['id']} - {account['business_name']}")
 
     return {
@@ -582,7 +665,11 @@ async def suspend_restaurant(account_id: int, db: SupabaseDB = Depends(get_db)):
 
 
 @router.post("/restaurants/{account_id}/activate")
-async def activate_restaurant(account_id: int, db: SupabaseDB = Depends(get_db)):
+async def activate_restaurant(
+    account_id: int,
+    db: SupabaseDB = Depends(get_db),
+    admin: Dict = Depends(get_current_admin)
+):
     """
     Reactivate a suspended restaurant account.
     """
@@ -599,6 +686,14 @@ async def activate_restaurant(account_id: int, db: SupabaseDB = Depends(get_db))
 
     account = db.update("restaurant_accounts", account_id, update_data)
 
+    # Audit log the activation
+    audit = get_audit_service(db)
+    audit.log_activate(
+        admin_email=admin.get("email", "unknown"),
+        resource_type="restaurant",
+        resource_id=str(account_id)
+    )
+
     logger.info(f"Restaurant account activated: {account['id']} - {account['business_name']}")
 
     return {
@@ -610,18 +705,22 @@ async def activate_restaurant(account_id: int, db: SupabaseDB = Depends(get_db))
 @router.get("/analytics/growth")
 async def get_growth_analytics(
     days: int = Query(30, description="Number of days to analyze"),
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    admin: Dict = Depends(get_current_admin)
 ):
     """
     Get platform growth analytics.
 
     Shows trends in restaurant signups, orders, and revenue.
     """
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=days)
+    end_date = utc_now()
+    start_date = days_ago(days)
 
     # Restaurant signups over time
-    accounts_query = db.table("restaurant_accounts").select("*").gte("created_at", start_date.isoformat())
+    # Only select needed fields + limit for safety
+    accounts_query = db.table("restaurant_accounts").select("created_at")\
+        .gte("created_at", start_date.isoformat())\
+        .limit(10000)
     accounts_result = accounts_query.execute()
     accounts = accounts_result.data or []
 
@@ -634,7 +733,10 @@ async def get_growth_analytics(
             signups_by_date[date_str] = signups_by_date.get(date_str, 0) + 1
 
     # Orders over time
-    orders_query = db.table("orders").select("*").gte("order_date", start_date.isoformat())
+    # Only select needed fields + limit for safety
+    orders_query = db.table("orders").select("order_date,total")\
+        .gte("order_date", start_date.isoformat())\
+        .limit(50000)
     orders_result = orders_query.execute()
     orders = orders_result.data or []
 
@@ -650,7 +752,10 @@ async def get_growth_analytics(
             orders_by_date[date_str]["revenue"] += order.get("total", 0) or 0
 
     # Bookings over time
-    bookings_query = db.table("bookings").select("*").gte("booking_date", start_date.isoformat())
+    # Only select needed fields + limit for safety
+    bookings_query = db.table("bookings").select("booking_date")\
+        .gte("booking_date", start_date.isoformat())\
+        .limit(50000)
     bookings_result = bookings_query.execute()
     bookings = bookings_result.data or []
 
@@ -703,7 +808,8 @@ class NotificationResponse(BaseModel):
 async def get_notifications(
     unread_only: bool = Query(False, description="Only return unread notifications"),
     limit: int = Query(50, description="Max notifications to return"),
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    admin: Dict = Depends(get_current_admin)
 ):
     """
     Get admin notifications.
@@ -726,7 +832,10 @@ async def get_notifications(
 
 
 @router.get("/notifications/count")
-async def get_notification_count(db: SupabaseDB = Depends(get_db)):
+async def get_notification_count(
+    db: SupabaseDB = Depends(get_db),
+    admin: Dict = Depends(get_current_admin)
+):
     """Get count of unread notifications."""
     count = db.count("admin_notifications", {"is_read": False})
 
@@ -736,7 +845,8 @@ async def get_notification_count(db: SupabaseDB = Depends(get_db)):
 @router.post("/notifications/{notification_id}/read")
 async def mark_notification_read(
     notification_id: int,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    admin: Dict = Depends(get_current_admin)
 ):
     """Mark a notification as read."""
     notification = db.query_one("admin_notifications", {"id": notification_id})
@@ -753,7 +863,10 @@ async def mark_notification_read(
 
 
 @router.post("/notifications/read-all")
-async def mark_all_notifications_read(db: SupabaseDB = Depends(get_db)):
+async def mark_all_notifications_read(
+    db: SupabaseDB = Depends(get_db),
+    admin: Dict = Depends(get_current_admin)
+):
     """Mark all notifications as read."""
     # Get all unread notifications
     unread = db.query_all("admin_notifications", {"is_read": False}, limit=10000)

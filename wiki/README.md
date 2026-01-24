@@ -107,12 +107,20 @@ restaurant-ai-managed/
 
 ---
 
-## Status
+## Project Status
 
-This wiki reflects the current state of the codebase as of January 2026. The platform uses:
+**Current Phase: User Acceptance Testing (UAT)**
+
+The platform is currently undergoing UAT across all components:
+
+- **Voice Integration** - Active testing of Retell AI voice calls, refining conversation flows, prompt tuning, and order placement accuracy
+- **Frontend** - Iterative improvements to dashboard, order management, and settings based on testing feedback
+- **End-to-End Flows** - Testing complete customer journeys from phone call to order completion
+
+Things are not perfect yet. Expect ongoing iterative changes as testing continues and issues are identified and resolved.
+
+### Tech Stack
 
 - **Retell AI** for voice (replacing older Twilio+Deepgram+ElevenLabs stack)
 - **Supabase** for database (replacing SQLite/SQLAlchemy)
 - **Google Gemini** for LLM (with OpenAI fallback)
-
-Older documentation files in the root directory may reference deprecated technologies.

@@ -151,11 +151,13 @@ async def retell_webhook(request: Request, db: SupabaseDB = Depends(get_db)):
     # Get raw body for signature verification
     body = await request.body()
 
-    # Verify signature
-    signature = request.headers.get("X-Retell-Signature", "")
-    if not retell_service.verify_webhook_signature(body, signature):
-        logger.warning("Invalid Retell webhook signature")
-        raise HTTPException(status_code=401, detail="Invalid signature")
+    # Verify signature (skip in development for easier testing)
+    import os
+    if os.getenv("ENVIRONMENT") != "development":
+        signature = request.headers.get("X-Retell-Signature", "")
+        if not retell_service.verify_webhook_signature(body, signature):
+            logger.warning("Invalid Retell webhook signature")
+            raise HTTPException(status_code=401, detail="Invalid signature")
 
     try:
         event_data = json.loads(body)
@@ -263,7 +265,8 @@ async def llm_websocket(websocket: WebSocket, call_id: str = None):
         "conversation_history": [],
         "context": {},
         "restaurant_id": restaurant_id_from_url,
-        "from_number": None
+        "from_number": None,
+        "call_details_received": False  # Track if we've received call_details
     })
 
     # Ensure restaurant_id from URL is set
@@ -272,6 +275,9 @@ async def llm_websocket(websocket: WebSocket, call_id: str = None):
 
     # Track response IDs to handle interruptions
     current_response_id = 0
+
+    # Queue for messages received before call_details
+    pending_messages = []
 
     try:
         # Send initial config
@@ -301,6 +307,9 @@ async def llm_websocket(websocket: WebSocket, call_id: str = None):
                 logger.debug(f"Received from Retell: {interaction_type}")
 
                 if interaction_type == "call_details":
+                    # Mark that we've received call details
+                    call_context["call_details_received"] = True
+
                     # Extract call details
                     call_details = data.get("call", {})
                     actual_call_id = call_details.get("call_id", effective_call_id)
@@ -377,6 +386,33 @@ async def llm_websocket(websocket: WebSocket, call_id: str = None):
                         "content": greeting
                     })
 
+                    # Process any pending messages that arrived before call_details
+                    for pending_data in pending_messages:
+                        pending_response_id = pending_data.get("response_id", 0)
+                        pending_transcript = pending_data.get("transcript", [])
+                        pending_user_message = ""
+                        if pending_transcript:
+                            for utterance in reversed(pending_transcript):
+                                if utterance.get("role") == "user":
+                                    pending_user_message = utterance.get("content", "")
+                                    break
+                        if pending_user_message:
+                            logger.info(f"Processing pending message: {pending_user_message[:50]}...")
+                            _update_history_from_transcript(call_context, pending_transcript)
+                            response = await _process_with_llm(
+                                pending_user_message,
+                                call_context,
+                                websocket,
+                                pending_response_id,
+                                pending_response_id
+                            )
+                            if response:
+                                call_context["conversation_history"].append({
+                                    "role": "assistant",
+                                    "content": response
+                                })
+                    pending_messages.clear()
+
                 elif interaction_type == "ping_pong":
                     # Respond to ping
                     try:
@@ -399,6 +435,12 @@ async def llm_websocket(websocket: WebSocket, call_id: str = None):
                     response_id = data.get("response_id", 0)
                     current_response_id = response_id
                     transcript = data.get("transcript", [])
+
+                    # If we haven't received call_details yet, queue the message
+                    if not call_context.get("call_details_received"):
+                        logger.info(f"Queueing message until call_details received (response_id: {response_id})")
+                        pending_messages.append(data)
+                        continue
 
                     # Get the latest user message
                     user_message = ""
@@ -579,6 +621,7 @@ async def _process_with_llm(
         # Send response to Retell
         # For low latency, we could stream sentence by sentence
         # But for simplicity, send complete response
+        logger.info(f"Sending to user: '{response_message[:200]}...' (type={response_type}, end_call={end_call})")
         await _send_response(
             websocket,
             response_id,

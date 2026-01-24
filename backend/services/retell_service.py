@@ -489,7 +489,7 @@ class RetellService:
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(
-                    f"{self.BASE_URL}/get-call/{call_id}",
+                    f"{self.BASE_URL}/v2/get-call/{call_id}",
                     headers=self._get_headers(),
                     timeout=30.0
                 )
@@ -506,28 +506,31 @@ class RetellService:
     async def list_calls(
         self,
         filter_criteria: Dict[str, Any] = None,
-        limit: int = 50
+        limit: int = 50,
+        sort_order: str = "descending"
     ) -> List[Dict[str, Any]]:
         """List calls with optional filtering."""
         if not self.enabled:
             return []
 
-        params = {"limit": limit}
+        payload = {"limit": limit, "sort_order": sort_order}
         if filter_criteria:
-            params["filter_criteria"] = json.dumps(filter_criteria)
+            payload["filter_criteria"] = filter_criteria
 
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"{self.BASE_URL}/list-calls",
+                # Use POST /v2/list-calls (updated API)
+                response = await client.post(
+                    f"{self.BASE_URL}/v2/list-calls",
                     headers=self._get_headers(),
-                    params=params,
+                    json=payload,
                     timeout=30.0
                 )
 
                 if response.status_code == 200:
                     return response.json()
                 else:
+                    logger.error(f"Failed to list calls: {response.status_code} - {response.text}")
                     return []
 
         except Exception as e:

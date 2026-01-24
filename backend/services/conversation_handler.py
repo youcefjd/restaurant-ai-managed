@@ -208,11 +208,11 @@ class ConversationHandler:
                 max_tokens=1024  # Enough for JSON response
             )
 
-            logger.info(f"AI response (first 500 chars): {ai_response[:500]}")
+            logger.info(f"AI response (first 1500 chars): {ai_response[:1500]}")
 
             # Parse AI response
             result = self._parse_ai_response(ai_response)
-            logger.info(f"Parsed intent: {result.get('intent')}, context from AI: {result.get('context', {})}")
+            logger.info(f"Parsed intent: {result.get('intent')}, message: {result.get('message', '')[:200]}")
 
             # Fallback: Try to detect name corrections from user message if AI didn't capture it
             # This handles cases where customer says "No, my name is John" or "Actually it's Sarah"
@@ -1058,6 +1058,29 @@ Be conversational, helpful, and accurate about menu items and pricing."""
         logger.warning(f"Could not find price for menu item: '{item_name}'")
         return 0
 
+    def _build_special_instructions(
+        self,
+        pickup_note: str,
+        result_requests: Optional[str],
+        context_requests: Optional[str]
+    ) -> str:
+        """Build special instructions string from pickup note and special requests."""
+        instructions = f"Pickup: {pickup_note}"
+
+        # Combine special requests from result and context
+        all_requests = []
+        if context_requests and context_requests.strip():
+            all_requests.append(context_requests.strip())
+        if result_requests and result_requests.strip():
+            # Avoid duplicates
+            if result_requests.strip() not in all_requests:
+                all_requests.append(result_requests.strip())
+
+        if all_requests:
+            instructions += f"\n{'; '.join(all_requests)}"
+
+        return instructions
+
     async def _handle_cart_update(
         self,
         result: Dict,
@@ -1430,7 +1453,7 @@ Be conversational, helpful, and accurate about menu items and pricing."""
             "status": "pending",
             "payment_method": payment_method,
             "payment_status": "paid" if payment_method == "card" else "unpaid",
-            "special_instructions": f"Pickup: {pickup_note}" + (f"\n{result.get('special_requests')}" if result.get('special_requests') else ""),
+            "special_instructions": self._build_special_instructions(pickup_note, result.get('special_requests'), context.get('special_requests')),
             "conversation_id": context.get("call_id")  # Link to transcript
         }
         order = db.insert(ORDERS_TABLE, order_data)

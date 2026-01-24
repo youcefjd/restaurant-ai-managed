@@ -66,16 +66,16 @@ export const restaurantAPI = {
   // Orders - with dedicated endpoints for performance
   getOrders: (accountId: number, params?: { status_filter?: string }) =>
     api.get('/orders', { params: { account_id: accountId, ...params } }),
-  getTodayOrders: () => api.get('/orders/today'),
-  getActiveOrders: () => api.get('/orders/active'),
-  getUpcomingOrders: (limit: number = 10) => api.get('/orders/upcoming', { params: { limit } }),
+  getTodayOrders: () => api.get('/restaurant/orders/today'),
+  getActiveOrders: () => api.get('/restaurant/orders/active'),
+  getUpcomingOrders: (limit: number = 10) => api.get('/restaurant/orders/upcoming', { params: { limit } }),
   getOrderStats: (params?: { date_from?: string; date_to?: string }) =>
-    api.get('/orders/stats', { params }),
-  getOrderDetails: (id: number) => api.get(`/orders/${id}`),
+    api.get('/restaurant/orders/stats', { params }),
+  getOrderDetails: (id: number) => api.get(`/restaurant/orders/${id}`),
   updateOrderStatus: (id: number, status: string) =>
-    api.patch(`/orders/${id}/status`, { status }),
+    api.patch(`/restaurant/orders/${id}/status`, { status }),
   updatePaymentStatus: (id: number, payment_status: string, payment_method?: string) =>
-    api.patch(`/orders/${id}/payment`, { payment_status, payment_method }),
+    api.patch(`/restaurant/orders/${id}/payment`, { payment_status, payment_method }),
   getMenu: (accountId: number) => api.get(`/onboarding/accounts/${accountId}/menu-full`),
   importMenu: (accountId: number, formData: FormData) => 
     api.post(`/onboarding/accounts/${accountId}/menus/import`, formData),
@@ -119,11 +119,11 @@ export const restaurantAPI = {
 
   // Analytics
   getAnalyticsSummary: (days: number = 30) =>
-    api.get('/orders/analytics/summary', { params: { days } }),
+    api.get('/restaurant/orders/analytics/summary', { params: { days } }),
   getPopularItems: (days: number = 30, limit: number = 10) =>
-    api.get('/orders/analytics/popular-items', { params: { days, limit } }),
+    api.get('/restaurant/orders/analytics/popular-items', { params: { days, limit } }),
   getOrderTrends: (days: number = 30) =>
-    api.get('/orders/analytics/trends', { params: { days } }),
+    api.get('/restaurant/orders/analytics/trends', { params: { days } }),
 
   // Bookings / Table Reservations
   getBookings: (accountId: number, params?: { status_filter?: string; date_from?: string }) =>

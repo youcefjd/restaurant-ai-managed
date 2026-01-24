@@ -1,5 +1,6 @@
+import { useState, useEffect } from 'react'
 import { Outlet, NavLink, useLocation } from 'react-router-dom'
-import { LayoutDashboard, ShoppingBag, UtensilsCrossed, MessageSquare, BarChart3, Settings, LogOut } from 'lucide-react'
+import { LayoutDashboard, ShoppingBag, UtensilsCrossed, MessageSquare, BarChart3, Settings, LogOut, Clock } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 
 const navItems = [
@@ -14,6 +15,35 @@ const navItems = [
 export default function RestaurantLayout() {
   const { user, logout } = useAuth()
   const location = useLocation()
+  const [currentTime, setCurrentTime] = useState(new Date())
+  const timezone = user?.timezone || 'America/New_York'
+
+  // Update time every second
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  // Format time in restaurant's timezone
+  const formatTimeInTimezone = (date: Date) => {
+    return date.toLocaleString('en-US', {
+      timeZone: timezone,
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    })
+  }
+
+  // Get short timezone label (e.g., "PST", "EST")
+  const getTimezoneLabel = () => {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      timeZoneName: 'short'
+    }).formatToParts(currentTime).find(p => p.type === 'timeZoneName')?.value || ''
+  }
 
   return (
     <div className="min-h-screen flex">
@@ -51,7 +81,12 @@ export default function RestaurantLayout() {
           <h2 className="font-medium">
             {navItems.find(item => item.to === location.pathname)?.label || 'Dashboard'}
           </h2>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 text-sm text-dim">
+              <Clock className="w-4 h-4" />
+              <span>{formatTimeInTimezone(currentTime)}</span>
+              <span className="text-xs opacity-60">{getTimezoneLabel()}</span>
+            </div>
             <span className="badge badge-success text-xs">● Live</span>
           </div>
         </header>

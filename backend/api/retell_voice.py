@@ -37,6 +37,83 @@ logger = logging.getLogger(__name__)
 # Store active call contexts
 active_calls: Dict[str, Dict[str, Any]] = {}
 
+# Track calls that have already had transcripts saved (to avoid duplicates)
+saved_transcripts: set = set()
+
+
+async def fetch_and_save_retell_transcript(
+    call_id: str,
+    restaurant_id: int,
+    customer_phone: str,
+    restaurant_phone: str,
+    db: SupabaseDB
+) -> bool:
+    """
+    Fetch transcript from Retell API and save it.
+    Returns True if successful, False otherwise.
+    """
+    global saved_transcripts
+
+    # Avoid duplicate saves
+    if call_id in saved_transcripts:
+        logger.info(f"Transcript already saved for call {call_id}, skipping")
+        return True
+
+    try:
+        # Fetch call details from Retell API
+        call_data = await retell_service.get_call(call_id)
+
+        if not call_data:
+            logger.warning(f"Could not fetch call data from Retell for {call_id}")
+            return False
+
+        transcript = call_data.get("transcript")
+        if not transcript:
+            logger.warning(f"No transcript in Retell response for {call_id}")
+            return False
+
+        # Parse Retell transcript into message format
+        # Retell transcript format: "Agent: Hello...\nUser: Hi...\n"
+        messages = []
+        for line in transcript.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+
+            if line.startswith("Agent:"):
+                messages.append({
+                    "role": "assistant",
+                    "content": line[6:].strip()
+                })
+            elif line.startswith("User:"):
+                messages.append({
+                    "role": "user",
+                    "content": line[5:].strip()
+                })
+
+        if not messages:
+            logger.warning(f"No messages parsed from transcript for {call_id}")
+            return False
+
+        # Save to database
+        transcript_service.save_transcript(
+            db=db,
+            account_id=restaurant_id,
+            transcript_type="voice",
+            customer_phone=customer_phone,
+            conversation_id=call_id,
+            messages=messages,
+            twilio_phone=restaurant_phone
+        )
+
+        saved_transcripts.add(call_id)
+        logger.info(f"Saved Retell transcript for call {call_id} ({len(messages)} messages)")
+        return True
+
+    except Exception as e:
+        logger.error(f"Failed to fetch/save Retell transcript for {call_id}: {e}")
+        return False
+
 
 # ==================== Pydantic Models ====================
 
@@ -103,36 +180,49 @@ async def retell_webhook(request: Request, db: SupabaseDB = Depends(get_db)):
             logger.info(f"Call started: {call_id} from {call_data.get('from_number')}")
 
         elif event_type == "call_ended":
-            # Save transcript and clean up
+            # Don't delete call context yet - wait for call_analyzed to fetch transcript
+            # But store the call data for later use
             if call_id in active_calls:
-                call_context = active_calls[call_id]
-
-                # Get restaurant ID from metadata or agent binding
-                restaurant_id = call_context.get("metadata", {}).get("restaurant_id")
-
-                if restaurant_id and call_context.get("conversation_history"):
-                    try:
-                        transcript_service.save_transcript(
-                            db=db,
-                            account_id=restaurant_id,
-                            transcript_type="voice_retell",
-                            customer_phone=call_context.get("from_number", ""),
-                            conversation_id=call_id,
-                            messages=call_context["conversation_history"],
-                            twilio_phone=call_context.get("to_number")
-                        )
-                        logger.info(f"Saved transcript for call {call_id}")
-                    except Exception as e:
-                        logger.error(f"Failed to save transcript: {e}")
-
-                del active_calls[call_id]
+                active_calls[call_id]["ended"] = True
+                active_calls[call_id]["duration_ms"] = call_data.get("duration_ms")
 
             logger.info(f"Call ended: {call_id}, duration: {call_data.get('duration_ms')}ms")
 
         elif event_type == "call_analyzed":
-            # Post-call analysis with sentiment, summary, etc.
+            # Post-call analysis - this is the best time to fetch the transcript
+            # because Retell has finished processing the call
             analysis = call_data.get("call_analysis", {})
             logger.info(f"Call analyzed: {call_id}, sentiment: {analysis.get('user_sentiment')}")
+
+            # Get call context for restaurant info
+            call_context = active_calls.get(call_id, {})
+            restaurant_id = call_context.get("restaurant_id") or call_context.get("metadata", {}).get("restaurant_id")
+
+            # If no restaurant_id in context, try to look it up by phone number
+            if not restaurant_id and call_data.get("to_number"):
+                try:
+                    restaurant = db.query_one(
+                        "restaurant_accounts",
+                        {"retell_phone_number": call_data.get("to_number")}
+                    )
+                    if restaurant:
+                        restaurant_id = restaurant["id"]
+                except Exception as e:
+                    logger.error(f"Failed to look up restaurant: {e}")
+
+            if restaurant_id:
+                # Fetch clean transcript from Retell API
+                await fetch_and_save_retell_transcript(
+                    call_id=call_id,
+                    restaurant_id=restaurant_id,
+                    customer_phone=call_data.get("from_number", ""),
+                    restaurant_phone=call_data.get("to_number", ""),
+                    db=db
+                )
+
+            # Clean up call context
+            if call_id in active_calls:
+                del active_calls[call_id]
 
         return JSONResponse({"status": "ok"})
 
@@ -193,15 +283,19 @@ async def llm_websocket(websocket: WebSocket, call_id: str = None):
             }
         }
         try:
+            logger.info(f"Sending config message: {config_message}")
             await websocket.send_json(config_message)
-        except:
-            logger.info("Connection closed before config could be sent")
+            logger.info("Config message sent successfully")
+        except Exception as e:
+            logger.info(f"Connection closed before config could be sent: {e}")
             return
 
         while True:
             try:
                 # Receive message from Retell
+                logger.info("Waiting for message from Retell...")
                 data = await websocket.receive_json()
+                logger.info(f"Received message: {data.get('interaction_type', 'unknown')}")
                 interaction_type = data.get("interaction_type")
 
                 logger.debug(f"Received from Retell: {interaction_type}")
@@ -372,8 +466,33 @@ async def llm_websocket(websocket: WebSocket, call_id: str = None):
         logger.error(f"WebSocket error: {e}", exc_info=True)
 
     finally:
-        # Clean up active call
+        # Schedule delayed transcript fetch as fallback (if call_analyzed webhook doesn't fire)
+        # Wait a few seconds for Retell to finish processing the transcript
         if effective_call_id in active_calls:
+            call_ctx = active_calls[effective_call_id]
+            restaurant_id = call_ctx.get("restaurant_id")
+
+            if restaurant_id:
+                async def delayed_transcript_fetch():
+                    """Fetch transcript after a delay to ensure Retell has processed it."""
+                    await asyncio.sleep(5)  # Wait 5 seconds for Retell to process
+                    try:
+                        db = SupabaseDB()
+                        await fetch_and_save_retell_transcript(
+                            call_id=effective_call_id,
+                            restaurant_id=restaurant_id,
+                            customer_phone=call_ctx.get("from_number", ""),
+                            restaurant_phone=call_ctx.get("to_number", ""),
+                            db=db
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to fetch transcript on WebSocket close: {e}")
+
+                # Schedule the delayed fetch (don't await - let it run in background)
+                asyncio.create_task(delayed_transcript_fetch())
+                logger.info(f"Scheduled delayed transcript fetch for call {effective_call_id}")
+
+            # Clean up active call
             del active_calls[effective_call_id]
         logger.info(f"LLM WebSocket closed for call: {effective_call_id}")
 
@@ -438,7 +557,8 @@ async def _process_with_llm(
             restaurant_id=restaurant_id,
             context=context,
             conversation_history=conversation_history,
-            db=db
+            db=db,
+            call_id=call_context.get("call_id")  # Link orders to this call/transcript
         )
 
         # Update context

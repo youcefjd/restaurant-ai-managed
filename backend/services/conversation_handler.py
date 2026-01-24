@@ -13,6 +13,12 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime, date, time, timedelta
 from pathlib import Path
 
+# Try to import zoneinfo (Python 3.9+) or pytz for timezone support
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    from pytz import timezone as ZoneInfo  # Fallback for older Python
+
 # Try to import dateutil for flexible time parsing
 try:
     from dateutil import parser as date_parser
@@ -81,7 +87,8 @@ class ConversationHandler:
         restaurant_id: int,
         context: Dict[str, Any],
         db: SupabaseDB,
-        conversation_history: Optional[List[Dict[str, str]]] = None
+        conversation_history: Optional[List[Dict[str, str]]] = None,
+        call_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Process customer message and determine response.
@@ -93,6 +100,7 @@ class ConversationHandler:
             context: Conversation context (previous exchanges, gathered data)
             db: Database instance
             conversation_history: List of previous messages [{"role": "user/assistant", "content": "..."}]
+            call_id: Unique identifier for the call/conversation (for linking to transcripts)
 
         Returns:
             Response dict with type, message, and next steps
@@ -104,6 +112,10 @@ class ConversationHandler:
             }
 
         try:
+            # Store call_id in context for linking orders to transcripts
+            if call_id:
+                context["call_id"] = call_id
+
             # Get or create customer
             customer = db.query_one(CUSTOMERS_TABLE, {"phone": phone})
 
@@ -150,6 +162,7 @@ class ConversationHandler:
                                 "description": item.get("description"),
                                 "price_cents": item.get("price_cents"),
                                 "dietary_tags": item.get("dietary_tags") or [],
+                                "aliases": item.get("aliases") or [],
                                 "modifiers": []
                             }
 
@@ -170,6 +183,10 @@ class ConversationHandler:
 
             except Exception as e:
                 logger.warning(f"Failed to fetch menu for restaurant {restaurant_id}: {e}")
+
+            # Add menu_data to context for price lookups in cart handling
+            if menu_data:
+                context["menu_data"] = menu_data
 
             # Build system prompt (using template if available, otherwise legacy method)
             if self.system_prompt_template:
@@ -197,14 +214,43 @@ class ConversationHandler:
             result = self._parse_ai_response(ai_response)
             logger.info(f"Parsed intent: {result.get('intent')}, context from AI: {result.get('context', {})}")
 
+            # Fallback: Try to detect name corrections from user message if AI didn't capture it
+            # This handles cases where customer says "No, my name is John" or "Actually it's Sarah"
+            if context.get("customer_name") and not result.get("customer_name"):
+                name_correction = self._detect_name_correction(message)
+                if name_correction:
+                    result["customer_name"] = name_correction
+                    logger.info(f"Detected name correction from message: '{name_correction}'")
+
+            # Fallback: Try to detect time corrections from user message if AI didn't capture it
+            # This handles cases where customer says "Actually, make that 7pm" or "Change it to 6:30"
+            if context.get("pickup_time") and not result.get("time"):
+                time_correction = self._detect_time_correction(message)
+                if time_correction:
+                    result["time"] = time_correction
+                    logger.info(f"Detected time correction from message: '{time_correction}'")
+
             # IMPORTANT: Preserve customer info from AI response in context for ALL intents
             # This prevents losing name/time when AI returns need_more_info or other intents
             if result.get("customer_name"):
-                context["customer_name"] = result["customer_name"]
-                logger.info(f"Preserved customer_name in context: {result['customer_name']}")
+                new_name = result["customer_name"].strip()
+                old_name = context.get("customer_name", "")
+                # Always update to the latest name from AI (handles corrections)
+                if new_name:
+                    context["customer_name"] = new_name
+                    if old_name and old_name != new_name:
+                        logger.info(f"Name CORRECTED from '{old_name}' to '{new_name}'")
+                    else:
+                        logger.info(f"Preserved customer_name in context: {new_name}")
             if result.get("time"):
-                context["pickup_time"] = result["time"]
-                logger.info(f"Preserved pickup_time in context: {result['time']}")
+                new_time = result["time"].strip()
+                old_time = context.get("pickup_time", "")
+                if new_time:
+                    context["pickup_time"] = new_time
+                    if old_time and old_time != new_time:
+                        logger.info(f"Pickup time CHANGED from '{old_time}' to '{new_time}'")
+                    else:
+                        logger.info(f"Preserved pickup_time in context: {new_time}")
             if result.get("special_requests"):
                 existing_requests = context.get("special_requests", "")
                 if existing_requests:
@@ -469,9 +515,17 @@ Be conversational, helpful, and accurate about menu items and pricing."""
         try:
             prompt = self.system_prompt_template
 
-            # Replace placeholders
-            prompt = prompt.replace("{{now}}", datetime.now().isoformat())
-            prompt = prompt.replace("{{current_date}}", datetime.now().strftime('%Y-%m-%d'))
+            # Replace placeholders - use restaurant's timezone
+            restaurant_tz = account.get("timezone", "America/New_York") if account else "America/New_York"
+            try:
+                tz = ZoneInfo(restaurant_tz)
+                now = datetime.now(tz)
+            except Exception:
+                now = datetime.now()
+
+            prompt = prompt.replace("{{now}}", now.isoformat())
+            prompt = prompt.replace("{{current_date}}", now.strftime('%Y-%m-%d'))
+            prompt = prompt.replace("{{current_datetime}}", now.strftime('%A, %B %d, %Y at %I:%M %p'))
 
             if account:
                 prompt = prompt.replace("{{restaurant_name}}", account.get("business_name") or "our restaurant")
@@ -508,6 +562,8 @@ Be conversational, helpful, and accurate about menu items and pricing."""
                             menu_str += f"    - {item['name']} (${item['price_cents']/100:.2f})"
                             if item.get('dietary_tags'):
                                 menu_str += f" [{', '.join(item['dietary_tags'])}]"
+                            if item.get('aliases'):
+                                menu_str += f" (also heard as: {', '.join(item['aliases'])})"
                             menu_str += f"\n      {item['description']}\n"
                             if item.get('modifiers'):
                                 menu_str += "      Customizations:\n"
@@ -539,6 +595,73 @@ Be conversational, helpful, and accurate about menu items and pricing."""
     def _build_user_message(self, message: str, context: Dict) -> str:
         """Build user message with context."""
         return f"Customer says: {message}\n\nExtracted information so far: {json.dumps(context)}"
+
+    def _detect_name_correction(self, message: str) -> Optional[str]:
+        """
+        Detect if the user is correcting their name in the message.
+        Returns the corrected name if detected, None otherwise.
+        """
+        message_lower = message.lower().strip()
+
+        # Common correction patterns
+        correction_patterns = [
+            # "No, my name is John" / "No it's John"
+            r"(?:no|nope|actually|sorry)[,\s]+(?:my name is|it'?s|i'?m|this is|the name is|call me)\s+([a-zA-Z]+)",
+            # "It's John, not Jon"
+            r"(?:it'?s|i'?m|my name is)\s+([a-zA-Z]+)[,\s]+not\s+",
+            # "John, not Jon"
+            r"^([a-zA-Z]+)[,\s]+not\s+[a-zA-Z]+$",
+            # "Actually John" / "No, John"
+            r"(?:no|nope|actually)[,\s]+([a-zA-Z]+)$",
+            # "My name is John" (when there's already a name in context, this is likely a correction)
+            r"(?:my name is|i'?m|this is|the name is|call me)\s+([a-zA-Z]+)",
+        ]
+
+        for pattern in correction_patterns:
+            match = re.search(pattern, message_lower, re.IGNORECASE)
+            if match:
+                name = match.group(1).strip().title()
+                if len(name) >= 2:  # Valid name should be at least 2 chars
+                    return name
+
+        return None
+
+    def _detect_time_correction(self, message: str) -> Optional[str]:
+        """
+        Detect if the user is correcting their pickup time in the message.
+        Returns the corrected time if detected, None otherwise.
+        """
+        message_lower = message.lower().strip()
+
+        # Common time correction patterns
+        correction_patterns = [
+            # "Actually, make it 7pm" / "Change it to 6:30"
+            r"(?:actually|no|change\s+(?:it\s+)?to|make\s+(?:it|that))[,\s]+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)",
+            # "No, 7pm" / "Actually 6:30"
+            r"(?:no|nope|actually)[,\s]+(\d{1,2}(?::\d{2})?\s*(?:am|pm))",
+            # "Let's do 7 instead" / "Make it 7pm instead"
+            r"(?:let'?s\s+(?:do|make\s+it)|make\s+it)\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s*(?:instead)?",
+            # "7pm, not 6pm" / "7 not 6"
+            r"(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)[,\s]+(?:not|instead\s+of)",
+            # "Change to 30 minutes" / "Make it in an hour"
+            r"(?:change\s+(?:it\s+)?to|make\s+(?:it|that))\s+((?:\d+\s*(?:minutes?|mins?|hours?|hrs?))|(?:in\s+(?:an?\s+)?(?:hour|half\s+hour)))",
+            # "Actually in 30 minutes"
+            r"(?:actually|no)[,\s]+(in\s+\d+\s*(?:minutes?|mins?|hours?|hrs?))",
+            # "Actually ASAP" / "Make it ASAP"
+            r"(?:actually|change\s+(?:it\s+)?to|make\s+(?:it|that))[,\s]*(asap|as\s+soon\s+as\s+possible|now|right\s+now)",
+        ]
+
+        for pattern in correction_patterns:
+            match = re.search(pattern, message_lower, re.IGNORECASE)
+            if match:
+                time_str = match.group(1).strip()
+                if time_str:
+                    # Normalize common variations
+                    if time_str in ["asap", "as soon as possible", "now", "right now"]:
+                        return "ASAP"
+                    return time_str
+
+        return None
 
     def _parse_ai_response(self, response_text: str) -> Dict[str, Any]:
         """Parse Claude's JSON response."""
@@ -891,6 +1014,50 @@ Be conversational, helpful, and accurate about menu items and pricing."""
 
         return available_times[:5]  # Return first 5 available slots
 
+    def _lookup_menu_item(self, item_name: str, menu_data: Dict) -> Optional[Dict]:
+        """
+        Look up a menu item by name, including alias matching for voice recognition.
+        Returns the full item dict, or None if not found.
+        """
+        if not menu_data or not menu_data.get("menus"):
+            return None
+
+        item_name_lower = item_name.lower().strip()
+
+        for menu in menu_data.get("menus", []):
+            for category in menu.get("categories", []):
+                for item in category.get("items", []):
+                    menu_item_name = item.get("name", "").lower().strip()
+
+                    # Check exact match or contains match on item name
+                    if menu_item_name == item_name_lower or item_name_lower in menu_item_name or menu_item_name in item_name_lower:
+                        return item
+
+                    # Check aliases for phonetic matches (voice recognition mishearings)
+                    aliases = item.get("aliases", [])
+                    for alias in aliases:
+                        alias_lower = alias.lower().strip()
+                        if alias_lower == item_name_lower or item_name_lower in alias_lower or alias_lower in item_name_lower:
+                            logger.info(f"Matched '{item_name}' to '{item['name']}' via alias '{alias}'")
+                            return item
+
+        return None
+
+    def _lookup_menu_item_price(self, item_name: str, menu_data: Dict) -> int:
+        """
+        Look up the price of a menu item by name (case-insensitive fuzzy match).
+        Returns price in cents, or 0 if not found.
+        """
+        item = self._lookup_menu_item(item_name, menu_data)
+        if item:
+            price = item.get("price_cents", 0)
+            if price:
+                logger.debug(f"Found price for '{item_name}': {price} cents")
+                return price
+
+        logger.warning(f"Could not find price for menu item: '{item_name}'")
+        return 0
+
     async def _handle_cart_update(
         self,
         result: Dict,
@@ -900,34 +1067,79 @@ Be conversational, helpful, and accurate about menu items and pricing."""
         account: Dict
     ) -> Dict[str, Any]:
         """
-        Handle adding items to cart WITHOUT creating an order yet.
-        Only accumulates items and asks if customer wants anything else.
+        Handle cart operations: add, remove, update quantity.
+        Supports full CRUD operations on order items during the call.
         """
         # Get current cart from context or initialize empty
         cart_items = context.get("cart_items", [])
+
+        # Get menu data for price lookups
+        menu_data = context.get("menu_data", {})
 
         # Get new items from AI response
         new_items = result.get("order_items", [])
 
         if new_items:
-            # Merge new items with existing cart (combine quantities for same items)
             for new_item in new_items:
                 item_name = new_item.get("item_name", "")
-                found = False
-                for cart_item in cart_items:
-                    if cart_item.get("item_name") == item_name:
-                        # Same item - add quantities
-                        cart_item["quantity"] = cart_item.get("quantity", 1) + new_item.get("quantity", 1)
-                        # Merge modifiers if any
-                        existing_mods = cart_item.get("modifiers", [])
-                        new_mods = new_item.get("modifiers", [])
-                        if new_mods:
-                            cart_item["modifiers"] = list(set(existing_mods + new_mods))
-                        found = True
+                action = new_item.get("action", "add").lower()  # Default to "add" for backwards compatibility
+                quantity = new_item.get("quantity", 1)
+
+                # Find existing item in cart (case-insensitive match)
+                existing_idx = None
+                for idx, cart_item in enumerate(cart_items):
+                    if cart_item.get("item_name", "").lower() == item_name.lower():
+                        existing_idx = idx
                         break
 
-                if not found:
-                    cart_items.append(new_item)
+                if action == "remove":
+                    # Remove item from cart entirely
+                    if existing_idx is not None:
+                        removed_item = cart_items.pop(existing_idx)
+                        logger.info(f"Removed from cart: {removed_item.get('item_name')}")
+                    else:
+                        logger.warning(f"Tried to remove '{item_name}' but not in cart")
+
+                elif action == "set":
+                    # Set quantity to exact number (not add)
+                    if quantity <= 0:
+                        # Quantity 0 or negative = remove
+                        if existing_idx is not None:
+                            removed_item = cart_items.pop(existing_idx)
+                            logger.info(f"Removed from cart (qty 0): {removed_item.get('item_name')}")
+                    elif existing_idx is not None:
+                        # Update existing item quantity
+                        cart_items[existing_idx]["quantity"] = quantity
+                        logger.info(f"Updated quantity: {item_name} → {quantity}")
+                    else:
+                        # Item not in cart, add it with specified quantity
+                        new_item_copy = {k: v for k, v in new_item.items() if k != "action"}
+                        new_item_copy["quantity"] = quantity
+                        # Look up price from menu if missing or zero
+                        if not new_item_copy.get("price_cents"):
+                            new_item_copy["price_cents"] = self._lookup_menu_item_price(item_name, menu_data)
+                        cart_items.append(new_item_copy)
+                        logger.info(f"Added to cart (set): {quantity}x {item_name} @ {new_item_copy.get('price_cents')} cents")
+
+                else:  # action == "add" or unspecified
+                    # Add to existing quantity or add new item
+                    if existing_idx is not None:
+                        # Same item - add to existing quantity
+                        cart_items[existing_idx]["quantity"] = cart_items[existing_idx].get("quantity", 1) + quantity
+                        # Merge modifiers if any
+                        existing_mods = cart_items[existing_idx].get("modifiers", [])
+                        new_mods = new_item.get("modifiers", [])
+                        if new_mods:
+                            cart_items[existing_idx]["modifiers"] = list(set(existing_mods + new_mods))
+                        logger.info(f"Added to cart: +{quantity} {item_name} (total: {cart_items[existing_idx]['quantity']})")
+                    else:
+                        # New item - add to cart (without the action field)
+                        new_item_copy = {k: v for k, v in new_item.items() if k != "action"}
+                        # Look up price from menu if missing or zero
+                        if not new_item_copy.get("price_cents"):
+                            new_item_copy["price_cents"] = self._lookup_menu_item_price(item_name, menu_data)
+                        cart_items.append(new_item_copy)
+                        logger.info(f"Added to cart: {quantity}x {item_name} @ {new_item_copy.get('price_cents')} cents")
 
             logger.info(f"Cart updated: {len(cart_items)} items - {[i.get('item_name') for i in cart_items]}")
 
@@ -1218,7 +1430,8 @@ Be conversational, helpful, and accurate about menu items and pricing."""
             "status": "pending",
             "payment_method": payment_method,
             "payment_status": "paid" if payment_method == "card" else "unpaid",
-            "special_instructions": f"Pickup: {pickup_note}" + (f"\n{result.get('special_requests')}" if result.get('special_requests') else "")
+            "special_instructions": f"Pickup: {pickup_note}" + (f"\n{result.get('special_requests')}" if result.get('special_requests') else ""),
+            "conversation_id": context.get("call_id")  # Link to transcript
         }
         order = db.insert(ORDERS_TABLE, order_data)
 

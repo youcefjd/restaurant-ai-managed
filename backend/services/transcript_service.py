@@ -66,6 +66,10 @@ class TranscriptService:
             logger.info(f"Updated transcript {updated['id']} for conversation {conversation_id}")
             return updated
         else:
+            # Look up order by conversation_id to link them
+            order = db.query_one("orders", {"conversation_id": conversation_id})
+            order_id = order["id"] if order else None
+
             # Create new transcript
             insert_data = {
                 "account_id": account_id,
@@ -75,11 +79,12 @@ class TranscriptService:
                 "conversation_id": conversation_id,
                 "messages": messages,
                 "summary": summary,
-                "outcome": outcome,
-                "duration_seconds": duration_seconds
+                "outcome": outcome or ("order_placed" if order else None),
+                "duration_seconds": duration_seconds,
+                "order_id": order_id
             }
             transcript = db.insert("transcripts", insert_data)
-            logger.info(f"Created transcript {transcript['id']} for conversation {conversation_id}")
+            logger.info(f"Created transcript {transcript['id']} for conversation {conversation_id}, order_id: {order_id}")
             return transcript
 
     @staticmethod

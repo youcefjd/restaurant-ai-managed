@@ -14,11 +14,18 @@ const weekdays = [
   { value: 6, label: 'Sunday' },
 ]
 
+// Convert day names to indices (handles both string names and indices)
+const dayToIndex = (day: string | number): number => {
+  if (typeof day === 'number') return day
+  const index = weekdays.findIndex(w => w.label.toLowerCase() === day.toLowerCase())
+  return index >= 0 ? index : 0
+}
+
 interface OperatingHoursSettingsProps {
   accountId: number
   currentOpeningTime: string | null
   currentClosingTime: string | null
-  currentOperatingDays: number[] | null
+  currentOperatingDays: (string | number)[] | null
 }
 
 export default function OperatingHoursSettings({
@@ -30,14 +37,19 @@ export default function OperatingHoursSettings({
   const queryClient = useQueryClient()
   const [openingTime, setOpeningTime] = useState(currentOpeningTime || '')
   const [closingTime, setClosingTime] = useState(currentClosingTime || '')
-  const [operatingDays, setOperatingDays] = useState<number[]>(currentOperatingDays || [])
+  const [operatingDays, setOperatingDays] = useState<number[]>(
+    currentOperatingDays ? currentOperatingDays.map(dayToIndex) : []
+  )
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
   useEffect(() => {
     if (currentOpeningTime) setOpeningTime(currentOpeningTime)
     if (currentClosingTime) setClosingTime(currentClosingTime)
-    if (currentOperatingDays) setOperatingDays(currentOperatingDays)
+    if (currentOperatingDays) {
+      // Convert string day names to indices
+      setOperatingDays(currentOperatingDays.map(dayToIndex))
+    }
   }, [currentOpeningTime, currentClosingTime, currentOperatingDays])
 
   const updateHoursMutation = useMutation({
@@ -215,7 +227,7 @@ export default function OperatingHoursSettings({
           )}
           {currentOperatingDays && currentOperatingDays.length > 0 && (
             <p className="text-sm text-dim">
-              Open: {currentOperatingDays.map((d: number) => weekdays[d].label).join(', ')}
+              Open: {currentOperatingDays.map((d) => weekdays[dayToIndex(d)]?.label || d).join(', ')}
             </p>
           )}
         </div>

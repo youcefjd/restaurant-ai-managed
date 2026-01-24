@@ -19,6 +19,7 @@ interface Transcript {
   summary: string | null
   outcome: string | null
   duration_seconds: number | null
+  order_id: number | null
   created_at: string
   updated_at: string | null
   message_count: number
@@ -153,7 +154,9 @@ export default function Transcripts() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between mb-1">
                           <p className="text-sm font-medium truncate">{transcript.customer_phone}</p>
-                          {getOutcomeBadge(transcript.outcome)}
+                          {transcript.order_id ? (
+                            <span className="badge bg-accent/20 text-accent">Order #{transcript.order_id}</span>
+                          ) : getOutcomeBadge(transcript.outcome)}
                         </div>
                         <p className="text-xs text-dim">{transcript.message_count} messages</p>
                         <p className="text-xs text-dim">{formatDate(transcript.created_at)}</p>
@@ -191,6 +194,9 @@ export default function Transcripts() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    {selectedTranscript.order_id && (
+                      <span className="badge bg-accent/20 text-accent">Order #{selectedTranscript.order_id}</span>
+                    )}
                     {getOutcomeBadge(selectedTranscript.outcome)}
                     <button onClick={() => setSelectedTranscript(null)} className="text-dim hover:text-white lg:hidden">
                       <X className="w-5 h-5" />

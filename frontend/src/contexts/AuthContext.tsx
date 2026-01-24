@@ -11,6 +11,10 @@ interface User {
   subscription_tier?: string
   subscription_status?: string
   trial_ends_at?: string
+  timezone?: string
+  address?: string
+  city?: string
+  state?: string
 }
 
 interface AuthContextType {

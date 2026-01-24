@@ -231,7 +231,11 @@ async def login_restaurant(
             "role": "restaurant",
             "subscription_tier": account["subscription_tier"],
             "subscription_status": account["subscription_status"],
-            "trial_ends_at": account["trial_ends_at"] if account.get("trial_ends_at") else None
+            "trial_ends_at": account["trial_ends_at"] if account.get("trial_ends_at") else None,
+            "timezone": account.get("timezone", "America/New_York"),
+            "address": account.get("address"),
+            "city": account.get("city"),
+            "state": account.get("state")
         }
     }
 
@@ -305,5 +309,9 @@ async def get_current_user_info(
         "subscription_tier": account["subscription_tier"],
         "subscription_status": account["subscription_status"],
         "trial_ends_at": account["trial_ends_at"] if account.get("trial_ends_at") else None,
-        "is_active": account["is_active"]
+        "is_active": account["is_active"],
+        "timezone": account.get("timezone", "America/New_York"),
+        "address": account.get("address"),
+        "city": account.get("city"),
+        "state": account.get("state")
     }

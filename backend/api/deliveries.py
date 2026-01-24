@@ -117,47 +117,29 @@ async def list_orders(
     limit: int = 100,
     db: SupabaseDB = Depends(get_db)
 ):
-    """List orders with optional filters."""
-    filters = {}
+    """List orders with optional filters. Optimized to query directly by account_id."""
+    # Build query - orders table has account_id directly, no need to go through restaurants
+    query = db.table("orders").select("*")
 
-    if restaurant_id:
-        filters["restaurant_id"] = restaurant_id
-    elif account_id:
-        # Filter by account_id - find all restaurants for this account
-        restaurants = db.query_all("restaurants", {"account_id": account_id})
-        restaurant_ids = [r["id"] for r in restaurants]
-        if not restaurant_ids:
-            # No restaurants for this account, return empty
-            return []
-        # For multiple restaurant IDs, we need to use the table interface directly
-        query = db.table("orders").select("*")
-        query = query.in_("restaurant_id", restaurant_ids)
-        if customer_phone:
-            customer = db.query_one("customers", {"phone": customer_phone})
-            if customer:
-                query = query.eq("customer_id", customer["id"])
-        if status_filter:
-            query = query.eq("status", status_filter)
-        result = query.order("created_at", desc=True).range(skip, skip + limit - 1).execute()
-        return result.data or []
+    if account_id:
+        # Direct query on account_id - uses idx_orders_account_status_created index
+        query = query.eq("account_id", account_id)
+    elif restaurant_id:
+        query = query.eq("restaurant_id", restaurant_id)
 
     if customer_phone:
+        # Look up customer by phone
         customer = db.query_one("customers", {"phone": customer_phone})
         if customer:
-            filters["customer_id"] = customer["id"]
+            query = query.eq("customer_id", customer["id"])
+        else:
+            return []  # Customer not found, no orders
 
     if status_filter:
-        filters["status"] = status_filter
+        query = query.eq("status", status_filter)
 
-    orders = db.query_all(
-        "orders",
-        filters=filters if filters else None,
-        order_by="created_at",
-        order_desc=True,
-        offset=skip,
-        limit=limit
-    )
-    return orders
+    result = query.order("created_at", desc=True).range(skip, skip + limit - 1).execute()
+    return result.data or []
 
 
 @router.put("/orders/{order_id}", response_model=OrderResponse)

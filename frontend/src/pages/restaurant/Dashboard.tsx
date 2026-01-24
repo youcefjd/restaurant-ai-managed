@@ -39,17 +39,18 @@ export default function RestaurantDashboard() {
   const activeOrders = activeOrdersData?.data || []
   const menu = menuData?.data
 
-  // Filter pending from active orders (active includes pending, confirmed, preparing, ready, out_for_delivery)
-  const pendingOrders = useMemo(() =>
+  // Filter pending from active orders for the list (shows ALL pending orders needing attention)
+  const allPendingOrders = useMemo(() =>
     activeOrders.filter((o: any) => o.status === 'pending'),
     [activeOrders]
   )
 
-  // Calculate today's stats
-  const { completedToday, todayRevenue } = useMemo(() => {
+  // Calculate today's stats - all stats should be consistent (today only)
+  const { pendingToday, completedToday, todayRevenue } = useMemo(() => {
+    const pendingToday = todayOrders.filter((o: any) => o.status === 'pending').length
     const completedToday = todayOrders.filter((o: any) => o.status === 'completed').length
     const todayRevenue = todayOrders.reduce((sum: number, o: any) => sum + (o.total || 0), 0) / 100
-    return { completedToday, todayRevenue }
+    return { pendingToday, completedToday, todayRevenue }
   }, [todayOrders])
 
   // Memoized menu stats
@@ -84,7 +85,7 @@ export default function RestaurantDashboard() {
         />
         <StatCard
           label="Pending"
-          value={pendingOrders.length}
+          value={pendingToday}
           icon={Clock}
         />
         <StatCard
@@ -104,7 +105,7 @@ export default function RestaurantDashboard() {
         <div className="card">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-medium flex items-center gap-2">
-              {pendingOrders.length > 0 && <AlertCircle className="w-4 h-4 text-warning" />}
+              {allPendingOrders.length > 0 && <AlertCircle className="w-4 h-4 text-warning" />}
               Pending Orders
             </h3>
             <button onClick={() => navigate('/restaurant/orders')} className="text-sm text-accent flex items-center gap-1 hover:underline">
@@ -112,14 +113,14 @@ export default function RestaurantDashboard() {
             </button>
           </div>
 
-          {pendingOrders.length === 0 ? (
+          {allPendingOrders.length === 0 ? (
             <div className="py-8 text-center">
               <CheckCircle className="w-10 h-10 text-success mx-auto mb-2" />
               <p className="text-dim">All caught up!</p>
             </div>
           ) : (
             <div className="space-y-2">
-              {pendingOrders.slice(0, 4).map((order: any) => (
+              {allPendingOrders.slice(0, 4).map((order: any) => (
                 <div
                   key={order.id}
                   onClick={() => navigate('/restaurant/orders')}
@@ -137,8 +138,8 @@ export default function RestaurantDashboard() {
                   </div>
                 </div>
               ))}
-              {pendingOrders.length > 4 && (
-                <p className="text-xs text-dim text-center pt-2">+{pendingOrders.length - 4} more</p>
+              {allPendingOrders.length > 4 && (
+                <p className="text-xs text-dim text-center pt-2">+{allPendingOrders.length - 4} more</p>
               )}
             </div>
           )}

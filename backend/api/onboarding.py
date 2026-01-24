@@ -43,7 +43,12 @@ class RestaurantAccountResponse(BaseModel):
     twilio_phone_number: Optional[str]
     opening_time: Optional[str]
     closing_time: Optional[str]
-    operating_days: Optional[List[int]]
+    operating_days: Optional[List[str]]
+    address: Optional[str]
+    city: Optional[str]
+    state: Optional[str]
+    zip_code: Optional[str]
+    timezone: Optional[str]
     subscription_tier: str
     subscription_status: str
     platform_commission_rate: float
@@ -674,7 +679,7 @@ async def get_full_menu(account_id: int, db: SupabaseDB = Depends(get_db)):
     Get complete menu structure for a restaurant account.
 
     Returns all menus with categories, items, and modifiers.
-    Used by AI to answer menu questions.
+    Optimized to use only 5 queries regardless of menu size.
     """
     account = db.query_one("restaurant_accounts", {"id": account_id})
     if not account:
@@ -683,65 +688,87 @@ async def get_full_menu(account_id: int, db: SupabaseDB = Depends(get_db)):
             detail="Account not found"
         )
 
-    menus_data = []
-
-    # Get all menus for this account
+    # Fetch all data upfront (5 queries total instead of N+1)
     menus = db.query_all("menus", {"account_id": account_id})
+    if not menus:
+        return {
+            "account_id": account_id,
+            "business_name": account["business_name"],
+            "menus": []
+        }
 
+    menu_ids = [m["id"] for m in menus]
+
+    # Get all categories for all menus in one query
+    all_categories = db.table("menu_categories").select("*").in_("menu_id", menu_ids).execute().data or []
+
+    category_ids = [c["id"] for c in all_categories]
+
+    # Get all items for all categories in one query
+    all_items = []
+    if category_ids:
+        all_items = db.table("menu_items").select("*").in_("category_id", category_ids).execute().data or []
+
+    item_ids = [i["id"] for i in all_items]
+
+    # Get all modifiers for all items in one query
+    all_modifiers = []
+    if item_ids:
+        all_modifiers = db.table("menu_modifiers").select("*").in_("item_id", item_ids).execute().data or []
+
+    # Build lookup maps for efficient assembly
+    modifiers_by_item = {}
+    for mod in all_modifiers:
+        item_id = mod["item_id"]
+        if item_id not in modifiers_by_item:
+            modifiers_by_item[item_id] = []
+        modifiers_by_item[item_id].append({
+            "id": mod["id"],
+            "name": mod["name"],
+            "price_adjustment_cents": mod["price_adjustment_cents"],
+            "price_display": f"+${mod['price_adjustment_cents'] / 100:.2f}" if mod["price_adjustment_cents"] > 0 else "",
+            "is_default": mod["is_default"],
+            "modifier_group": mod["modifier_group"]
+        })
+
+    items_by_category = {}
+    for item in all_items:
+        cat_id = item["category_id"]
+        if cat_id not in items_by_category:
+            items_by_category[cat_id] = []
+        items_by_category[cat_id].append({
+            "id": item["id"],
+            "name": item["name"],
+            "description": item["description"],
+            "price_cents": item["price_cents"],
+            "price_display": f"${item['price_cents'] / 100:.2f}",
+            "dietary_tags": item["dietary_tags"] or [],
+            "is_available": item["is_available"],
+            "modifiers": modifiers_by_item.get(item["id"], [])
+        })
+
+    categories_by_menu = {}
+    for cat in all_categories:
+        menu_id = cat["menu_id"]
+        if menu_id not in categories_by_menu:
+            categories_by_menu[menu_id] = []
+        categories_by_menu[menu_id].append({
+            "id": cat["id"],
+            "name": cat["name"],
+            "description": cat["description"],
+            "items": items_by_category.get(cat["id"], [])
+        })
+
+    # Assemble final structure
+    menus_data = []
     for menu in menus:
-        menu_dict = {
+        menus_data.append({
             "id": menu["id"],
             "name": menu["name"],
             "description": menu["description"],
             "is_active": menu["is_active"],
-            "categories": []
-        }
-
-        # Get all categories for this menu
-        categories = db.query_all("menu_categories", {"menu_id": menu["id"]})
-
-        for category in categories:
-            category_dict = {
-                "id": category["id"],
-                "name": category["name"],
-                "description": category["description"],
-                "items": []
-            }
-
-            # Get all items for this category
-            items = db.query_all("menu_items", {"category_id": category["id"]})
-
-            for item in items:
-                item_dict = {
-                    "id": item["id"],
-                    "name": item["name"],
-                    "description": item["description"],
-                    "price_cents": item["price_cents"],
-                    "price_display": f"${item['price_cents'] / 100:.2f}",
-                    "dietary_tags": item["dietary_tags"] or [],
-                    "is_available": item["is_available"],
-                    "modifiers": []
-                }
-
-                # Get all modifiers for this item
-                modifiers = db.query_all("menu_modifiers", {"item_id": item["id"]})
-
-                for modifier in modifiers:
-                    modifier_dict = {
-                        "id": modifier["id"],
-                        "name": modifier["name"],
-                        "price_adjustment_cents": modifier["price_adjustment_cents"],
-                        "price_display": f"+${modifier['price_adjustment_cents'] / 100:.2f}" if modifier["price_adjustment_cents"] > 0 else "",
-                        "is_default": modifier["is_default"],
-                        "modifier_group": modifier["modifier_group"]
-                    }
-                    item_dict["modifiers"].append(modifier_dict)
-
-                category_dict["items"].append(item_dict)
-
-            menu_dict["categories"].append(category_dict)
-
-        menus_data.append(menu_dict)
+            "categories": categories_by_menu.get(menu["id"], [])
+        })
 
     return {
         "account_id": account_id,

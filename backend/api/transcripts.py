@@ -84,6 +84,7 @@ async def list_transcripts(
             "summary": transcript.get("summary"),
             "outcome": transcript.get("outcome"),
             "duration_seconds": transcript.get("duration_seconds"),
+            "order_id": transcript.get("order_id"),
             "created_at": transcript["created_at"],
             "updated_at": transcript.get("updated_at"),
             "message_count": len(transcript.get("messages") or [])
@@ -140,6 +141,7 @@ async def get_transcript(
         "summary": transcript.get("summary"),
         "outcome": transcript.get("outcome"),
         "duration_seconds": transcript.get("duration_seconds"),
+        "order_id": transcript.get("order_id"),
         "created_at": transcript["created_at"],
         "updated_at": transcript.get("updated_at"),
         "message_count": len(transcript.get("messages") or [])

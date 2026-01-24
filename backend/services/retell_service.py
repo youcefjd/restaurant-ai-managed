@@ -85,6 +85,7 @@ class RetellService:
         name: str,
         voice_id: str = "11labs-Adrian",
         llm_websocket_url: str = None,
+        llm_id: str = None,
         system_prompt: str = None,
         **kwargs
     ) -> Optional[Dict[str, Any]]:
@@ -95,6 +96,7 @@ class RetellService:
             name: Agent name
             voice_id: Voice ID (default: 11labs-Adrian)
             llm_websocket_url: WebSocket URL for custom LLM
+            llm_id: Retell LLM ID for native LLM with function calling
             system_prompt: System prompt for built-in LLM
             **kwargs: Additional agent configuration
 
@@ -105,22 +107,25 @@ class RetellService:
             logger.error("Retell service not enabled")
             return None
 
+        # Remove llm_id from kwargs if present to avoid duplication
+        kwargs.pop("llm_id", None)
+
         payload = {
             "agent_name": name,
             "voice_id": voice_id,
             **kwargs
         }
 
-        # Use custom LLM or Retell's built-in LLM
+        # Use custom LLM, native Retell LLM, or built-in LLM
         if llm_websocket_url:
             payload["response_engine"] = {
                 "type": "custom-llm",
                 "llm_websocket_url": llm_websocket_url
             }
-        elif system_prompt:
+        elif llm_id:
             payload["response_engine"] = {
                 "type": "retell-llm",
-                "llm_id": kwargs.get("llm_id")
+                "llm_id": llm_id
             }
 
         try:
@@ -188,7 +193,7 @@ class RetellService:
                 if response.status_code == 200:
                     return response.json()
                 else:
-                    logger.error(f"Failed to update agent: {response.status_code}")
+                    logger.error(f"Failed to update agent: {response.status_code} - {response.text}")
                     return None
 
         except Exception as e:

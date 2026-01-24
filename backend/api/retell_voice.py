@@ -168,7 +168,7 @@ async def retell_webhook(request: Request, db: SupabaseDB = Depends(get_db)):
         logger.info(f"Retell webhook: {event_type} for call {call_id}")
 
         if event_type == "call_started":
-            # Initialize call context
+            # Initialize call context for WebSocket LLM mode
             active_calls[call_id] = {
                 "call_id": call_id,
                 "from_number": call_data.get("from_number"),
@@ -179,7 +179,26 @@ async def retell_webhook(request: Request, db: SupabaseDB = Depends(get_db)):
                 "context": {},
                 "metadata": call_data.get("metadata", {})
             }
-            logger.info(f"Call started: {call_id} from {call_data.get('from_number')}")
+
+            # Also initialize cart for Native LLM function calling mode
+            # This ensures the restaurant context is available when functions are called
+            from backend.api.retell_functions import get_or_create_cart
+            to_number = call_data.get("to_number")
+            from_number = call_data.get("from_number")
+
+            # Look up restaurant by phone number
+            restaurant_id = None
+            if to_number:
+                restaurant = db.query_one("restaurant_accounts", {"retell_phone_number": to_number})
+                if restaurant:
+                    restaurant_id = restaurant["id"]
+                    logger.info(f"Initialized call {call_id} for restaurant {restaurant['business_name']} (native LLM mode)")
+
+            # Create cart with restaurant context
+            cart = get_or_create_cart(call_id, restaurant_id)
+            cart["customer_phone"] = from_number
+
+            logger.info(f"Call started: {call_id} from {from_number} to {to_number}")
 
         elif event_type == "call_ended":
             # Don't delete call context yet - wait for call_analyzed to fetch transcript
@@ -753,6 +772,226 @@ async def delete_agent(agent_id: str):
         raise HTTPException(status_code=500, detail="Failed to delete agent")
 
     return {"status": "deleted", "agent_id": agent_id}
+
+
+# ==================== Native LLM Configuration ====================
+
+class ConfigureNativeLLMRequest(BaseModel):
+    """Request to configure an agent with native Retell LLM."""
+    agent_id: Optional[str] = None  # Optional - if not provided, creates new agent
+    restaurant_id: int
+    model: str = "gpt-4o-mini"  # gpt-4o-mini is fastest, gpt-4o for better quality
+    voice_id: str = "11labs-Myra"  # Default voice
+
+
+class CreateNativeLLMAgentRequest(BaseModel):
+    """Request to create a new agent with native Retell LLM."""
+    restaurant_id: int
+    model: str = "gpt-4o-mini"
+    voice_id: str = "11labs-Myra"
+    phone_number: Optional[str] = None  # Optional - bind to this phone number
+
+
+@router.post("/agents/create-native-llm")
+async def create_native_llm_agent(
+    request: CreateNativeLLMAgentRequest,
+    db: SupabaseDB = Depends(get_db)
+):
+    """
+    Create a NEW agent with Retell's native LLM and function calling.
+
+    Use this when you want to switch from custom WebSocket LLM to native LLM,
+    since you can't change an existing agent's response engine type.
+    """
+    from backend.services.retell_llm_service import retell_llm_service
+
+    if not retell_service.is_enabled():
+        raise HTTPException(status_code=503, detail="Retell service not configured")
+
+    # Get restaurant info
+    restaurant = db.query_one("restaurant_accounts", {"id": request.restaurant_id})
+    if not restaurant:
+        raise HTTPException(status_code=404, detail="Restaurant not found")
+
+    restaurant_name = restaurant.get("business_name", "the restaurant")
+
+    # Create Retell LLM with function calling
+    llm_config = await retell_llm_service.create_llm(
+        restaurant_name=restaurant_name,
+        restaurant_id=request.restaurant_id,
+        model=request.model
+    )
+
+    if not llm_config:
+        raise HTTPException(status_code=500, detail="Failed to create Retell LLM")
+
+    llm_id = llm_config.get("llm_id")
+
+    # Create new agent with the LLM
+    agent = await retell_service.create_agent(
+        name=f"{restaurant_name} Voice Agent (Native LLM)",
+        voice_id=request.voice_id,
+        llm_id=llm_id,  # Use retell-llm instead of custom WebSocket
+        ambient_sound="coffee-shop",
+        responsiveness=0.8,
+        interruption_sensitivity=0.5,
+        enable_backchannel=False,
+        boosted_keywords=[restaurant_name],
+        reminder_trigger_ms=10000,
+        reminder_max_count=2,
+        end_call_after_silence_ms=30000,
+    )
+
+    if not agent:
+        raise HTTPException(status_code=500, detail="Failed to create agent")
+
+    agent_id = agent.get("agent_id")
+
+    # Optionally bind phone number to the new agent
+    if request.phone_number:
+        await retell_service.update_phone_number(
+            phone_number=request.phone_number,
+            agent_id=agent_id
+        )
+        logger.info(f"Bound phone {request.phone_number} to agent {agent_id}")
+
+    # Update restaurant with new agent ID
+    db.update("restaurant_accounts", request.restaurant_id, {
+        "retell_agent_id": agent_id,
+        "retell_llm_id": llm_id
+    })
+
+    logger.info(f"Created native LLM agent {agent_id} for {restaurant_name}")
+
+    return {
+        "success": True,
+        "agent_id": agent_id,
+        "llm_id": llm_id,
+        "model": request.model,
+        "voice_id": request.voice_id,
+        "restaurant_name": restaurant_name,
+        "message": f"New agent created with native Retell LLM ({request.model})"
+    }
+
+
+@router.post("/agents/configure-native-llm")
+async def configure_native_llm(
+    request: ConfigureNativeLLMRequest,
+    db: SupabaseDB = Depends(get_db)
+):
+    """
+    Configure an agent to use Retell's native LLM with function calling.
+
+    This provides much lower latency than custom WebSocket LLM because
+    Retell's LLM handles conversation flow natively and only calls our
+    backend for data operations (menu, cart, orders).
+    """
+    from backend.services.retell_llm_service import retell_llm_service
+
+    if not retell_service.is_enabled():
+        raise HTTPException(status_code=503, detail="Retell service not configured")
+
+    # Get restaurant info
+    restaurant = db.query_one("restaurant_accounts", {"id": request.restaurant_id})
+    if not restaurant:
+        raise HTTPException(status_code=404, detail="Restaurant not found")
+
+    restaurant_name = restaurant.get("business_name", "the restaurant")
+
+    # Create Retell LLM with function calling
+    llm_config = await retell_llm_service.create_llm(
+        restaurant_name=restaurant_name,
+        restaurant_id=request.restaurant_id,
+        model=request.model
+    )
+
+    if not llm_config:
+        raise HTTPException(status_code=500, detail="Failed to create Retell LLM")
+
+    llm_id = llm_config.get("llm_id")
+
+    # Update agent to use the new LLM
+    agent_update = await retell_service.update_agent(
+        agent_id=request.agent_id,
+        response_engine={
+            "type": "retell-llm",
+            "llm_id": llm_id
+        }
+    )
+
+    if not agent_update:
+        raise HTTPException(status_code=500, detail="Failed to update agent with new LLM")
+
+    # Store LLM ID with restaurant for future reference
+    db.update("restaurant_accounts", request.restaurant_id, {
+        "retell_llm_id": llm_id
+    })
+
+    logger.info(f"Configured agent {request.agent_id} with native LLM {llm_id} for {restaurant_name}")
+
+    return {
+        "success": True,
+        "agent_id": request.agent_id,
+        "llm_id": llm_id,
+        "model": request.model,
+        "restaurant_name": restaurant_name,
+        "message": f"Agent configured to use native Retell LLM ({request.model}) with function calling"
+    }
+
+
+@router.post("/agents/configure-custom-llm")
+async def configure_custom_llm(
+    request: CreateAgentRequest,
+    db: SupabaseDB = Depends(get_db)
+):
+    """
+    Configure an agent to use custom WebSocket LLM (Gemini/OpenAI).
+
+    This is the original mode where all messages route through our backend.
+    Use this if you need full control over the conversation or when Retell's
+    native LLM doesn't meet your needs.
+    """
+    if not retell_service.is_enabled():
+        raise HTTPException(status_code=503, detail="Retell service not configured")
+
+    # Get restaurant details
+    restaurant = db.query_one("restaurant_accounts", {"id": request.restaurant_id})
+    if not restaurant:
+        raise HTTPException(status_code=404, detail="Restaurant not found")
+
+    # Build LLM WebSocket URL
+    public_url = os.getenv("PUBLIC_WS_URL", "").replace("wss://", "").replace("ws://", "")
+    if not public_url:
+        raise HTTPException(
+            status_code=400,
+            detail="PUBLIC_WS_URL not configured. Set it to your ngrok or production URL."
+        )
+
+    llm_ws_url = f"wss://{public_url}/api/retell/llm-websocket"
+
+    # Get existing agent
+    agent = await retell_service.get_agent(request.name)  # request.name is actually agent_id here
+
+    if agent:
+        # Update existing agent to use custom LLM
+        agent_update = await retell_service.update_agent(
+            agent_id=request.name,
+            response_engine={
+                "type": "custom-llm",
+                "llm_websocket_url": llm_ws_url
+            }
+        )
+        if not agent_update:
+            raise HTTPException(status_code=500, detail="Failed to update agent")
+
+        return {
+            "success": True,
+            "agent_id": request.name,
+            "llm_websocket_url": llm_ws_url,
+            "message": "Agent configured to use custom WebSocket LLM"
+        }
+    else:
+        raise HTTPException(status_code=404, detail="Agent not found")
 
 
 # ==================== Phone Number Management ====================

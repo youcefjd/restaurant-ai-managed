@@ -28,7 +28,7 @@ _env_path = os.path.join(_project_root, '.env')
 load_dotenv(_env_path, override=True)
 
 from backend.database import init_db, check_connection, SupabaseDB
-from backend.api import restaurants, tables, customers, bookings, availability, voice, payments, deliveries, onboarding, platform_admin, stripe_connect, auth, transcripts, test_conversation, table_management, orders, retell_voice, mcp_tools
+from backend.api import restaurants, tables, customers, bookings, availability, voice, payments, deliveries, onboarding, platform_admin, stripe_connect, auth, transcripts, test_conversation, table_management, orders, retell_voice, mcp_tools, retell_functions
 from backend.core.exceptions import (
     BusinessLogicError,
     ResourceNotFoundError,
@@ -476,6 +476,13 @@ app.include_router(
     retell_voice.router,
     prefix="/api/retell",
     tags=["Voice (Retell AI)"]
+)
+
+# Retell Function Calling endpoints (for native LLM)
+app.include_router(
+    retell_functions.router,
+    prefix="/api/retell-functions",
+    tags=["Voice (Retell Functions)"]
 )
 
 app.include_router(

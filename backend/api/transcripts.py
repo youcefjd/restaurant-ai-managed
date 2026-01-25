@@ -8,9 +8,22 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 
 from backend.database import get_db, SupabaseDB
+from backend.auth import get_current_user
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def verify_account_access(current_user: dict, account_id: int):
+    """Verify user has access to the account (owner or admin)."""
+    if current_user["role"] == "admin":
+        return True
+    if current_user["role"] == "restaurant" and current_user.get("account_id") == account_id:
+        return True
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Not authorized to access this account"
+    )
 
 
 @router.get("/accounts/{account_id}/transcripts")
@@ -20,7 +33,8 @@ async def list_transcripts(
     customer_phone: Optional[str] = Query(None, description="Filter by customer phone number"),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     List transcripts for a restaurant account.
@@ -35,6 +49,7 @@ async def list_transcripts(
     Returns:
         List of transcripts with pagination info
     """
+    verify_account_access(current_user, account_id)
     # Verify account exists
     account = db.query_one("restaurant_accounts", {"id": account_id})
     if not account:
@@ -102,7 +117,8 @@ async def list_transcripts(
 async def get_transcript(
     account_id: int,
     transcript_id: int,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Get a specific transcript by ID.
@@ -114,6 +130,7 @@ async def get_transcript(
     Returns:
         Full transcript details
     """
+    verify_account_access(current_user, account_id)
     # Verify account exists
     account = db.query_one("restaurant_accounts", {"id": account_id})
     if not account:
@@ -151,7 +168,8 @@ async def get_transcript(
 @router.get("/accounts/{account_id}/transcripts/stats")
 async def get_transcript_stats(
     account_id: int,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Get statistics about transcripts for an account.
@@ -159,6 +177,7 @@ async def get_transcript_stats(
     Returns:
         Statistics including total counts, by type, recent activity, etc.
     """
+    verify_account_access(current_user, account_id)
     # Verify account exists
     account = db.query_one("restaurant_accounts", {"id": account_id})
     if not account:

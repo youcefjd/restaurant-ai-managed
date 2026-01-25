@@ -1,14 +1,15 @@
 import { useState } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
-import { Phone, Mail, Lock, Building, AlertCircle } from 'lucide-react'
+import { Phone, Mail, Lock, Building, User, AlertCircle, CheckCircle } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 export default function Signup() {
   const [formData, setFormData] = useState({
     business_name: '',
+    owner_name: '',
     owner_email: '',
+    owner_phone: '',
     password: '',
-    phone: ''
   })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -36,42 +37,61 @@ export default function Signup() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary-50 to-white flex items-center justify-center p-4">
+    <div className="min-h-screen bg-[--bg] flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        {/* Logo */}
+        {/* Header */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-primary-600 rounded-full mb-4">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-accent rounded-full mb-4">
             <Phone className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-gray-900">Start Your Free Trial</h1>
-          <p className="text-gray-600 mt-2">30 days free, no credit card required</p>
+          <h1 className="text-3xl font-bold">Start Your Free Trial</h1>
+          <p className="text-dim mt-2">30 days free, no credit card required</p>
         </div>
 
         {/* Signup Card */}
-        <div className="bg-white rounded-2xl shadow-xl p-8">
-          <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="card p-6">
+          <form onSubmit={handleSubmit} className="space-y-5">
             {/* Error Message */}
             {error && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-red-800">{error}</p>
+              <div className="bg-danger/10 border border-danger/20 rounded-lg p-4 flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-danger flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-danger">{error}</p>
               </div>
             )}
 
-            {/* Business Name */}
+            {/* Restaurant Name */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium mb-2">
                 Restaurant Name
               </label>
               <div className="relative">
-                <Building className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <Building className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-dim" />
                 <input
                   type="text"
                   name="business_name"
                   value={formData.business_name}
                   onChange={handleChange}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-lg"
-                  placeholder="Mediterranean Delights"
+                  className="w-full pl-10 pr-4 py-3 bg-white/5 border border-[--border] rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent"
+                  placeholder="Mario's Italian Kitchen"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Owner Name */}
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Your Name
+              </label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-dim" />
+                <input
+                  type="text"
+                  name="owner_name"
+                  value={formData.owner_name}
+                  onChange={handleChange}
+                  className="w-full pl-10 pr-4 py-3 bg-white/5 border border-[--border] rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent"
+                  placeholder="Mario Rossi"
                   required
                 />
               </div>
@@ -79,18 +99,18 @@ export default function Signup() {
 
             {/* Email */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium mb-2">
                 Email Address
               </label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-dim" />
                 <input
                   type="email"
                   name="owner_email"
                   value={formData.owner_email}
                   onChange={handleChange}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-lg"
-                  placeholder="your@email.com"
+                  className="w-full pl-10 pr-4 py-3 bg-white/5 border border-[--border] rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent"
+                  placeholder="mario@restaurant.com"
                   required
                   autoComplete="email"
                 />
@@ -99,18 +119,18 @@ export default function Signup() {
 
             {/* Phone */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium mb-2">
                 Phone Number
               </label>
               <div className="relative">
-                <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-dim" />
                 <input
                   type="tel"
-                  name="phone"
-                  value={formData.phone}
+                  name="owner_phone"
+                  value={formData.owner_phone}
                   onChange={handleChange}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-lg"
-                  placeholder="(555) 123-4567"
+                  className="w-full pl-10 pr-4 py-3 bg-white/5 border border-[--border] rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent"
+                  placeholder="+1 (555) 123-4567"
                   required
                   autoComplete="tel"
                 />
@@ -119,40 +139,40 @@ export default function Signup() {
 
             {/* Password */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium mb-2">
                 Password
               </label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-dim" />
                 <input
                   type="password"
                   name="password"
                   value={formData.password}
                   onChange={handleChange}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-lg"
+                  className="w-full pl-10 pr-4 py-3 bg-white/5 border border-[--border] rounded-lg focus:ring-2 focus:ring-accent focus:border-transparent"
                   placeholder="••••••••"
                   required
                   autoComplete="new-password"
                   minLength={6}
                 />
               </div>
-              <p className="text-xs text-gray-500 mt-1">Minimum 6 characters</p>
+              <p className="text-xs text-dim mt-1">Minimum 6 characters</p>
             </div>
 
-            {/* Signup Button */}
+            {/* Submit Button */}
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-primary-600 text-white py-4 rounded-lg font-semibold text-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="w-full btn btn-primary py-4 text-lg font-semibold"
             >
-              {loading ? 'Creating Account...' : 'Start Free Trial'}
+              {loading ? 'Creating Account...' : 'Create Account'}
             </button>
 
             {/* Login Link */}
-            <div className="text-center">
-              <p className="text-sm text-gray-600">
+            <div className="text-center pt-2">
+              <p className="text-sm text-dim">
                 Already have an account?{' '}
-                <Link to="/login" className="text-primary-600 font-medium hover:text-primary-700">
+                <Link to="/login" className="text-accent font-medium hover:underline">
                   Sign in
                 </Link>
               </p>
@@ -161,13 +181,25 @@ export default function Signup() {
         </div>
 
         {/* Benefits */}
-        <div className="mt-6 bg-white rounded-lg p-4 shadow">
-          <p className="text-sm font-medium text-gray-900 mb-2">What you get:</p>
-          <ul className="text-xs text-gray-600 space-y-1">
-            <li>✓ 30-day free trial</li>
-            <li>✓ AI phone answering</li>
-            <li>✓ Order & reservation management</li>
-            <li>✓ No credit card required</li>
+        <div className="card mt-6 p-4">
+          <p className="text-sm font-medium mb-3">What you get with your free trial:</p>
+          <ul className="text-sm text-dim space-y-2">
+            <li className="flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 text-success" />
+              30-day free trial
+            </li>
+            <li className="flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 text-success" />
+              AI-powered phone ordering
+            </li>
+            <li className="flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 text-success" />
+              Order & reservation management
+            </li>
+            <li className="flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 text-success" />
+              No credit card required
+            </li>
           </ul>
         </div>
       </div>

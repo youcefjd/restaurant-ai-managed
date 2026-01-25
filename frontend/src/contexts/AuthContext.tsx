@@ -30,9 +30,10 @@ interface AuthContextType {
 
 interface SignupData {
   business_name: string
+  owner_name: string
   owner_email: string
+  owner_phone: string
   password: string
-  phone: string
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)

@@ -3,7 +3,7 @@ Authentication API Endpoints
 
 Handles login, signup, and token refresh for both restaurants and admins.
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr
 from datetime import datetime, timedelta
@@ -16,11 +16,18 @@ from backend.auth import (
     get_current_user
 )
 from backend.services.twilio_provisioning import twilio_provisioning
+from backend.auth import verify_password
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 import logging
+import os
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+# Rate limiter for auth endpoints
+limiter = Limiter(key_func=get_remote_address)
 
 # Table names
 RESTAURANT_ACCOUNTS_TABLE = "restaurant_accounts"
@@ -32,13 +39,18 @@ SUBSCRIPTION_TIER_FREE = "free"
 SUBSCRIPTION_STATUS_TRIAL = "trial"
 NOTIFICATION_TYPE_RESTAURANT_SIGNUP = "restaurant_signup"
 
+# Admin credentials from environment (secure)
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL")
+ADMIN_PASSWORD_HASH = os.getenv("ADMIN_PASSWORD_HASH")
+
 
 # Pydantic models
 class SignupRequest(BaseModel):
     business_name: str
+    owner_name: str
     owner_email: EmailStr
+    owner_phone: str
     password: str
-    phone: str
 
 
 class LoginResponse(BaseModel):
@@ -52,13 +64,10 @@ class AdminLoginRequest(BaseModel):
     password: str
 
 
-# Hardcoded admin credentials (move to database later)
-ADMIN_EMAIL = "admin@restaurantai.com"
-ADMIN_PASSWORD = "admin123"  # Change this in production!
-
-
 @router.post("/signup", response_model=LoginResponse)
+@limiter.limit("3/minute")
 async def signup_restaurant(
+    request: Request,
     signup_data: SignupRequest,
     db: SupabaseDB = Depends(get_db)
 ):
@@ -69,6 +78,8 @@ async def signup_restaurant(
     - 30-day free trial OR 10 orders (whichever comes first)
     - Auto-provisioned Twilio phone number
     - Notification sent to platform admin
+
+    Rate limited to 3 signups per minute per IP.
     """
     # Check if email already exists
     existing_email = db.query_one(RESTAURANT_ACCOUNTS_TABLE, {"owner_email": signup_data.owner_email})
@@ -80,7 +91,7 @@ async def signup_restaurant(
         )
 
     # Check if phone number already exists
-    existing_phone = db.query_one(RESTAURANT_ACCOUNTS_TABLE, {"phone": signup_data.phone})
+    existing_phone = db.query_one(RESTAURANT_ACCOUNTS_TABLE, {"phone": signup_data.owner_phone})
 
     if existing_phone:
         raise HTTPException(
@@ -98,13 +109,14 @@ async def signup_restaurant(
     # Create new restaurant account
     account_data = {
         "business_name": signup_data.business_name,
+        "owner_name": signup_data.owner_name,
         "owner_email": signup_data.owner_email,
         "password_hash": get_password_hash(signup_data.password),
-        "phone": signup_data.phone,
+        "phone": signup_data.owner_phone,
         "twilio_phone_number": twilio_number,
         "subscription_tier": SUBSCRIPTION_TIER_FREE,
         "subscription_status": SUBSCRIPTION_STATUS_TRIAL,
-        "platform_commission_rate": 10.0,
+        "platform_commission_rate": 15.0,  # Free tier default: 15%
         "commission_enabled": True,
         "trial_ends_at": trial_ends_at.isoformat(),
         "trial_order_limit": 10,
@@ -120,7 +132,7 @@ async def signup_restaurant(
         "account_id": account["id"],
         "name": account["business_name"],
         "address": "Address pending",  # Will be updated during onboarding
-        "phone": signup_data.phone,
+        "phone": signup_data.owner_phone,
         "email": account["owner_email"],
         "opening_time": "09:00:00",   # Default 9 AM
         "closing_time": "21:00:00",   # Default 9 PM
@@ -170,7 +182,9 @@ async def signup_restaurant(
 
 
 @router.post("/login", response_model=LoginResponse)
+@limiter.limit("5/minute")
 async def login_restaurant(
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: SupabaseDB = Depends(get_db)
 ):
@@ -178,6 +192,7 @@ async def login_restaurant(
     Login for restaurant accounts.
 
     Uses OAuth2 password flow (username = email, password = password).
+    Rate limited to 5 attempts per minute.
     """
     # Find restaurant account
     account = db.query_one(RESTAURANT_ACCOUNTS_TABLE, {"owner_email": form_data.username})
@@ -241,17 +256,36 @@ async def login_restaurant(
 
 
 @router.post("/admin/login", response_model=LoginResponse)
+@limiter.limit("3/minute")
 async def login_admin(
+    request: Request,
     login_data: AdminLoginRequest,
     db: SupabaseDB = Depends(get_db)
 ):
     """
     Login for platform admin.
 
-    Hardcoded credentials for now - move to database later.
+    Uses environment variables ADMIN_EMAIL and ADMIN_PASSWORD_HASH.
+    Generate hash with: python -c "import bcrypt; print(bcrypt.hashpw(b'yourpassword', bcrypt.gensalt()).decode())"
+    Rate limited to 3 attempts per minute.
     """
-    # Check admin credentials
-    if login_data.email != ADMIN_EMAIL or login_data.password != ADMIN_PASSWORD:
+    # Verify admin credentials are configured
+    if not ADMIN_EMAIL or not ADMIN_PASSWORD_HASH:
+        logger.error("Admin credentials not configured in environment")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Admin login not configured"
+        )
+
+    # Check email matches
+    if login_data.email != ADMIN_EMAIL:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password"
+        )
+
+    # Verify password using bcrypt
+    if not verify_password(login_data.password, ADMIN_PASSWORD_HASH):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password"

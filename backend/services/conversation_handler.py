@@ -1362,9 +1362,12 @@ Be conversational, helpful, and accurate about menu items and pricing."""
                     "context": context
                 }
 
+            # Get restaurant's tax rate from account
+            tax_rate = float(account.get("tax_rate", 0.08)) if account else 0.08
+
             # Calculate totals
             subtotal = sum(item.get("price_cents", 0) * item.get("quantity", 1) for item in order_items)
-            tax = int(subtotal * 0.08)  # 8% tax
+            tax = int(subtotal * tax_rate)
             # Only add delivery fee for actual delivery orders (not pickup)
             is_delivery = context.get("delivery_address") and context.get("delivery_address") != "Pickup"
             delivery_fee = 500 if is_delivery else 0  # $5 delivery fee only for delivery

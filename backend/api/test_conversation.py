@@ -1,11 +1,13 @@
 """Test endpoint for direct conversation testing without Twilio"""
 
-from typing import Optional
-from fastapi import APIRouter, Depends
+import os
+from typing import Optional, Dict
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from backend.database import get_db, SupabaseDB
 from backend.services.conversation_handler import conversation_handler
+from backend.auth import get_current_user
 
 router = APIRouter()
 
@@ -30,12 +32,19 @@ class ConversationTestResponse(BaseModel):
 @router.post("/test-conversation", response_model=ConversationTestResponse)
 async def test_conversation(
     request: ConversationTestRequest,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    current_user: Dict = Depends(get_current_user)
 ):
     """
     Test conversation handler directly without Twilio TwiML
-    For end-to-end testing only
+    For development/testing only - disabled in production unless explicitly enabled.
     """
+    # Disable in production unless explicitly enabled
+    if os.getenv("ENVIRONMENT") == "production" and not os.getenv("ENABLE_TEST_ENDPOINTS"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Test endpoints disabled in production"
+        )
     # Get restaurant account
     account = db.query_one("restaurant_accounts", {"id": request.account_id})
 

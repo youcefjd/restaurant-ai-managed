@@ -1,10 +1,11 @@
 """Restaurant CRUD endpoints with validation."""
 
-from typing import List
+from typing import List, Dict
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from backend.database import get_db, SupabaseDB
 from backend.schemas import RestaurantCreate, RestaurantUpdate, Restaurant as RestaurantResponse
+from backend.auth import get_current_user, get_current_admin
 
 router = APIRouter()
 
@@ -12,7 +13,8 @@ router = APIRouter()
 @router.post("/", response_model=RestaurantResponse, status_code=status.HTTP_201_CREATED)
 async def create_restaurant(
     restaurant_data: RestaurantCreate,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    current_user: Dict = Depends(get_current_admin)  # Admin only
 ):
     """Create a new restaurant."""
     data = restaurant_data.model_dump()
@@ -27,7 +29,11 @@ async def create_restaurant(
 
 
 @router.get("/{restaurant_id}", response_model=RestaurantResponse)
-async def get_restaurant(restaurant_id: int, db: SupabaseDB = Depends(get_db)):
+async def get_restaurant(
+    restaurant_id: int,
+    db: SupabaseDB = Depends(get_db),
+    current_user: Dict = Depends(get_current_user)
+):
     """Get a restaurant by ID."""
     restaurant = db.query_one("restaurants", {"id": restaurant_id})
     if not restaurant:
@@ -42,7 +48,8 @@ async def get_restaurant(restaurant_id: int, db: SupabaseDB = Depends(get_db)):
 async def list_restaurants(
     skip: int = 0,
     limit: int = 100,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    current_user: Dict = Depends(get_current_user)
 ):
     """List all restaurants."""
     restaurants = db.query_all("restaurants", offset=skip, limit=limit)
@@ -53,7 +60,8 @@ async def list_restaurants(
 async def update_restaurant(
     restaurant_id: int,
     restaurant_data: RestaurantUpdate,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    current_user: Dict = Depends(get_current_user)
 ):
     """Update a restaurant."""
     # Check if restaurant exists
@@ -80,7 +88,11 @@ async def update_restaurant(
 
 
 @router.delete("/{restaurant_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_restaurant(restaurant_id: int, db: SupabaseDB = Depends(get_db)):
+async def delete_restaurant(
+    restaurant_id: int,
+    db: SupabaseDB = Depends(get_db),
+    current_user: Dict = Depends(get_current_admin)  # Admin only
+):
     """Delete a restaurant."""
     # Check if restaurant exists
     existing = db.query_one("restaurants", {"id": restaurant_id})

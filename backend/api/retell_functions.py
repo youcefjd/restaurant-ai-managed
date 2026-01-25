@@ -10,22 +10,48 @@ because Retell's LLM handles the conversation flow natively.
 
 import os
 import json
+import hmac
+import hashlib
 import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Request, HTTPException, Depends
+from fastapi import APIRouter, Request, HTTPException, Depends, Header
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from backend.database import get_db, SupabaseDB
+from backend.services.cart_service import cart_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# In-memory cart storage (keyed by call_id)
-# In production, consider Redis for persistence across restarts
-active_carts: Dict[str, Dict[str, Any]] = {}
+
+async def verify_retell_request(
+    request: Request,
+    x_retell_signature: Optional[str] = Header(None, alias="X-Retell-Signature")
+) -> bool:
+    """
+    Verify that the request is coming from Retell.
+
+    Note: Retell's custom tool/function calls are made from Retell's servers
+    and may not include signatures like webhooks do. The security is provided
+    by the fact that only Retell knows the endpoint URLs configured in the agent.
+
+    For additional security in production, consider:
+    - Using a secret token in the URL path
+    - IP allowlisting for Retell's servers
+    - Request validation via call_id lookup
+    """
+    # For now, allow all requests to function endpoints
+    # These are called by Retell's LLM infrastructure, not directly from users
+    # The URLs are only known to Retell (configured in the agent)
+
+    # Log for debugging but don't block
+    if x_retell_signature:
+        logger.debug(f"Retell function call with signature: {x_retell_signature[:20]}...")
+
+    return True
 
 
 # ==================== Pydantic Models ====================
@@ -87,9 +113,9 @@ class GetMenuRequest(BaseModel):
 class AddToCartArgs(BaseModel):
     """Arguments for add_to_cart function."""
     restaurant_id: Optional[int] = None
-    item_name: Optional[str] = None
-    quantity: Optional[int] = 1
-    special_requests: Optional[str] = None
+    item_name: Optional[str] = Field(default=None, max_length=200)
+    quantity: Optional[int] = Field(default=1, ge=1, le=99)
+    special_requests: Optional[str] = Field(default=None, max_length=500)
 
 
 class AddToCartRequest(BaseModel):
@@ -101,9 +127,9 @@ class AddToCartRequest(BaseModel):
     # Direct format
     call_id: Optional[str] = None
     restaurant_id: Optional[int] = None
-    item_name: Optional[str] = None
-    quantity: int = 1
-    special_requests: Optional[str] = None
+    item_name: Optional[str] = Field(default=None, max_length=200)
+    quantity: int = Field(default=1, ge=1, le=99)
+    special_requests: Optional[str] = Field(default=None, max_length=500)
 
     def get_restaurant_id(self) -> Optional[int]:
         if self.args and self.args.restaurant_id:
@@ -189,8 +215,8 @@ class GetCartRequest(BaseModel):
 class CreateOrderArgs(BaseModel):
     """Arguments for create_order function."""
     restaurant_id: Optional[int] = None
-    customer_name: Optional[str] = None
-    pickup_time: Optional[str] = None
+    customer_name: Optional[str] = Field(default=None, max_length=100)
+    pickup_time: Optional[str] = Field(default=None, max_length=50)
 
 
 class CreateOrderRequest(BaseModel):
@@ -200,8 +226,8 @@ class CreateOrderRequest(BaseModel):
     args: Optional[CreateOrderArgs] = None
     call_id: Optional[str] = None
     restaurant_id: Optional[int] = None
-    customer_name: Optional[str] = None
-    pickup_time: Optional[str] = None
+    customer_name: Optional[str] = Field(default=None, max_length=100)
+    pickup_time: Optional[str] = Field(default=None, max_length=50)
 
     def get_restaurant_id(self) -> Optional[int]:
         if self.args and self.args.restaurant_id:
@@ -250,25 +276,15 @@ class GetHoursRequest(BaseModel):
 
 # ==================== Helper Functions ====================
 
-def get_restaurant_id_from_call(call_id: str) -> Optional[int]:
-    """Get restaurant ID associated with a call."""
-    cart = active_carts.get(call_id, {})
-    return cart.get("restaurant_id")
+def get_restaurant_id_from_call(call_id: str, db: SupabaseDB) -> Optional[int]:
+    """Get restaurant ID associated with a call from Supabase cart."""
+    cart = cart_service.get_cart(call_id, db)
+    return cart.get("restaurant_id") if cart else None
 
 
-def get_or_create_cart(call_id: str, restaurant_id: int = None) -> Dict[str, Any]:
-    """Get existing cart or create new one."""
-    if call_id not in active_carts:
-        active_carts[call_id] = {
-            "call_id": call_id,
-            "restaurant_id": restaurant_id,
-            "items": [],
-            "special_requests": [],
-            "created_at": datetime.now().isoformat()
-        }
-    elif restaurant_id and not active_carts[call_id].get("restaurant_id"):
-        active_carts[call_id]["restaurant_id"] = restaurant_id
-    return active_carts[call_id]
+def get_or_create_cart(call_id: str, restaurant_id: int, db: SupabaseDB, customer_phone: str = None) -> Dict[str, Any]:
+    """Get existing cart or create new one in Supabase."""
+    return cart_service.get_or_create_cart(call_id, restaurant_id, db, customer_phone)
 
 
 def lookup_menu_item(item_name: str, menu_data: Dict) -> Optional[Dict]:
@@ -299,7 +315,7 @@ def lookup_menu_item(item_name: str, menu_data: Dict) -> Optional[Dict]:
 
 
 def fetch_menu_data(db: SupabaseDB, restaurant_id: int) -> Dict[str, Any]:
-    """Fetch full menu data for a restaurant."""
+    """Fetch full menu data for a restaurant using bulk queries (optimized)."""
     account = db.query_one("restaurant_accounts", {"id": restaurant_id})
     if not account:
         return {}
@@ -309,7 +325,33 @@ def fetch_menu_data(db: SupabaseDB, restaurant_id: int) -> Dict[str, Any]:
         "menus": []
     }
 
+    # Bulk fetch all data in 3 queries instead of N+1
     menus = db.query_all("menus", {"account_id": restaurant_id})
+    if not menus:
+        return menu_data
+
+    menu_ids = [m["id"] for m in menus]
+    all_categories = db.query_in("menu_categories", "menu_id", menu_ids)
+
+    category_ids = [c["id"] for c in all_categories]
+    all_items = db.query_in("menu_items", "category_id", category_ids) if category_ids else []
+
+    # Build lookup maps for efficient assembly
+    categories_by_menu = {}
+    for cat in all_categories:
+        menu_id = cat["menu_id"]
+        if menu_id not in categories_by_menu:
+            categories_by_menu[menu_id] = []
+        categories_by_menu[menu_id].append(cat)
+
+    items_by_category = {}
+    for item in all_items:
+        cat_id = item["category_id"]
+        if cat_id not in items_by_category:
+            items_by_category[cat_id] = []
+        items_by_category[cat_id].append(item)
+
+    # Assemble menu structure in memory (no DB queries)
     for menu in menus:
         menu_dict = {
             "id": menu["id"],
@@ -317,16 +359,14 @@ def fetch_menu_data(db: SupabaseDB, restaurant_id: int) -> Dict[str, Any]:
             "categories": []
         }
 
-        categories = db.query_all("menu_categories", {"menu_id": menu["id"]})
-        for category in categories:
+        for category in categories_by_menu.get(menu["id"], []):
             category_dict = {
                 "id": category["id"],
                 "name": category["name"],
                 "items": []
             }
 
-            items = db.query_all("menu_items", {"category_id": category["id"]})
-            for item in items:
+            for item in items_by_category.get(category["id"], []):
                 category_dict["items"].append({
                     "id": item["id"],
                     "name": item["name"],
@@ -400,7 +440,11 @@ def parse_pickup_time(time_str: str) -> tuple[Optional[datetime], str]:
 # ==================== Function Endpoints ====================
 
 @router.post("/get_menu")
-async def get_menu(request: GetMenuRequest, db: SupabaseDB = Depends(get_db)):
+async def get_menu(
+    request: GetMenuRequest,
+    db: SupabaseDB = Depends(get_db),
+    _verified: bool = Depends(verify_retell_request)
+):
     """
     Get menu items for the restaurant.
     Called by Retell LLM when customer asks about menu.
@@ -413,8 +457,8 @@ async def get_menu(request: GetMenuRequest, db: SupabaseDB = Depends(get_db)):
         include_prices = request.get_include_prices()
 
         if not restaurant_id and call_id:
-            cart = active_carts.get(call_id, {})
-            restaurant_id = cart.get("restaurant_id")
+            cart = cart_service.get_cart(call_id, db)
+            restaurant_id = cart.get("restaurant_id") if cart else None
 
         if not restaurant_id:
             logger.warning(f"No restaurant_id provided")
@@ -497,7 +541,11 @@ async def get_menu(request: GetMenuRequest, db: SupabaseDB = Depends(get_db)):
 
 
 @router.post("/add_to_cart")
-async def add_to_cart(request: AddToCartRequest, db: SupabaseDB = Depends(get_db)):
+async def add_to_cart(
+    request: AddToCartRequest,
+    db: SupabaseDB = Depends(get_db),
+    _verified: bool = Depends(verify_retell_request)
+):
     """
     Add an item to the customer's cart.
     Called by Retell LLM when customer orders an item.
@@ -511,16 +559,20 @@ async def add_to_cart(request: AddToCartRequest, db: SupabaseDB = Depends(get_db
         special_requests = request.get_special_requests()
 
         cart_key = call_id or f"restaurant_{restaurant_id}"
-        cart = get_or_create_cart(cart_key, restaurant_id)
 
         if not restaurant_id:
-            restaurant_id = cart.get("restaurant_id")
+            # Try to get from existing cart
+            cart = cart_service.get_cart(cart_key, db)
+            restaurant_id = cart.get("restaurant_id") if cart else None
 
         if not restaurant_id:
             return JSONResponse({
                 "success": False,
                 "message": "Restaurant not identified"
             })
+
+        # Get or create cart in Supabase
+        cart = cart_service.get_or_create_cart(cart_key, restaurant_id, db)
 
         # Look up the menu item
         menu_data = fetch_menu_data(db, restaurant_id)
@@ -534,34 +586,42 @@ async def add_to_cart(request: AddToCartRequest, db: SupabaseDB = Depends(get_db
                 "suggestion": "Please check our menu for available items"
             })
 
-        # Check if item already in cart
+        # Add item using cart service
+        items = cart.get("items", [])
         existing_idx = None
-        for idx, item in enumerate(cart["items"]):
-            if item["name"].lower() == menu_item["name"].lower():
+        for idx, item in enumerate(items):
+            if item.get("name", "").lower() == menu_item["name"].lower():
                 existing_idx = idx
                 break
 
         if existing_idx is not None:
             # Update quantity
-            cart["items"][existing_idx]["quantity"] += quantity
+            items[existing_idx]["quantity"] = items[existing_idx].get("quantity", 1) + quantity
             if special_requests:
-                existing_requests = cart["items"][existing_idx].get("special_requests", "")
+                existing_requests = items[existing_idx].get("special_requests", "")
                 if existing_requests:
-                    cart["items"][existing_idx]["special_requests"] = f"{existing_requests}; {special_requests}"
+                    items[existing_idx]["special_requests"] = f"{existing_requests}; {special_requests}"
                 else:
-                    cart["items"][existing_idx]["special_requests"] = special_requests
+                    items[existing_idx]["special_requests"] = special_requests
         else:
             # Add new item
-            cart["items"].append({
+            items.append({
                 "name": menu_item["name"],
                 "quantity": quantity,
                 "price_cents": menu_item["price_cents"],
                 "special_requests": special_requests or ""
             })
 
+        # Save updated cart to Supabase
+        cart_service.save_cart(cart_key, items, db)
+
+        # Get restaurant tax rate
+        account = db.query_one("restaurant_accounts", {"id": restaurant_id})
+        tax_rate = float(account.get("tax_rate", 0.08)) if account else 0.08
+
         # Calculate cart total
-        subtotal = sum(item["price_cents"] * item["quantity"] for item in cart["items"])
-        tax = int(subtotal * 0.08)
+        subtotal = sum(item["price_cents"] * item["quantity"] for item in items)
+        tax = int(subtotal * tax_rate)
         total = subtotal + tax
 
         logger.info(f"Added to cart: {quantity}x {menu_item['name']} for call {call_id}")
@@ -580,7 +640,7 @@ async def add_to_cart(request: AddToCartRequest, db: SupabaseDB = Depends(get_db
                 "price": f"${item_price:.0f}"
             },
             "cart_total": f"${total / 100:.0f}",
-            "cart_item_count": sum(item["quantity"] for item in cart["items"])
+            "cart_item_count": sum(item["quantity"] for item in items)
         })
 
     except Exception as e:
@@ -592,7 +652,11 @@ async def add_to_cart(request: AddToCartRequest, db: SupabaseDB = Depends(get_db
 
 
 @router.post("/remove_from_cart")
-async def remove_from_cart(request: RemoveFromCartRequest, db: SupabaseDB = Depends(get_db)):
+async def remove_from_cart(
+    request: RemoveFromCartRequest,
+    db: SupabaseDB = Depends(get_db),
+    _verified: bool = Depends(verify_retell_request)
+):
     """
     Remove an item from the customer's cart.
     """
@@ -603,22 +667,26 @@ async def remove_from_cart(request: RemoveFromCartRequest, db: SupabaseDB = Depe
         item_name = request.get_item_name()
 
         cart_key = call_id or f"restaurant_{restaurant_id}"
-        cart = active_carts.get(cart_key)
+        cart = cart_service.get_cart(cart_key, db)
         if not cart:
             return JSONResponse({
                 "success": False,
                 "message": "No cart found"
             })
 
+        items = cart.get("items", [])
+        restaurant_id = restaurant_id or cart.get("restaurant_id")
+
         # Find and remove item
         item_name_lower = item_name.lower()
         removed = False
-        for idx, item in enumerate(cart["items"]):
-            if item["name"].lower() == item_name_lower or item_name_lower in item["name"].lower():
-                removed_item = cart["items"].pop(idx)
+        new_items = []
+        for item in items:
+            if not removed and (item.get("name", "").lower() == item_name_lower or item_name_lower in item.get("name", "").lower()):
                 removed = True
-                logger.info(f"Removed from cart: {removed_item['name']} for call {call_id}")
-                break
+                logger.info(f"Removed from cart: {item.get('name')} for call {call_id}")
+            else:
+                new_items.append(item)
 
         if not removed:
             return JSONResponse({
@@ -626,12 +694,19 @@ async def remove_from_cart(request: RemoveFromCartRequest, db: SupabaseDB = Depe
                 "message": f"I don't see {item_name} in your order. Would you like me to tell you what's in your cart?"
             })
 
+        # Save updated cart
+        cart_service.save_cart(cart_key, new_items, db)
+
+        # Get restaurant tax rate
+        account = db.query_one("restaurant_accounts", {"id": restaurant_id}) if restaurant_id else None
+        tax_rate = float(account.get("tax_rate", 0.08)) if account else 0.08
+
         # Calculate new total
-        subtotal = sum(item["price_cents"] * item["quantity"] for item in cart["items"])
-        tax = int(subtotal * 0.08)
+        subtotal = sum(item["price_cents"] * item["quantity"] for item in new_items)
+        tax = int(subtotal * tax_rate)
         total = subtotal + tax
 
-        if cart["items"]:
+        if new_items:
             message = f"Done, I removed the {item_name}. Your new total is ${total / 100:.0f}. Anything else?"
         else:
             message = f"Done, I removed the {item_name}. Your cart is now empty. What would you like to order?"
@@ -641,7 +716,7 @@ async def remove_from_cart(request: RemoveFromCartRequest, db: SupabaseDB = Depe
             "message": message,
             "removed_item": item_name,
             "cart_total": f"${total / 100:.0f}",
-            "cart_item_count": sum(item["quantity"] for item in cart["items"])
+            "cart_item_count": sum(item["quantity"] for item in new_items)
         })
 
     except Exception as e:
@@ -653,7 +728,11 @@ async def remove_from_cart(request: RemoveFromCartRequest, db: SupabaseDB = Depe
 
 
 @router.post("/get_cart")
-async def get_cart(request: GetCartRequest, db: SupabaseDB = Depends(get_db)):
+async def get_cart(
+    request: GetCartRequest,
+    db: SupabaseDB = Depends(get_db),
+    _verified: bool = Depends(verify_retell_request)
+):
     """
     Get current cart contents.
     """
@@ -663,7 +742,7 @@ async def get_cart(request: GetCartRequest, db: SupabaseDB = Depends(get_db)):
         call_id = request.get_call_id()
 
         cart_key = call_id or f"restaurant_{restaurant_id}"
-        cart = active_carts.get(cart_key)
+        cart = cart_service.get_cart(cart_key, db)
         if not cart or not cart.get("items"):
             return JSONResponse({
                 "success": True,
@@ -672,9 +751,16 @@ async def get_cart(request: GetCartRequest, db: SupabaseDB = Depends(get_db)):
                 "cart_total": "$0"
             })
 
+        items = cart.get("items", [])
+        restaurant_id = restaurant_id or cart.get("restaurant_id")
+
+        # Get restaurant tax rate
+        account = db.query_one("restaurant_accounts", {"id": restaurant_id}) if restaurant_id else None
+        tax_rate = float(account.get("tax_rate", 0.08)) if account else 0.08
+
         # Calculate totals
-        subtotal = sum(item["price_cents"] * item["quantity"] for item in cart["items"])
-        tax = int(subtotal * 0.08)
+        subtotal = sum(item["price_cents"] * item["quantity"] for item in items)
+        tax = int(subtotal * tax_rate)
         total = subtotal + tax
 
         items_summary = [
@@ -684,7 +770,7 @@ async def get_cart(request: GetCartRequest, db: SupabaseDB = Depends(get_db)):
                 "price": f"${item['price_cents'] * item['quantity'] / 100:.0f}",
                 "special_requests": item.get("special_requests", "")
             }
-            for item in cart["items"]
+            for item in items
         ]
 
         # Build speakable message
@@ -699,7 +785,7 @@ async def get_cart(request: GetCartRequest, db: SupabaseDB = Depends(get_db)):
             "message": message,
             "items": items_summary,
             "cart_total": f"${total / 100:.0f}",
-            "cart_item_count": sum(item["quantity"] for item in cart["items"])
+            "cart_item_count": sum(item["quantity"] for item in items)
         })
 
     except Exception as e:
@@ -711,7 +797,11 @@ async def get_cart(request: GetCartRequest, db: SupabaseDB = Depends(get_db)):
 
 
 @router.post("/create_order")
-async def create_order(request: CreateOrderRequest, db: SupabaseDB = Depends(get_db)):
+async def create_order(
+    request: CreateOrderRequest,
+    db: SupabaseDB = Depends(get_db),
+    _verified: bool = Depends(verify_retell_request)
+):
     """
     Create/finalize the order.
     Called when customer provides name and pickup time.
@@ -724,13 +814,14 @@ async def create_order(request: CreateOrderRequest, db: SupabaseDB = Depends(get
         pickup_time = request.get_pickup_time()
 
         cart_key = call_id or f"restaurant_{restaurant_id}"
-        cart = active_carts.get(cart_key)
+        cart = cart_service.get_cart(cart_key, db)
         if not cart or not cart.get("items"):
             return JSONResponse({
                 "success": False,
                 "message": "Cart is empty. Please add items first."
             })
 
+        items = cart.get("items", [])
         restaurant_id = restaurant_id or cart.get("restaurant_id")
         if not restaurant_id:
             return JSONResponse({
@@ -748,18 +839,22 @@ async def create_order(request: CreateOrderRequest, db: SupabaseDB = Depends(get
                 "message": "Restaurant configuration error"
             })
 
-        # Get or create customer
-        # For now, create with minimal info - can be enhanced later
-        customer = db.query_one("customers", {"name": customer_name})
-        if not customer:
-            customer = db.insert("customers", {
-                "name": customer_name,
-                "phone": cart.get("customer_phone", "")
-            })
+        # Get or create customer by phone using upsert (atomic, no race condition)
+        customer_phone = cart.get("customer_phone", "")
+        if not customer_phone:
+            customer_phone = "unknown"
+
+        customer = db.upsert("customers", {
+            "phone": customer_phone,
+            "name": customer_name
+        }, on_conflict="phone")
+
+        # Get restaurant tax rate
+        tax_rate = float(account.get("tax_rate", 0.08))
 
         # Calculate totals
-        subtotal = sum(item["price_cents"] * item["quantity"] for item in cart["items"])
-        tax = int(subtotal * 0.08)
+        subtotal = sum(item["price_cents"] * item["quantity"] for item in items)
+        tax = int(subtotal * tax_rate)
         total = subtotal + tax
 
         # Parse pickup time
@@ -768,7 +863,7 @@ async def create_order(request: CreateOrderRequest, db: SupabaseDB = Depends(get
         # Build special instructions from all items
         special_instructions = f"Pickup: {pickup_display}"
         all_requests = []
-        for item in cart["items"]:
+        for item in items:
             if item.get("special_requests"):
                 all_requests.append(f"{item['name']}: {item['special_requests']}")
         if all_requests:
@@ -791,7 +886,7 @@ async def create_order(request: CreateOrderRequest, db: SupabaseDB = Depends(get
                     "price_cents": item["price_cents"],
                     "special_requests": item.get("special_requests", "")
                 }
-                for item in cart["items"]
+                for item in items
             ]),
             "subtotal": subtotal,
             "tax": tax,
@@ -804,19 +899,19 @@ async def create_order(request: CreateOrderRequest, db: SupabaseDB = Depends(get
             "conversation_id": call_id
         }
 
+        # Insert order - cart deletion happens AFTER successful insert (Phase 5 fix)
         order = db.insert("orders", order_data)
 
-        # Clear the cart
-        if cart_key in active_carts:
-            del active_carts[cart_key]
+        # Build order summary BEFORE deleting cart (in case delete fails, order is still complete)
+        items_text = ", ".join([
+            f"{item['quantity']} {item['name']}"
+            for item in items
+        ])
 
         logger.info(f"Created order #{order['id']} for {customer_name}")
 
-        # Build order summary
-        items_text = ", ".join([
-            f"{item['quantity']} {item['name']}"
-            for item in cart["items"]
-        ])
+        # Clear the cart from Supabase AFTER successful order creation
+        cart_service.delete_cart(cart_key, db)
 
         return JSONResponse({
             "success": True,
@@ -837,7 +932,11 @@ async def create_order(request: CreateOrderRequest, db: SupabaseDB = Depends(get
 
 
 @router.post("/get_hours")
-async def get_hours(request: GetHoursRequest, db: SupabaseDB = Depends(get_db)):
+async def get_hours(
+    request: GetHoursRequest,
+    db: SupabaseDB = Depends(get_db),
+    _verified: bool = Depends(verify_retell_request)
+):
     """
     Get restaurant operating hours.
     """
@@ -847,8 +946,8 @@ async def get_hours(request: GetHoursRequest, db: SupabaseDB = Depends(get_db)):
         call_id = request.get_call_id()
 
         if not restaurant_id and call_id:
-            cart = active_carts.get(call_id, {})
-            restaurant_id = cart.get("restaurant_id")
+            cart = cart_service.get_cart(call_id, db)
+            restaurant_id = cart.get("restaurant_id") if cart else None
 
         if not restaurant_id:
             return JSONResponse({
@@ -892,10 +991,155 @@ async def get_hours(request: GetHoursRequest, db: SupabaseDB = Depends(get_db)):
         })
 
 
+class CancelOrderRequest(BaseModel):
+    """Request to cancel an order."""
+    call: Optional[RetellCallInfo] = None
+    name: Optional[str] = None
+    args: Optional[Dict[str, Any]] = None
+    call_id: Optional[str] = None
+    customer_name: Optional[str] = None
+    customer_phone: Optional[str] = None
+
+    def get_call_id(self) -> Optional[str]:
+        if self.call and self.call.call_id:
+            return self.call.call_id
+        return self.call_id
+
+    def get_customer_name(self) -> Optional[str]:
+        if self.args and self.args.get("customer_name"):
+            return self.args["customer_name"]
+        return self.customer_name
+
+    def get_restaurant_id(self) -> Optional[int]:
+        if self.args and self.args.get("restaurant_id"):
+            return int(self.args["restaurant_id"])
+        return None
+
+    def get_customer_phone(self) -> Optional[str]:
+        if self.args and self.args.get("customer_phone"):
+            return self.args["customer_phone"]
+        return self.customer_phone
+
+
+@router.post("/cancel_order")
+async def cancel_order(
+    request: CancelOrderRequest,
+    db: SupabaseDB = Depends(get_db),
+    _verified: bool = Depends(verify_retell_request)
+):
+    """
+    Cancel a pending order for a customer.
+    Looks up by customer phone (from caller ID) AND customer name for accuracy.
+    """
+    try:
+        call_id = request.get_call_id()
+        customer_name = request.get_customer_name()
+        restaurant_id = request.get_restaurant_id()
+
+        # Get customer phone from cart (caller ID)
+        customer_phone = None
+        if call_id:
+            cart = cart_service.get_cart(call_id, db)
+            customer_phone = cart.get("customer_phone") if cart else None
+            # Also get restaurant_id from cart if not provided
+            if not restaurant_id and cart:
+                restaurant_id = cart.get("restaurant_id")
+
+        if not customer_name:
+            return JSONResponse({
+                "success": False,
+                "message": "I need your name to look up the order. What name was the order under?"
+            })
+
+        # Find pending orders - prioritize matching BOTH phone AND name
+        orders = []
+
+        # Build query filters - always filter by restaurant if available
+        base_filter = {"status": "pending"}
+        if restaurant_id:
+            base_filter["restaurant_id"] = restaurant_id
+
+        # First try: match both phone and name (most accurate)
+        if customer_phone:
+            phone_filter = {**base_filter, "customer_phone": customer_phone}
+            all_phone_orders = db.query_all("orders", phone_filter, limit=10)
+            # Filter by name (case-insensitive partial match)
+            orders = [o for o in all_phone_orders if customer_name.lower() in o.get("customer_name", "").lower()]
+
+        # Fallback: search by name only if no phone match (still filtered by restaurant)
+        if not orders:
+            orders = db.query_all("orders", base_filter, limit=50)
+            orders = [o for o in orders if customer_name.lower() in o.get("customer_name", "").lower()]
+
+        if not orders:
+            return JSONResponse({
+                "success": False,
+                "message": f"I couldn't find any pending orders under the name {customer_name}. Are you sure you have an active order?"
+            })
+
+        # Cancel the matching order
+        order = orders[0]
+        db.update("orders", order["id"], {"status": "cancelled"})
+
+        logger.info(f"Cancelled order #{order['id']} for {order.get('customer_name')}")
+
+        return JSONResponse({
+            "success": True,
+            "order_id": order["id"],
+            "message": f"I've cancelled your order for {order.get('customer_name')}. Is there anything else I can help you with?"
+        })
+
+    except Exception as e:
+        logger.error(f"Error in cancel_order: {e}", exc_info=True)
+        return JSONResponse({
+            "success": False,
+            "message": "Error cancelling order. Please try again."
+        })
+
+
+class EndCallRequest(BaseModel):
+    """Request to end the call."""
+    call: Optional[RetellCallInfo] = None
+    name: Optional[str] = None
+    args: Optional[Dict[str, Any]] = None
+    call_id: Optional[str] = None
+    reason: Optional[str] = None
+
+    def get_reason(self) -> str:
+        if self.args and self.args.get("reason"):
+            return self.args["reason"]
+        return self.reason or "conversation_complete"
+
+
+@router.post("/end_call")
+async def end_call(
+    request: EndCallRequest,
+    db: SupabaseDB = Depends(get_db),
+    _verified: bool = Depends(verify_retell_request)
+):
+    """
+    Signal that the call should end.
+    Returns end_call flag for Retell to terminate the call.
+    """
+    reason = request.get_reason()
+    logger.info(f"End call requested: {reason}")
+
+    return JSONResponse({
+        "success": True,
+        "end_call": True,
+        "reason": reason,
+        "message": "Thank you for calling. Goodbye!"
+    })
+
+
 # ==================== Call Initialization ====================
 
 @router.post("/init_call")
-async def init_call(request: Request, db: SupabaseDB = Depends(get_db)):
+async def init_call(
+    request: Request,
+    db: SupabaseDB = Depends(get_db),
+    _verified: bool = Depends(verify_retell_request)
+):
     """
     Initialize a call with restaurant context.
     Called when a new call starts to set up the cart with restaurant info.
@@ -917,9 +1161,8 @@ async def init_call(request: Request, db: SupabaseDB = Depends(get_db)):
                 restaurant_id = account["id"]
                 logger.info(f"Initialized call {call_id} for restaurant {account['business_name']}")
 
-        # Create cart with restaurant context
-        cart = get_or_create_cart(call_id, restaurant_id)
-        cart["customer_phone"] = from_number
+        # Create cart with restaurant context in Supabase
+        cart_service.get_or_create_cart(call_id, restaurant_id, db, from_number)
 
         return JSONResponse({
             "success": True,

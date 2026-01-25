@@ -14,6 +14,9 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 import uvicorn
 from dotenv import load_dotenv
 import os
@@ -39,6 +42,9 @@ from backend.core.logging import setup_logging
 
 # Setup logging
 logger = setup_logging(__name__)
+
+# Rate limiter - uses client IP for identification
+limiter = Limiter(key_func=get_remote_address)
 
 
 @asynccontextmanager
@@ -179,6 +185,10 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Configure rate limiting
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 # Configure CORS
 cors_origins_env = os.getenv("CORS_ORIGINS", "http://localhost:4173,http://localhost:5173")
 cors_origins = cors_origins_env.split(",")
@@ -192,8 +202,15 @@ app.add_middleware(
     allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allow_headers=["*"],
-    expose_headers=["X-Total-Count", "X-Page", "X-Per-Page"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "Accept",
+        "Origin",
+        "X-Requested-With",
+        "X-Request-ID",
+    ],
+    expose_headers=["X-Total-Count", "X-Page", "X-Per-Page", "X-Process-Time", "X-Request-ID"],
 )
 
 # Add security middleware

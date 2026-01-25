@@ -1,10 +1,11 @@
 """Customer endpoints with phone-based lookup."""
 
-from typing import List
+from typing import List, Dict
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from backend.database import get_db, SupabaseDB
 from backend.schemas import CustomerCreate, CustomerUpdate, Customer as CustomerResponse
+from backend.auth import get_current_user
 
 router = APIRouter()
 
@@ -12,7 +13,8 @@ router = APIRouter()
 @router.post("/", response_model=CustomerResponse, status_code=status.HTTP_201_CREATED)
 async def create_customer(
     customer_data: CustomerCreate,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    current_user: Dict = Depends(get_current_user)
 ):
     """Create a new customer."""
     # Check if customer with phone already exists
@@ -28,7 +30,11 @@ async def create_customer(
 
 
 @router.get("/phone/{phone}", response_model=CustomerResponse)
-async def get_customer_by_phone(phone: str, db: SupabaseDB = Depends(get_db)):
+async def get_customer_by_phone(
+    phone: str,
+    db: SupabaseDB = Depends(get_db),
+    current_user: Dict = Depends(get_current_user)
+):
     """Get a customer by phone number."""
     customer = db.query_one("customers", {"phone": phone})
     if not customer:
@@ -40,7 +46,11 @@ async def get_customer_by_phone(phone: str, db: SupabaseDB = Depends(get_db)):
 
 
 @router.get("/{customer_id}", response_model=CustomerResponse)
-async def get_customer(customer_id: int, db: SupabaseDB = Depends(get_db)):
+async def get_customer(
+    customer_id: int,
+    db: SupabaseDB = Depends(get_db),
+    current_user: Dict = Depends(get_current_user)
+):
     """Get a customer by ID."""
     customer = db.query_one("customers", {"id": customer_id})
     if not customer:
@@ -55,7 +65,8 @@ async def get_customer(customer_id: int, db: SupabaseDB = Depends(get_db)):
 async def list_customers(
     skip: int = 0,
     limit: int = 100,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    current_user: Dict = Depends(get_current_user)
 ):
     """List all customers."""
     customers = db.query_all("customers", offset=skip, limit=limit)
@@ -66,7 +77,8 @@ async def list_customers(
 async def update_customer(
     customer_id: int,
     customer_data: CustomerUpdate,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    current_user: Dict = Depends(get_current_user)
 ):
     """Update a customer."""
     # Check if customer exists

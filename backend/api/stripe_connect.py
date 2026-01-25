@@ -303,6 +303,9 @@ async def stripe_connect_webhook(
     - payment_intent.succeeded: When customer payment succeeds
     - transfer.created: When money is transferred to restaurant
     """
+    import stripe
+    import os
+
     # Get webhook signature
     signature = request.headers.get("stripe-signature")
     if not signature:
@@ -314,35 +317,47 @@ async def stripe_connect_webhook(
     # Get raw body
     payload = await request.body()
 
-    # Verify webhook (would need webhook secret from env)
-    # For now, just log the event
-    try:
-        import json
-        event_data = json.loads(payload)
-        event_type = event_data.get("type")
+    # Verify webhook signature
+    webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
+    if not webhook_secret:
+        logger.error("STRIPE_WEBHOOK_SECRET not configured")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Webhook verification not configured"
+        )
 
+    try:
+        event = stripe.Webhook.construct_event(
+            payload, signature, webhook_secret
+        )
+        event_type = event.get("type")
+        event_data = event.get("data", {}).get("object", {})
         logger.info(f"Received Stripe Connect webhook: {event_type}")
 
         if event_type == "account.updated":
             # Restaurant completed onboarding or updated details
-            account_id = event_data["data"]["object"]["id"]
+            account_id = event_data.get("id")
             logger.info(f"Stripe account updated: {account_id}")
 
         elif event_type == "payment_intent.succeeded":
             # Customer payment succeeded
-            payment_intent = event_data["data"]["object"]
-            order_id = payment_intent["metadata"].get("order_id")
+            order_id = event_data.get("metadata", {}).get("order_id")
             if order_id:
                 logger.info(f"Payment succeeded for order {order_id}")
 
         elif event_type == "transfer.created":
             # Money transferred to restaurant
-            transfer = event_data["data"]["object"]
-            amount = transfer["amount"]
+            amount = event_data.get("amount", 0)
             logger.info(f"Transfer created: ${amount/100:.2f}")
 
         return {"status": "success"}
 
+    except stripe.error.SignatureVerificationError as e:
+        logger.warning(f"Invalid Stripe webhook signature: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid signature"
+        )
     except Exception as e:
         logger.error(f"Error processing webhook: {str(e)}")
         raise HTTPException(

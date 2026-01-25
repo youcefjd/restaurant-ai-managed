@@ -132,6 +132,31 @@ class SupabaseDB:
         result = query.execute()
         return result.data or []
 
+    def query_in(
+        self,
+        table: str,
+        column: str,
+        values: List[Any],
+        limit: int = 1000
+    ) -> List[Dict]:
+        """
+        Query records where column value is in a list of values.
+        More efficient than multiple individual queries.
+
+        Args:
+            table: Table name
+            column: Column to filter on
+            values: List of values to match
+            limit: Maximum records to return
+
+        Returns:
+            List of matching records
+        """
+        if not values:
+            return []
+        result = self._client.table(table).select("*").in_(column, values).limit(limit).execute()
+        return result.data or []
+
     def insert(self, table: str, data: Dict[str, Any]) -> Dict:
         """
         Insert a record into a table.

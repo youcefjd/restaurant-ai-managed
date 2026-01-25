@@ -127,7 +127,9 @@ export default function RestaurantOrders() {
                       <div className="flex items-center gap-1.5">
                         <span>{order.customer_name || 'Guest'}</span>
                         {order.special_instructions && (
-                          <MessageSquare className="w-3.5 h-3.5 text-yellow-400" title="Has special instructions" />
+                          <span title="Has special instructions">
+                            <MessageSquare className="w-3.5 h-3.5 text-yellow-400" />
+                          </span>
                         )}
                       </div>
                     </td>

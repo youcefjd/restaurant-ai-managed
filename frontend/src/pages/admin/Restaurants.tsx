@@ -11,6 +11,7 @@ export default function AdminRestaurants() {
   const [selectedRestaurant, setSelectedRestaurant] = useState<any>(null)
   const [commissionRate, setCommissionRate] = useState(10)
   const [commissionEnabled, setCommissionEnabled] = useState(true)
+  const [selectedTier, setSelectedTier] = useState('free')
   const [newRestaurant, setNewRestaurant] = useState({
     business_name: '',
     owner_email: '',
@@ -64,6 +65,14 @@ export default function AdminRestaurants() {
       // Close modal and refresh
       setShowDetailsModal(false)
       setSelectedRestaurant(null)
+    },
+  })
+
+  const updateSubscriptionMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number, data: any }) =>
+      adminAPI.updateSubscription(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-restaurants'] })
     },
   })
 
@@ -244,6 +253,7 @@ export default function AdminRestaurants() {
                       setSelectedRestaurant(restaurant)
                       setCommissionRate(restaurant.platform_commission_rate || 10)
                       setCommissionEnabled(restaurant.commission_enabled ?? true)
+                      setSelectedTier(restaurant.subscription_tier || 'free')
                       setShowDetailsModal(true)
                     }}
                     className="btn btn-sm btn-secondary"
@@ -323,10 +333,10 @@ export default function AdminRestaurants() {
                   value={newRestaurant.subscription_tier}
                   onChange={(e) => setNewRestaurant({ ...newRestaurant, subscription_tier: e.target.value })}
                 >
-                  <option value="free">Free</option>
-                  <option value="starter">Starter</option>
-                  <option value="professional">Professional</option>
-                  <option value="enterprise">Enterprise</option>
+                  <option value="free">Free (Trial) - 15% commission</option>
+                  <option value="starter">Starter ($49/mo) - 0% commission</option>
+                  <option value="growth">Growth ($149/mo) - 3% commission</option>
+                  <option value="scale">Scale ($299/mo) - 3% commission</option>
                 </select>
               </div>
 
@@ -404,6 +414,41 @@ export default function AdminRestaurants() {
                   <p className="text-sm text-dim mb-1">Created</p>
                   <p className="font-medium">{new Date(selectedRestaurant.created_at).toLocaleDateString()}</p>
                 </div>
+              </div>
+
+              {/* Subscription Tier */}
+              <div className="border-t border-[--border] pt-4">
+                <h3 className="font-semibold mb-3">Subscription Tier</h3>
+                <div className="flex items-center gap-3">
+                  <select
+                    className="input flex-1"
+                    value={selectedTier}
+                    onChange={(e) => setSelectedTier(e.target.value)}
+                  >
+                    <option value="free">Free (Trial) - 15% commission</option>
+                    <option value="starter">Starter ($49/mo) - 0% commission</option>
+                    <option value="growth">Growth ($149/mo) - 3% commission</option>
+                    <option value="scale">Scale ($299/mo) - 3% commission</option>
+                  </select>
+                  <button
+                    onClick={() => {
+                      updateSubscriptionMutation.mutate({
+                        id: selectedRestaurant.id,
+                        data: { subscription_tier: selectedTier }
+                      })
+                    }}
+                    disabled={updateSubscriptionMutation.isPending || selectedTier === selectedRestaurant.subscription_tier}
+                    className="btn btn-primary"
+                  >
+                    {updateSubscriptionMutation.isPending ? 'Updating...' : 'Update Tier'}
+                  </button>
+                </div>
+                <p className="text-xs text-dim mt-2">
+                  Changing tier will automatically update the commission rate to the tier default.
+                </p>
+                {updateSubscriptionMutation.isSuccess && (
+                  <p className="text-sm text-success mt-2">Tier updated successfully!</p>
+                )}
               </div>
 
               {/* Revenue Stats */}

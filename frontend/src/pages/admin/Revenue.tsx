@@ -25,26 +25,21 @@ export default function AdminRevenue() {
     },
   })
 
-  const revenueData = revenue?.data || []
+  const revenueResponse = revenue?.data || {}
+  const revenueData = revenueResponse.by_restaurant || []
 
-  // Calculate totals
-  const totalProcessed = revenueData.reduce(
-    (sum: number, item: any) => sum + item.total_revenue_cents,
-    0
-  )
-  const totalCommission = revenueData.reduce(
-    (sum: number, item: any) => sum + item.platform_commission_cents,
-    0
-  )
-  const restaurantEarnings = totalProcessed - totalCommission
+  // Use totals from API response (more accurate than recalculating)
+  const totalProcessed = revenueResponse.gross_revenue_cents || 0
+  const totalCommission = revenueResponse.platform_commission_cents || 0
+  const restaurantEarnings = revenueResponse.restaurant_payout_cents || (totalProcessed - totalCommission)
   const avgCommissionRate = totalProcessed > 0 ? (totalCommission / totalProcessed) * 100 : 0
 
-  // Prepare chart data
+  // Prepare chart data (API returns revenue_cents and commission_cents)
   const chartData = revenueData.map((item: any) => ({
     name: item.business_name,
-    revenue: item.total_revenue_cents / 100,
-    commission: item.platform_commission_cents / 100,
-    restaurant: (item.total_revenue_cents - item.platform_commission_cents) / 100,
+    revenue: (item.revenue_cents || 0) / 100,
+    commission: (item.commission_cents || 0) / 100,
+    restaurant: ((item.revenue_cents || 0) - (item.commission_cents || 0)) / 100,
   }))
 
   const metrics = [
@@ -175,19 +170,19 @@ export default function AdminRevenue() {
                 </tr>
               </thead>
               <tbody>
-                {revenueData.map((item: any) => (
-                  <tr key={item.restaurant_id} className="border-b border-gray-100 hover:bg-gray-50">
+                {revenueData.map((item: any, index: number) => (
+                  <tr key={item.account_id || index} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="py-3 px-4">{item.business_name}</td>
-                    <td className="text-right py-3 px-4">{item.order_count}</td>
+                    <td className="text-right py-3 px-4">{item.orders || 0}</td>
                     <td className="text-right py-3 px-4 font-medium">
-                      ${(item.total_revenue_cents / 100).toFixed(2)}
+                      ${((item.revenue_cents || 0) / 100).toFixed(2)}
                     </td>
-                    <td className="text-right py-3 px-4">{item.commission_rate}%</td>
+                    <td className="text-right py-3 px-4">{item.commission_rate || 10}%</td>
                     <td className="text-right py-3 px-4 text-green-600 font-medium">
-                      ${(item.platform_commission_cents / 100).toFixed(2)}
+                      ${((item.commission_cents || 0) / 100).toFixed(2)}
                     </td>
                     <td className="text-right py-3 px-4 text-purple-600 font-medium">
-                      ${((item.total_revenue_cents - item.platform_commission_cents) / 100).toFixed(2)}
+                      ${(((item.revenue_cents || 0) - (item.commission_cents || 0)) / 100).toFixed(2)}
                     </td>
                   </tr>
                 ))}

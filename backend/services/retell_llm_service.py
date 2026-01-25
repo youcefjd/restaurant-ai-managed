@@ -53,33 +53,49 @@ class RetellLLMService:
         """
         return f"""You are a friendly phone assistant for {restaurant_name}. You help customers place pickup orders.
 
-## CRITICAL
+## CRITICAL RULES
 - restaurant_id is {restaurant_id} - pass this to EVERY function call
 - Keep ALL responses to 1-2 SHORT sentences
-- NEVER read long lists - be conversational
+- NEVER invent or guess prices - only use prices from get_menu()
+- NEVER add items that don't exist on the menu
+- ONLY add ONE item per add_to_cart call unless customer explicitly says "two" or a number
 
 ## Menu Questions
-- When asked "what's on the menu" → mention 2-3 popular items, ask what they're in the mood for
+- When asked "what's on the menu" → call get_menu() first, then mention 2-3 items
 - NEVER list prices unless customer specifically asks "how much"
-- NEVER read the full menu - just highlights
-- If they want a category (tacos, desserts), briefly list 3-4 options
+- If they want a category, briefly list 3-4 options from the menu
 
 ## Taking Orders
-- When customer orders: add_to_cart(restaurant_id={restaurant_id}, item_name, quantity)
+- add_to_cart(restaurant_id={restaurant_id}, item_name, quantity, special_requests)
 - Confirm briefly: "Got it, [item]. Anything else?"
-- For modifications (extra cheese, no onions): include in special_requests
-- If item doesn't exist, suggest similar items
+- For modifications like "extra cheese", "add brie", "no onions" → put in special_requests parameter, NOT as a new item
+- If unsure what customer wants, ASK to clarify - don't guess
+- If item doesn't exist on menu, say "I don't see that on our menu" and suggest similar items
 
 ## Finishing Up
-- When they're done ordering, ask: "Name and pickup time?"
-- Then: create_order(restaurant_id={restaurant_id}, customer_name, pickup_time)
-- Confirm total and pickup time, say goodbye
+- When done ordering, ask: "What name for the order, and when would you like to pick up?"
+- create_order(restaurant_id={restaurant_id}, customer_name, pickup_time)
+- Confirm: "Order confirmed for [name], total is $X including tax, ready [time]"
+
+## Cancellations
+- If customer provides name: cancel_order(restaurant_id={restaurant_id}, customer_name) immediately
+- If customer doesn't provide name: ask "What name is the order under?"
+- If order not found: "I couldn't find a pending order under that name."
+
+## ENDING THE CALL - IMPORTANT
+You MUST call end_call() after:
+1. Order confirmed → "Your order is confirmed! Thank you, goodbye!" → end_call()
+2. Order cancelled → "I've cancelled your order. Have a great day, goodbye!" → end_call()
+3. Customer declines to order → "No problem! Have a great day, goodbye!" → end_call()
+4. Customer says "bye/goodbye/that's all/thanks" after any completed interaction → end_call()
+5. 3 failed attempts to redirect off-topic caller → "I can only help with orders. Goodbye!" → end_call()
+
+NEVER leave the call hanging - always say goodbye and call end_call() when conversation is complete.
 
 ## Style
-- Be warm but efficient - customers want quick service
+- Be warm but efficient
 - Never repeat their question back
-- "Do it" / "Sure" / "Let's do it" = yes, proceed
-- Off-topic requests → "I can help with food orders. What would you like?"
+- Off-topic: "I can help with food orders. What would you like?" (count as 1 attempt)
 """
 
     def _get_tools_config(self, restaurant_id: int = None) -> List[Dict[str, Any]]:
@@ -245,6 +261,30 @@ class RetellLLMService:
                 "timeout_ms": 3000
             },
             {
+                "type": "custom",
+                "name": "cancel_order",
+                "description": "Cancel a pending order. Call when customer wants to cancel an existing order. Ask for their name first. The response includes a 'message' field with confirmation or error.",
+                "url": f"{base_url}/cancel_order",
+                "method": "POST",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "restaurant_id": {
+                            "type": "integer",
+                            "description": f"The restaurant ID. Always use {restaurant_id}."
+                        },
+                        "customer_name": {
+                            "type": "string",
+                            "description": "Customer's name from the original order"
+                        }
+                    },
+                    "required": ["restaurant_id", "customer_name"]
+                },
+                "speak_during_execution": False,
+                "speak_after_execution": True,
+                "timeout_ms": 5000
+            },
+            {
                 "type": "end_call",
                 "name": "end_call",
                 "description": "End the call. Use when customer says goodbye or conversation is complete."
@@ -308,6 +348,7 @@ class RetellLLMService:
         self,
         llm_id: str,
         restaurant_name: str = None,
+        restaurant_id: int = None,
         model: str = None
     ) -> Optional[Dict[str, Any]]:
         """Update an existing Retell LLM configuration."""
@@ -316,13 +357,13 @@ class RetellLLMService:
 
         payload = {}
         if restaurant_name:
-            payload["general_prompt"] = self._get_system_prompt(restaurant_name)
+            payload["general_prompt"] = self._get_system_prompt(restaurant_name, restaurant_id)
             payload["begin_message"] = f"Hi, thanks for calling {restaurant_name}. What can I get for you today?"
         if model:
             payload["model"] = model
 
-        # Always update tools in case PUBLIC_URL changed
-        payload["general_tools"] = self._get_tools_config()
+        # Always update tools in case PUBLIC_URL changed or new tools added
+        payload["general_tools"] = self._get_tools_config(restaurant_id)
 
         try:
             async with httpx.AsyncClient() as client:

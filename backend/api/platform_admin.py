@@ -17,6 +17,7 @@ from backend.database import get_db, SupabaseDB
 from backend.auth import get_current_admin
 from backend.services.audit_service import get_audit_service
 from backend.utils.datetime_utils import utc_now, days_ago
+from backend.config.subscription_tiers import get_default_commission_for_tier
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -238,17 +239,18 @@ async def create_restaurant(
             detail=f"Restaurant with email {restaurant_data.owner_email} already exists"
         )
 
-    # Create restaurant account
+    # Create restaurant account with tier-based commission
+    tier = restaurant_data.subscription_tier
     account_data = {
         "business_name": restaurant_data.business_name,
         "owner_name": restaurant_data.owner_name,
         "owner_email": restaurant_data.owner_email,
         "owner_phone": restaurant_data.owner_phone,
-        "subscription_tier": restaurant_data.subscription_tier,
+        "subscription_tier": tier,
         "subscription_status": restaurant_data.subscription_status,
         "is_active": True,
         "onboarding_completed": False,
-        "platform_commission_rate": 10.0,
+        "platform_commission_rate": get_default_commission_for_tier(tier),
         "commission_enabled": True
     }
 
@@ -497,6 +499,13 @@ async def update_subscription(
         )
 
     update_dict = subscription_data.model_dump(exclude_unset=True)
+
+    # Auto-set commission rate when tier changes (admin can override later)
+    if "subscription_tier" in update_dict:
+        new_tier = update_dict["subscription_tier"]
+        update_dict["platform_commission_rate"] = get_default_commission_for_tier(new_tier)
+        logger.info(f"Tier changed to {new_tier}, setting commission to {update_dict['platform_commission_rate']}%")
+
     if update_dict:
         account = db.update("restaurant_accounts", account_id, update_dict)
 

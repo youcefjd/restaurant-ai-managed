@@ -15,9 +15,23 @@ from typing import Optional as Opt
 from backend.database import get_db, SupabaseDB
 from backend.services.google_maps_service import google_maps_service
 from backend.services.menu_parser import menu_parser
+from backend.auth import get_current_user, get_current_admin
+from backend.config.subscription_tiers import get_default_commission_for_tier
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def verify_account_access(current_user: dict, account_id: int):
+    """Verify user has access to the account (owner or admin)."""
+    if current_user["role"] == "admin":
+        return True
+    if current_user["role"] == "restaurant" and current_user.get("account_id") == account_id:
+        return True
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Not authorized to access this account"
+    )
 
 
 # Pydantic schemas
@@ -155,7 +169,7 @@ async def signup_restaurant(
     Creates account with:
     - 30-day free trial
     - FREE tier subscription
-    - Platform commission rate of 10%
+    - Commission rate based on tier (15% for free/trial)
     """
     # Check if email already exists
     existing = db.query_one("restaurant_accounts", {"owner_email": account_data.owner_email})
@@ -166,12 +180,13 @@ async def signup_restaurant(
             detail="Email already registered"
         )
 
-    # Create account
+    # Create account with tier-based commission
+    initial_tier = "free"
     account_dict = account_data.model_dump()
     account_dict.update({
-        "subscription_tier": "free",
+        "subscription_tier": initial_tier,
         "subscription_status": "trial",
-        "platform_commission_rate": 10.0,
+        "platform_commission_rate": get_default_commission_for_tier(initial_tier),
         "trial_ends_at": (datetime.now() + timedelta(days=30)).isoformat(),
         "onboarding_completed": False,
         "is_active": True
@@ -185,8 +200,13 @@ async def signup_restaurant(
 
 
 @router.get("/accounts/{account_id}", response_model=RestaurantAccountResponse)
-async def get_account(account_id: int, db: SupabaseDB = Depends(get_db)):
+async def get_account(
+    account_id: int,
+    db: SupabaseDB = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
     """Get restaurant account details."""
+    verify_account_access(current_user, account_id)
     account = db.query_one("restaurant_accounts", {"id": account_id})
 
     if not account:
@@ -207,7 +227,8 @@ class TwilioPhoneUpdate(BaseModel):
 async def update_twilio_phone(
     account_id: int,
     phone_data: TwilioPhoneUpdate,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Update Twilio phone number for restaurant account.
@@ -215,6 +236,7 @@ async def update_twilio_phone(
     This phone number is used to identify which restaurant a call is for.
     The number must match the Twilio phone number configured in your Twilio account.
     """
+    verify_account_access(current_user, account_id)
     # Verify account exists
     account = db.query_one("restaurant_accounts", {"id": account_id})
     if not account:
@@ -266,13 +288,15 @@ async def update_twilio_phone(
 @router.delete("/accounts/{account_id}/twilio-phone", response_model=RestaurantAccountResponse)
 async def remove_twilio_phone(
     account_id: int,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Remove Twilio phone number from restaurant account.
 
     This will set the phone number to null, disabling voice AI for this restaurant.
     """
+    verify_account_access(current_user, account_id)
     # Verify account exists
     account = db.query_one("restaurant_accounts", {"id": account_id})
     if not account:
@@ -300,13 +324,15 @@ class OperatingHoursUpdate(BaseModel):
 async def update_operating_hours(
     account_id: int,
     hours_data: OperatingHoursUpdate,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Update operating hours for restaurant account.
 
     This information is used by the AI to answer customer questions about hours of operation.
     """
+    verify_account_access(current_user, account_id)
     # Verify account exists
     account = db.query_one("restaurant_accounts", {"id": account_id})
     if not account:
@@ -369,14 +395,51 @@ async def update_operating_hours(
     return updated_account
 
 
+class TaxRateUpdate(BaseModel):
+    """Schema for updating tax rate."""
+    tax_rate: float = Field(..., ge=0, le=0.25, description="Tax rate as decimal (e.g., 0.0825 for 8.25%)")
+
+
+@router.patch("/accounts/{account_id}/tax-rate", response_model=RestaurantAccountResponse)
+async def update_tax_rate(
+    account_id: int,
+    tax_data: TaxRateUpdate,
+    db: SupabaseDB = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Update tax rate for restaurant account.
+
+    The tax rate is applied to all orders placed through the voice agent.
+    """
+    verify_account_access(current_user, account_id)
+
+    account = db.query_one("restaurant_accounts", {"id": account_id})
+    if not account:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Account not found"
+        )
+
+    updated_account = db.update("restaurant_accounts", account_id, {
+        "tax_rate": tax_data.tax_rate
+    })
+
+    logger.info(f"Updated tax rate for account {account_id} to {tax_data.tax_rate}")
+
+    return updated_account
+
+
 @router.post("/accounts/{account_id}/menus", status_code=status.HTTP_201_CREATED)
 async def create_menu(
     account_id: int,
     menu_name: str,
     menu_description: Optional[str] = None,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """Create a new menu for a restaurant account."""
+    verify_account_access(current_user, account_id)
     # Verify account exists
     account = db.query_one("restaurant_accounts", {"id": account_id})
     if not account:
@@ -406,7 +469,8 @@ async def create_menu(
 async def update_menu(
     menu_id: int,
     menu_update: MenuUpdate,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """Update a menu's name and/or description."""
     menu = db.query_one("menus", {"id": menu_id})
@@ -415,6 +479,7 @@ async def update_menu(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Menu not found"
         )
+    verify_account_access(current_user, menu["account_id"])
 
     update_data = {}
     if menu_update.menu_name is not None:
@@ -437,7 +502,8 @@ async def update_menu(
 @router.delete("/menus/{menu_id}", status_code=status.HTTP_200_OK)
 async def delete_menu(
     menu_id: int,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """Delete a menu and all its categories and items."""
     menu = db.query_one("menus", {"id": menu_id})
@@ -474,7 +540,8 @@ async def create_category(
     category_name: str,
     category_description: Optional[str] = None,
     display_order: int = 0,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """Create a new category in a menu."""
     # Verify menu exists
@@ -505,7 +572,8 @@ async def create_category(
 @router.post("/items", response_model=MenuItemResponse, status_code=status.HTTP_201_CREATED)
 async def create_menu_item(
     item_data: MenuItemCreate,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """Create a new menu item."""
     # Verify category exists
@@ -526,7 +594,8 @@ async def create_menu_item(
 async def update_menu_item(
     item_id: int,
     item_data: MenuItemUpdate,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """Update a menu item."""
     # Find the item
@@ -560,7 +629,8 @@ async def update_menu_item(
 async def toggle_menu_item_availability(
     item_id: int,
     is_available: bool,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Toggle menu item availability.
@@ -588,7 +658,8 @@ async def toggle_menu_item_availability(
 @router.delete("/items/{item_id}", status_code=status.HTTP_200_OK)
 async def delete_menu_item(
     item_id: int,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Delete a menu item by ID.
@@ -615,11 +686,13 @@ async def delete_menu_item(
 async def delete_all_menu_items(
     account_id: int,
     menu_id: int,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Delete all menu items from a specific menu.
     """
+    verify_account_access(current_user, account_id)
     # Verify account exists
     account = db.query_one("restaurant_accounts", {"id": account_id})
     if not account:
@@ -656,7 +729,8 @@ async def delete_all_menu_items(
 @router.post("/modifiers", response_model=MenuModifierResponse, status_code=status.HTTP_201_CREATED)
 async def create_modifier(
     modifier_data: MenuModifierCreate,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """Create a new menu modifier."""
     # Verify item exists
@@ -674,13 +748,18 @@ async def create_modifier(
 
 
 @router.get("/accounts/{account_id}/menu-full")
-async def get_full_menu(account_id: int, db: SupabaseDB = Depends(get_db)):
+async def get_full_menu(
+    account_id: int,
+    db: SupabaseDB = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
     """
     Get complete menu structure for a restaurant account.
 
     Returns all menus with categories, items, and modifiers.
     Optimized to use only 5 queries regardless of menu size.
     """
+    verify_account_access(current_user, account_id)
     account = db.query_one("restaurant_accounts", {"id": account_id})
     if not account:
         raise HTTPException(
@@ -859,7 +938,8 @@ class GoogleMapsPlaceUpdate(BaseModel):
 async def update_operating_hours_from_google(
     account_id: int,
     place_data: GoogleMapsPlaceUpdate,
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Update restaurant operating hours from Google Maps place.
@@ -874,6 +954,7 @@ async def update_operating_hours_from_google(
     Returns:
         Updated restaurant account with new operating hours
     """
+    verify_account_access(current_user, account_id)
     # Verify account exists
     account = db.query_one("restaurant_accounts", {"id": account_id})
     if not account:
@@ -927,7 +1008,8 @@ async def import_menu(
     image_file: Opt[UploadFile] = File(None),
     pdf_file: Opt[UploadFile] = File(None),
     image_files: List[UploadFile] = File(...),
-    db: SupabaseDB = Depends(get_db)
+    db: SupabaseDB = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Import a menu from JSON, plain text, PDF, single image, or multiple images using AI parsing.
@@ -952,6 +1034,7 @@ async def import_menu(
     Returns:
         Created menu with all categories and items
     """
+    verify_account_access(current_user, account_id)
     # Verify account exists
     account = db.query_one("restaurant_accounts", {"id": account_id})
     if not account:

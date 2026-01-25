@@ -57,6 +57,8 @@ export const adminAPI = {
   createRestaurant: (data: any) => api.post('/admin/restaurants', data),
   updateCommission: (id: number, data: { platform_commission_rate: number, commission_enabled: boolean }) =>
     api.put(`/admin/restaurants/${id}/commission`, data),
+  updateSubscription: (id: number, data: { subscription_tier?: string, subscription_status?: string }) =>
+    api.put(`/admin/restaurants/${id}/subscription`, data),
   suspendRestaurant: (id: number) => api.post(`/admin/restaurants/${id}/suspend`),
   activateRestaurant: (id: number) => api.post(`/admin/restaurants/${id}/activate`),
 }
@@ -110,6 +112,8 @@ export const restaurantAPI = {
     api.delete(`/onboarding/accounts/${accountId}/twilio-phone`),
   updateOperatingHours: (accountId: number, hours: { opening_time?: string; closing_time?: string; operating_days?: number[] }) =>
     api.patch(`/onboarding/accounts/${accountId}/operating-hours`, hours),
+  updateTaxRate: (accountId: number, taxRate: number) =>
+    api.patch(`/onboarding/accounts/${accountId}/tax-rate`, { tax_rate: taxRate }),
   searchGoogleMaps: (query: string, location?: string) =>
     api.get('/onboarding/google-maps/search', { params: { query, location } }),
   getGoogleMapsPlace: (placeId: string) =>

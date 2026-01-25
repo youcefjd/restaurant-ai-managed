@@ -15,12 +15,48 @@ import json
 import hmac
 import hashlib
 import logging
+import asyncio
 from typing import Optional, Dict, Any, List
 from datetime import datetime
+from functools import wraps
 
 import httpx
 
 logger = logging.getLogger(__name__)
+
+
+def with_retry(max_attempts: int = 3, base_delay: float = 1.0, max_delay: float = 10.0):
+    """
+    Decorator for adding retry logic with exponential backoff.
+
+    Args:
+        max_attempts: Maximum number of retry attempts
+        base_delay: Initial delay between retries in seconds
+        max_delay: Maximum delay between retries
+    """
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            last_exception = None
+            for attempt in range(max_attempts):
+                try:
+                    return await func(*args, **kwargs)
+                except (httpx.HTTPError, httpx.TimeoutException) as e:
+                    last_exception = e
+                    if attempt < max_attempts - 1:
+                        # Exponential backoff with jitter
+                        delay = min(base_delay * (2 ** attempt), max_delay)
+                        logger.warning(
+                            f"{func.__name__} attempt {attempt + 1}/{max_attempts} failed: {e}. "
+                            f"Retrying in {delay:.1f}s..."
+                        )
+                        await asyncio.sleep(delay)
+                    else:
+                        logger.error(f"{func.__name__} failed after {max_attempts} attempts: {e}")
+                        raise
+            raise last_exception
+        return wrapper
+    return decorator
 
 
 class RetellService:
@@ -80,6 +116,7 @@ class RetellService:
 
     # ==================== Agent Management ====================
 
+    @with_retry(max_attempts=3, base_delay=1.0)
     async def create_agent(
         self,
         name: str,
@@ -149,6 +186,7 @@ class RetellService:
             logger.error(f"Error creating Retell agent: {e}")
             return None
 
+    @with_retry(max_attempts=3, base_delay=1.0)
     async def get_agent(self, agent_id: str) -> Optional[Dict[str, Any]]:
         """Get agent by ID."""
         if not self.enabled:
@@ -172,6 +210,7 @@ class RetellService:
             logger.error(f"Error getting Retell agent: {e}")
             return None
 
+    @with_retry(max_attempts=3, base_delay=1.0)
     async def update_agent(
         self,
         agent_id: str,
@@ -200,6 +239,7 @@ class RetellService:
             logger.error(f"Error updating Retell agent: {e}")
             return None
 
+    @with_retry(max_attempts=3, base_delay=1.0)
     async def list_agents(self) -> List[Dict[str, Any]]:
         """List all agents."""
         if not self.enabled:
@@ -223,6 +263,7 @@ class RetellService:
             logger.error(f"Error listing Retell agents: {e}")
             return []
 
+    @with_retry(max_attempts=3, base_delay=1.0)
     async def delete_agent(self, agent_id: str) -> bool:
         """Delete an agent."""
         if not self.enabled:
@@ -249,6 +290,7 @@ class RetellService:
 
     # ==================== Phone Number Management ====================
 
+    @with_retry(max_attempts=3, base_delay=1.0)
     async def create_phone_number(
         self,
         area_code: int = 415,
@@ -296,6 +338,7 @@ class RetellService:
             logger.error(f"Error creating Retell phone number: {e}")
             return None
 
+    @with_retry(max_attempts=3, base_delay=1.0)
     async def import_phone_number(
         self,
         phone_number: str,
@@ -349,6 +392,7 @@ class RetellService:
             logger.error(f"Error importing phone number: {e}")
             return None
 
+    @with_retry(max_attempts=3, base_delay=1.0)
     async def get_phone_number(self, phone_number: str) -> Optional[Dict[str, Any]]:
         """Get phone number details."""
         if not self.enabled:
@@ -371,6 +415,7 @@ class RetellService:
             logger.error(f"Error getting phone number: {e}")
             return None
 
+    @with_retry(max_attempts=3, base_delay=1.0)
     async def update_phone_number(
         self,
         phone_number: str,
@@ -406,6 +451,7 @@ class RetellService:
             logger.error(f"Error updating phone number: {e}")
             return None
 
+    @with_retry(max_attempts=3, base_delay=1.0)
     async def list_phone_numbers(self) -> List[Dict[str, Any]]:
         """List all phone numbers."""
         if not self.enabled:
@@ -430,6 +476,7 @@ class RetellService:
 
     # ==================== Call Management ====================
 
+    @with_retry(max_attempts=3, base_delay=1.0)
     async def create_phone_call(
         self,
         from_number: str,
@@ -486,6 +533,7 @@ class RetellService:
             logger.error(f"Error creating call: {e}")
             return None
 
+    @with_retry(max_attempts=3, base_delay=1.0)
     async def get_call(self, call_id: str) -> Optional[Dict[str, Any]]:
         """Get call details."""
         if not self.enabled:
@@ -508,6 +556,7 @@ class RetellService:
             logger.error(f"Error getting call: {e}")
             return None
 
+    @with_retry(max_attempts=3, base_delay=1.0)
     async def list_calls(
         self,
         filter_criteria: Dict[str, Any] = None,
@@ -544,6 +593,7 @@ class RetellService:
 
     # ==================== SMS Management ====================
 
+    @with_retry(max_attempts=3, base_delay=1.0)
     async def create_sms_chat(
         self,
         from_number: str,
@@ -598,6 +648,7 @@ class RetellService:
             logger.error(f"Error creating SMS chat: {e}")
             return None
 
+    @with_retry(max_attempts=3, base_delay=1.0)
     async def send_sms(
         self,
         from_number: str,

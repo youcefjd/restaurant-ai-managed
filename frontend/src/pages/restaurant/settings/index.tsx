@@ -4,6 +4,7 @@ import { restaurantAPI } from '../../../services/api'
 import { useAuth } from '../../../contexts/AuthContext'
 import PageHeader from '../../../components/ui/PageHeader'
 import OperatingHoursSettings from './OperatingHoursSettings'
+import TaxRateSettings from './TaxRateSettings'
 
 export default function Settings() {
   const { user } = useAuth()
@@ -72,6 +73,11 @@ export default function Settings() {
         currentOpeningTime={account?.opening_time || null}
         currentClosingTime={account?.closing_time || null}
         currentOperatingDays={account?.operating_days || null}
+      />
+
+      <TaxRateSettings
+        accountId={accountId}
+        currentTaxRate={account?.tax_rate ?? null}
       />
     </div>
   )

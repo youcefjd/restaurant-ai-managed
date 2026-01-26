@@ -134,10 +134,10 @@ export default function RestaurantLogin() {
           <p className="text-sm font-medium mb-3" style={{ color: 'var(--accent-cyan)' }}>Test Accounts (password: test123)</p>
           <div className="grid grid-cols-2 gap-2">
             {[
-              { email: 'chinese@test.com', name: 'Golden Dragon' },
-              { email: 'mexican@test.com', name: 'Casa del Sol' },
-              { email: 'italian@test.com', name: 'Bella Italia' },
-              { email: 'french@test.com', name: 'Le Petit Bistro' },
+              { email: 'mario@example.com', name: "Mario's Italian Kitchen" },
+              { email: 'john@testpizza.com', name: 'Test Pizza Place' },
+              { email: 'owner@tacotown.com', name: 'Taco Town' },
+              { email: 'sierra.nesbit@gmail.com', name: "Sierra's Palace" },
             ].map((account) => (
               <button
                 key={account.email}

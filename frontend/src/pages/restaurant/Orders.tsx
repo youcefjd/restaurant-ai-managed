@@ -1,8 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { restaurantAPI } from '../../services/api'
-import { X, DollarSign, CreditCard, MessageSquare, ChevronDown } from 'lucide-react'
-import { useState } from 'react'
+import { X, DollarSign, CreditCard, MessageSquare, ChevronDown, Volume2, VolumeX } from 'lucide-react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
+import { useOrderNotification } from '../../hooks/useOrderNotification'
 
 // Order status flow: pending -> preparing -> ready -> completed
 // Can be cancelled from any state except completed
@@ -35,7 +36,9 @@ export default function RestaurantOrders() {
   const accountId = user?.id
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
+  const [soundEnabled, setSoundEnabled] = useState(true)
   const queryClient = useQueryClient()
+  const { checkForNewOrders, playNotificationSound } = useOrderNotification()
 
   const { data: orders, isLoading } = useQuery({
     queryKey: ['orders', accountId, statusFilter],
@@ -44,8 +47,8 @@ export default function RestaurantOrders() {
       return restaurantAPI.getOrders(accountId!, params)
     },
     enabled: !!accountId,
-    refetchInterval: 60000,
-    staleTime: 30000,
+    refetchInterval: 10000, // Check for new orders every 10 seconds
+    staleTime: 5000,
     select: (response) => ({
       ...response,
       data: response.data.map((order: any) => ({
@@ -78,6 +81,13 @@ export default function RestaurantOrders() {
 
   const orderData = orders?.data || []
 
+  // Check for new orders and play notification sound
+  useEffect(() => {
+    if (soundEnabled && orderData.length > 0) {
+      checkForNewOrders(orderData)
+    }
+  }, [orderData, soundEnabled, checkForNewOrders])
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -88,17 +98,33 @@ export default function RestaurantOrders() {
 
   return (
     <div className="space-y-4">
-      {/* Filter */}
-      <div className="flex gap-2 flex-wrap">
-        {['all', 'pending', 'preparing', 'ready', 'completed', 'cancelled'].map((status) => (
-          <button
-            key={status}
-            onClick={() => setStatusFilter(status)}
-            className={`btn btn-sm ${statusFilter === status ? 'btn-primary' : 'btn-secondary'}`}
-          >
-            {status.charAt(0).toUpperCase() + status.slice(1)}
-          </button>
-        ))}
+      {/* Filter and Sound Toggle */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex gap-2 flex-wrap">
+          {['all', 'pending', 'preparing', 'ready', 'completed', 'cancelled'].map((status) => (
+            <button
+              key={status}
+              onClick={() => setStatusFilter(status)}
+              className={`btn btn-sm ${statusFilter === status ? 'btn-primary' : 'btn-secondary'}`}
+            >
+              {status.charAt(0).toUpperCase() + status.slice(1)}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={() => {
+            setSoundEnabled(!soundEnabled)
+            if (!soundEnabled) {
+              // Play a test sound when enabling
+              playNotificationSound()
+            }
+          }}
+          className={`btn btn-sm flex items-center gap-1.5 ${soundEnabled ? 'btn-secondary' : 'btn-secondary opacity-50'}`}
+          title={soundEnabled ? 'Sound notifications enabled' : 'Sound notifications disabled'}
+        >
+          {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+          <span className="hidden sm:inline">{soundEnabled ? 'Sound On' : 'Sound Off'}</span>
+        </button>
       </div>
 
       {/* Orders Table */}

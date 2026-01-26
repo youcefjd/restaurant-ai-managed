@@ -430,6 +430,41 @@ async def update_tax_rate(
     return updated_account
 
 
+class OrderSettingsUpdate(BaseModel):
+    """Schema for updating order settings."""
+    max_advance_order_days: int = Field(..., ge=0, le=30, description="Maximum days in advance orders can be placed (0 = same-day only)")
+
+
+@router.patch("/accounts/{account_id}/order-settings", response_model=RestaurantAccountResponse)
+async def update_order_settings(
+    account_id: int,
+    settings_data: OrderSettingsUpdate,
+    db: SupabaseDB = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Update order settings for restaurant account.
+
+    Controls how far in advance customers can place orders.
+    """
+    verify_account_access(current_user, account_id)
+
+    account = db.query_one("restaurant_accounts", {"id": account_id})
+    if not account:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Account not found"
+        )
+
+    updated_account = db.update("restaurant_accounts", account_id, {
+        "max_advance_order_days": settings_data.max_advance_order_days
+    })
+
+    logger.info(f"Updated order settings for account {account_id}: max_advance_order_days={settings_data.max_advance_order_days}")
+
+    return updated_account
+
+
 @router.post("/accounts/{account_id}/menus", status_code=status.HTTP_201_CREATED)
 async def create_menu(
     account_id: int,

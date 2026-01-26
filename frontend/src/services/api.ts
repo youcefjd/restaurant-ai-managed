@@ -114,6 +114,8 @@ export const restaurantAPI = {
     api.patch(`/onboarding/accounts/${accountId}/operating-hours`, hours),
   updateTaxRate: (accountId: number, taxRate: number) =>
     api.patch(`/onboarding/accounts/${accountId}/tax-rate`, { tax_rate: taxRate }),
+  updateOrderSettings: (accountId: number, maxAdvanceOrderDays: number) =>
+    api.patch(`/onboarding/accounts/${accountId}/order-settings`, { max_advance_order_days: maxAdvanceOrderDays }),
   searchGoogleMaps: (query: string, location?: string) =>
     api.get('/onboarding/google-maps/search', { params: { query, location } }),
   getGoogleMapsPlace: (placeId: string) =>

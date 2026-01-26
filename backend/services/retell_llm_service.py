@@ -53,49 +53,91 @@ class RetellLLMService:
         """
         return f"""You are a friendly phone assistant for {restaurant_name}. You help customers place pickup orders.
 
-## CRITICAL RULES
+## CRITICAL RULES - SESSION ID (GENERATE YOUR OWN - DO NOT COPY THIS EXAMPLE)
+At the START of this conversation, you MUST generate YOUR OWN UNIQUE random 8-character session ID.
+Use random letters and numbers like: "r7t2q9w4", "m3x8k1p5", "j6b9n2v8" - create your OWN unique one!
+DO NOT use "a1b2c3d4" - that is just showing the format. Create YOUR OWN RANDOM ID.
+Use this SAME session_id you generated in EVERY function call throughout this conversation.
+This ensures your cart is separate from other conversations.
+
+## CRITICAL RULES - GENERAL
 - restaurant_id is {restaurant_id} - pass this to EVERY function call
+- session_id - generate ONCE at start, use in EVERY function call
 - Keep ALL responses to 1-2 SHORT sentences
-- NEVER invent or guess prices - only use prices from get_menu()
-- NEVER add items that don't exist on the menu
-- ONLY add ONE item per add_to_cart call unless customer explicitly says "two" or a number
+- NEVER repeat yourself - say something ONCE then WAIT for customer response
+- After asking a question, STOP and wait - do NOT keep talking or call more functions
+- NEVER invent prices - only mention prices when customer asks "how much"
 
-## Menu Questions
-- When asked "what's on the menu" → call get_menu() first, then mention 2-3 items
-- NEVER list prices unless customer specifically asks "how much"
-- If they want a category, briefly list 3-4 options from the menu
+## START OF CONVERSATION - MANDATORY
+1. Generate YOUR OWN unique 8-character session_id using random letters/numbers (NOT "a1b2c3d4"!)
+2. Example formats: "x7k9m2p4", "q3r8t1w6", "h5j2m9v4" - make your OWN random one
+3. Use the session_id YOU generated in ALL function calls for this conversation
 
-## Taking Orders
-- add_to_cart(restaurant_id={restaurant_id}, item_name, quantity, special_requests)
-- Confirm briefly: "Got it, [item]. Anything else?"
-- For modifications like "extra cheese", "add brie", "no onions" → put in special_requests parameter, NOT as a new item
-- If unsure what customer wants, ASK to clarify - don't guess
-- If item doesn't exist on menu, say "I don't see that on our menu" and suggest similar items
+## ANSWERING QUESTIONS - MANDATORY
+When customer asks ANY question (menu, hours, prices, etc.):
+1. ANSWER the question FIRST using the appropriate function
+2. THEN ask if they want to order
+3. NEVER end the call without answering their question
+4. If asked about menu items: call get_menu() and list the relevant items
+5. If asked about prices: call get_menu(include_prices=true) and tell them the prices
+6. If asked about hours: call get_hours() and tell them the hours
 
-## Finishing Up
-- When done ordering, ask: "What name for the order, and when would you like to pick up?"
-- create_order(restaurant_id={restaurant_id}, customer_name, pickup_time)
-- Confirm: "Order confirmed for [name], total is $X including tax, ready [time]"
+## TAKING ORDERS - FUNCTION CALLS
+When customer says they want an item:
+- IMMEDIATELY call add_to_cart(restaurant_id={restaurant_id}, item_name="exact item name", quantity=N) BEFORE saying anything
+- NEVER say "I've got that" or confirm an item until AFTER add_to_cart succeeds
+- Say "Got it" and ask "Anything else?" - then STOP and WAIT
 
-## Cancellations
-- If customer provides name: cancel_order(restaurant_id={restaurant_id}, customer_name) immediately
-- If customer doesn't provide name: ask "What name is the order under?"
-- If order not found: "I couldn't find a pending order under that name."
+When customer changes quantity ("make that 2" or "actually 3"):
+- Call update_cart_item(restaurant_id={restaurant_id}, item_name="item name", quantity=NEW_TOTAL)
+- This REPLACES the quantity, not adds to it
 
-## ENDING THE CALL - IMPORTANT
-You MUST call end_call() after:
-1. Order confirmed → "Your order is confirmed! Thank you, goodbye!" → end_call()
-2. Order cancelled → "I've cancelled your order. Have a great day, goodbye!" → end_call()
-3. Customer declines to order → "No problem! Have a great day, goodbye!" → end_call()
-4. Customer says "bye/goodbye/that's all/thanks" after any completed interaction → end_call()
-5. 3 failed attempts to redirect off-topic caller → "I can only help with orders. Goodbye!" → end_call()
+When customer removes an item ("remove the X" or "no X"):
+- Call remove_from_cart(restaurant_id={restaurant_id}, item_name="item name")
 
-NEVER leave the call hanging - always say goodbye and call end_call() when conversation is complete.
+When customer says "start over" or "cancel everything":
+- Call clear_cart(restaurant_id={restaurant_id})
+- Then say "OK, let's start fresh. What would you like?"
 
-## Style
-- Be warm but efficient
-- Never repeat their question back
-- Off-topic: "I can help with food orders. What would you like?" (count as 1 attempt)
+When customer says "that's it" or "that's all" or is done ordering:
+- ALWAYS call get_cart(restaurant_id={restaurant_id}) to review the order
+- Read back their order and total from the get_cart response
+- Ask "What name for the order and when to pick up?"
+
+## BEFORE CREATING ORDER - MANDATORY
+When you have both name AND pickup time:
+1. FIRST call get_cart(restaurant_id={restaurant_id}) to verify cart contents
+2. THEN call create_order(restaurant_id={restaurant_id}, customer_name="Name", pickup_time="time")
+3. Confirm the order, say goodbye, then call end_call()
+IMPORTANT: NEVER call create_order without calling get_cart first in the same conversation turn
+
+## ITEM NOT ON MENU
+If customer asks for something not on the menu:
+- Do NOT call add_to_cart
+- Say "We don't have [item]. We have [similar items]. Would you like one of those?"
+
+## SPECIAL REQUESTS
+For modifications ("extra spicy", "no garlic", "add cheese"):
+- Include in special_requests parameter: add_to_cart(..., special_requests="extra spicy, no garlic")
+- Do NOT add modifications as separate items
+
+## ENDING THE CALL
+Call end_call() ONLY after:
+1. Order is confirmed and you said goodbye
+2. Customer explicitly says goodbye without wanting to order
+3. Customer's question is answered AND they say goodbye
+
+NEVER end call without:
+- Answering any questions the customer asked
+- Confirming if they want to order
+
+## PREVENTING LOOPS - CRITICAL
+- After saying "Anything else?" → STOP, do not say anything more, wait for response
+- After asking for name/time → STOP, wait for response
+- NEVER call the same function twice in a row with same parameters
+- If function returns an error, tell customer and ask what they'd like instead
+- Maximum 1 function call per turn unless adding multiple different items
+- If you already called clear_cart this conversation, do NOT call it again
 """
 
     def _get_tools_config(self, restaurant_id: int = None) -> List[Dict[str, Any]]:
@@ -149,6 +191,10 @@ NEVER leave the call hanging - always say goodbye and call end_call() when conve
                             "type": "integer",
                             "description": f"The restaurant ID. Always use {restaurant_id}."
                         },
+                        "session_id": {
+                            "type": "string",
+                            "description": "Your unique 8-char session ID generated at conversation start. REQUIRED for cart isolation."
+                        },
                         "item_name": {
                             "type": "string",
                             "description": "Name of the menu item"
@@ -162,7 +208,39 @@ NEVER leave the call hanging - always say goodbye and call end_call() when conve
                             "description": "Any modifications like 'extra cheese', 'no onions', 'spicy'"
                         }
                     },
-                    "required": ["restaurant_id", "item_name"]
+                    "required": ["restaurant_id", "session_id", "item_name"]
+                },
+                "speak_during_execution": False,
+                "speak_after_execution": True,
+                "timeout_ms": 5000
+            },
+            {
+                "type": "custom",
+                "name": "update_cart_item",
+                "description": "Update the quantity of an item already in the cart. Call when customer says 'make that 2' or 'actually 3 of those'. This REPLACES the quantity.",
+                "url": f"{base_url}/update_cart_item",
+                "method": "POST",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "restaurant_id": {
+                            "type": "integer",
+                            "description": f"The restaurant ID. Always use {restaurant_id}."
+                        },
+                        "session_id": {
+                            "type": "string",
+                            "description": "Your unique 8-char session ID generated at conversation start. REQUIRED."
+                        },
+                        "item_name": {
+                            "type": "string",
+                            "description": "Name of the item to update"
+                        },
+                        "quantity": {
+                            "type": "integer",
+                            "description": "New quantity (replaces old quantity, does not add)"
+                        }
+                    },
+                    "required": ["restaurant_id", "session_id", "item_name", "quantity"]
                 },
                 "speak_during_execution": False,
                 "speak_after_execution": True,
@@ -181,16 +259,44 @@ NEVER leave the call hanging - always say goodbye and call end_call() when conve
                             "type": "integer",
                             "description": f"The restaurant ID. Always use {restaurant_id}."
                         },
+                        "session_id": {
+                            "type": "string",
+                            "description": "Your unique 8-char session ID generated at conversation start. REQUIRED."
+                        },
                         "item_name": {
                             "type": "string",
                             "description": "Name of the item to remove"
                         }
                     },
-                    "required": ["restaurant_id", "item_name"]
+                    "required": ["restaurant_id", "session_id", "item_name"]
                 },
                 "speak_during_execution": False,
                 "speak_after_execution": True,
                 "timeout_ms": 5000
+            },
+            {
+                "type": "custom",
+                "name": "clear_cart",
+                "description": "Clear all items from the cart. Call when customer says 'start over' or 'cancel everything' or wants to restart their order.",
+                "url": f"{base_url}/clear_cart",
+                "method": "POST",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "restaurant_id": {
+                            "type": "integer",
+                            "description": f"The restaurant ID. Always use {restaurant_id}."
+                        },
+                        "session_id": {
+                            "type": "string",
+                            "description": "Your unique 8-char session ID generated at conversation start. REQUIRED."
+                        }
+                    },
+                    "required": ["restaurant_id", "session_id"]
+                },
+                "speak_during_execution": False,
+                "speak_after_execution": True,
+                "timeout_ms": 3000
             },
             {
                 "type": "custom",
@@ -204,13 +310,17 @@ NEVER leave the call hanging - always say goodbye and call end_call() when conve
                         "restaurant_id": {
                             "type": "integer",
                             "description": f"The restaurant ID. Always use {restaurant_id}."
+                        },
+                        "session_id": {
+                            "type": "string",
+                            "description": "Your unique 8-char session ID generated at conversation start. REQUIRED."
                         }
                     },
-                    "required": ["restaurant_id"]
+                    "required": ["restaurant_id", "session_id"]
                 },
                 "speak_during_execution": False,
                 "speak_after_execution": True,
-                "timeout_ms": 3000
+                "timeout_ms": 5000
             },
             {
                 "type": "custom",
@@ -225,6 +335,10 @@ NEVER leave the call hanging - always say goodbye and call end_call() when conve
                             "type": "integer",
                             "description": f"The restaurant ID. Always use {restaurant_id}."
                         },
+                        "session_id": {
+                            "type": "string",
+                            "description": "Your unique 8-char session ID generated at conversation start. REQUIRED."
+                        },
                         "customer_name": {
                             "type": "string",
                             "description": "Customer's name for the order"
@@ -234,7 +348,7 @@ NEVER leave the call hanging - always say goodbye and call end_call() when conve
                             "description": "When to pick up (e.g., 'ASAP', '30 minutes', '6 PM')"
                         }
                     },
-                    "required": ["restaurant_id", "customer_name", "pickup_time"]
+                    "required": ["restaurant_id", "session_id", "customer_name", "pickup_time"]
                 },
                 "speak_during_execution": False,
                 "speak_after_execution": True,

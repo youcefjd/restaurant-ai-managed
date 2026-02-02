@@ -394,6 +394,13 @@ class Order(Base):
     payment_method = Column(String(30), nullable=True)  # card, cash, pay_at_restaurant
     payment_intent_id = Column(String(255), nullable=True)  # Stripe payment intent ID
 
+    # Toast POS integration
+    toast_order_guid = Column(String(255), nullable=True)  # Toast order GUID
+    toast_payment_uuid = Column(String(255), nullable=True)  # Toast payment UUID
+    external_payment_provider = Column(String(50), nullable=True)  # toast, stripe, pay_at_pickup
+    card_last_four = Column(String(4), nullable=True)  # Last 4 digits of card
+    payment_collected_via = Column(String(20), nullable=True)  # dtmf, web, terminal
+
     # Customer info (denormalized for quick access)
     customer_name = Column(String(100), nullable=True)
     customer_phone = Column(String(20), nullable=True)
@@ -430,6 +437,82 @@ class Order(Base):
     
     def __repr__(self) -> str:
         return f"<Order(id={self.id}, status={self.status}, total=${self.total/100:.2f})>"
+
+
+class PaymentSessionStatus(str, Enum):
+    """Enum for payment session status values."""
+    PENDING = "pending"
+    COLLECTING_CARD = "collecting_card"
+    COLLECTING_EXPIRY = "collecting_expiry"
+    COLLECTING_CVV = "collecting_cvv"
+    AUTHORIZING = "authorizing"
+    AUTHORIZED = "authorized"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class PaymentSession(Base):
+    """
+    Payment session model for DTMF card collection state machine.
+
+    Tracks the state of card payment collection during voice calls.
+    Card data is encrypted and CVV is only stored temporarily during auth.
+
+    Attributes:
+        id: Primary key
+        call_id: Retell call ID - unique per payment attempt
+        restaurant_id: Foreign key to restaurant account
+        session_id: LLM-generated session ID for cart isolation
+        status: Current state in the payment flow
+        card_number_encrypted: Encrypted card number
+        expiry_encrypted: Encrypted expiry date (MMYY)
+        cvv_hash: Hashed CVV (cleared after auth)
+        amount_cents: Payment amount in cents
+        toast_payment_uuid: Toast payment UUID if authorized via Toast
+        stripe_payment_intent_id: Stripe PaymentIntent ID if authorized via Stripe
+        guest_identifier: Guest identifier for Toast API
+        error_message: Error message if failed
+        created_at: Session creation timestamp
+        updated_at: Last update timestamp
+        expires_at: Session expiration (10 min TTL)
+    """
+    __tablename__ = "payment_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    call_id = Column(String(255), nullable=False, unique=True, index=True)
+    restaurant_id = Column(Integer, ForeignKey("restaurant_accounts.id", ondelete="CASCADE"), nullable=False)
+    session_id = Column(String(50), nullable=True)
+    status = Column(String(50), nullable=False, default=PaymentSessionStatus.PENDING.value)
+    card_number_encrypted = Column(Text, nullable=True)
+    expiry_encrypted = Column(Text, nullable=True)
+    cvv_hash = Column(Text, nullable=True)
+    amount_cents = Column(Integer, nullable=True)
+    toast_payment_uuid = Column(String(255), nullable=True)
+    stripe_payment_intent_id = Column(String(255), nullable=True)
+    guest_identifier = Column(String(255), nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Relationships
+    account = relationship("RestaurantAccount", backref="payment_sessions")
+
+    # Constraints
+    __table_args__ = (
+        Index('idx_payment_session_status', 'status'),
+        Index('idx_payment_session_expires', 'expires_at'),
+    )
+
+    @validates('status')
+    def validate_status(self, key: str, status: str) -> str:
+        """Validate payment session status."""
+        if status not in [s.value for s in PaymentSessionStatus]:
+            raise ValueError(f"Invalid payment session status: {status}")
+        return status
+
+    def __repr__(self) -> str:
+        return f"<PaymentSession(id={self.id}, call_id={self.call_id}, status={self.status})>"
 
 
 class Delivery(Base):

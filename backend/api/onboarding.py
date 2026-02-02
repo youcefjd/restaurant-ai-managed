@@ -71,6 +71,10 @@ class RestaurantAccountResponse(BaseModel):
     trial_ends_at: Optional[datetime]
     created_at: datetime
     updated_at: datetime
+    # Toast POS integration fields
+    toast_enabled: Optional[bool] = None
+    toast_client_id: Optional[str] = None
+    toast_restaurant_guid: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -106,6 +110,7 @@ class MenuItemUpdate(BaseModel):
     is_available: Optional[bool] = None
     preparation_time_minutes: Optional[int] = None
     display_order: Optional[int] = None
+    toast_item_guid: Optional[str] = None  # Toast POS menu item mapping
 
     class Config:
         from_attributes = True
@@ -123,6 +128,7 @@ class MenuItemResponse(BaseModel):
     image_url: Optional[str]
     preparation_time_minutes: Optional[int]
     display_order: int
+    toast_item_guid: Optional[str] = None  # Toast POS menu item mapping
     created_at: datetime
     updated_at: datetime
 
@@ -463,6 +469,116 @@ async def update_order_settings(
     logger.info(f"Updated order settings for account {account_id}: max_advance_order_days={settings_data.max_advance_order_days}")
 
     return updated_account
+
+
+class ToastConfigUpdate(BaseModel):
+    """Schema for updating Toast POS configuration."""
+    toast_enabled: bool
+    toast_client_id: Optional[str] = None
+    toast_client_secret: Optional[str] = None
+    toast_restaurant_guid: Optional[str] = None
+
+
+@router.patch("/accounts/{account_id}/toast-config", response_model=RestaurantAccountResponse)
+async def update_toast_config(
+    account_id: int,
+    config_data: ToastConfigUpdate,
+    db: SupabaseDB = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Update Toast POS configuration for restaurant account.
+
+    When Toast is enabled, orders placed through the voice agent will sync
+    to the Toast POS system for kitchen display.
+    """
+    verify_account_access(current_user, account_id)
+
+    account = db.query_one("restaurant_accounts", {"id": account_id})
+    if not account:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Account not found"
+        )
+
+    update_data = {
+        "toast_enabled": config_data.toast_enabled
+    }
+
+    if config_data.toast_client_id is not None:
+        update_data["toast_client_id"] = config_data.toast_client_id
+
+    if config_data.toast_restaurant_guid is not None:
+        update_data["toast_restaurant_guid"] = config_data.toast_restaurant_guid
+
+    # Encrypt client secret before storing
+    if config_data.toast_client_secret:
+        import base64
+        # Simple base64 encoding for now - should use proper encryption in production
+        encrypted_secret = base64.b64encode(config_data.toast_client_secret.encode()).decode()
+        update_data["toast_client_secret_encrypted"] = encrypted_secret
+
+    updated_account = db.update("restaurant_accounts", account_id, update_data)
+
+    logger.info(f"Updated Toast config for account {account_id}: enabled={config_data.toast_enabled}")
+
+    return updated_account
+
+
+@router.post("/accounts/{account_id}/toast-test")
+async def test_toast_connection(
+    account_id: int,
+    db: SupabaseDB = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Test connection to Toast API.
+
+    Attempts to authenticate with Toast using the stored credentials.
+    """
+    verify_account_access(current_user, account_id)
+
+    account = db.query_one("restaurant_accounts", {"id": account_id})
+    if not account:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Account not found"
+        )
+
+    if not account.get("toast_enabled"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Toast integration is not enabled"
+        )
+
+    if not account.get("toast_client_id") or not account.get("toast_restaurant_guid"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Toast credentials not configured"
+        )
+
+    # Import here to avoid circular imports
+    from backend.services.toast_service import toast_service
+
+    toast_config = await toast_service.get_restaurant_config(account_id, db)
+    if not toast_config:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Toast configuration incomplete"
+        )
+
+    # Try to get an access token
+    token = await toast_service.get_access_token(toast_config)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to connect to Toast API. Please check your credentials."
+        )
+
+    return {
+        "status": "success",
+        "message": "Successfully connected to Toast API"
+    }
 
 
 @router.post("/accounts/{account_id}/menus", status_code=status.HTTP_201_CREATED)

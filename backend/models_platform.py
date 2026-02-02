@@ -126,6 +126,14 @@ class RestaurantAccount(Base):
     trial_order_limit = Column(Integer, nullable=False, default=10)  # Max orders during trial
     trial_orders_used = Column(Integer, nullable=False, default=0)  # Orders used so far
 
+    # Toast POS integration
+    toast_enabled = Column(Boolean, nullable=False, default=False)
+    toast_client_id = Column(String(255), nullable=True)
+    toast_client_secret_encrypted = Column(Text, nullable=True)
+    toast_restaurant_guid = Column(String(255), nullable=True)
+    toast_encryption_key_id = Column(String(100), nullable=True)
+    toast_public_key = Column(Text, nullable=True)
+
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
@@ -252,6 +260,7 @@ class MenuItem(Base):
     image_url = Column(String(500), nullable=True)
     preparation_time_minutes = Column(Integer, nullable=True)
     display_order = Column(Integer, nullable=False, default=0)
+    toast_item_guid = Column(String(255), nullable=True)  # Manual mapping to Toast menu item
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

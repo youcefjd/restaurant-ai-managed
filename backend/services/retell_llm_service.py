@@ -104,12 +104,18 @@ When customer says "that's it" or "that's all" or is done ordering:
 - Read back their order and total from the get_cart response
 - Ask "What name for the order and when to pick up?"
 
-## BEFORE CREATING ORDER - MANDATORY
+## BEFORE CREATING ORDER - MANDATORY PAYMENT STEP
 When you have both name AND pickup time:
-1. FIRST call get_cart(restaurant_id={restaurant_id}) to verify cart contents
-2. THEN call create_order(restaurant_id={restaurant_id}, customer_name="Name", pickup_time="time")
-3. Confirm the order, say goodbye, then call end_call()
-IMPORTANT: NEVER call create_order without calling get_cart first in the same conversation turn
+1. FIRST call get_cart(restaurant_id={restaurant_id}) to verify cart contents and total
+2. THEN ask: "Your total including tax is $X. Would you like to pay now by card, or pay when you pick up?"
+3. Wait for customer response about payment preference
+4. If they want to pay by card: follow the PAYMENT COLLECTION steps below
+5. If they want to pay at pickup: call create_order() with payment_method="pay_at_pickup"
+6. Confirm the order, say goodbye, then call end_call()
+
+IMPORTANT:
+- NEVER call create_order without asking about payment first
+- NEVER call create_order without calling get_cart first in the same conversation turn
 
 ## ITEM NOT ON MENU
 If customer asks for something not on the menu:
@@ -120,6 +126,24 @@ If customer asks for something not on the menu:
 For modifications ("extra spicy", "no garlic", "add cheese"):
 - Include in special_requests parameter: add_to_cart(..., special_requests="extra spicy, no garlic")
 - Do NOT add modifications as separate items
+
+## PAYMENT COLLECTION (when customer chooses to pay by card)
+1. Call initiate_payment_collection(restaurant_id={restaurant_id}, session_id=session_id)
+2. Say exactly what the function response tells you to say (prompts for card number)
+3. Customer will enter digits via phone keypad - you'll receive them as input
+4. Call process_dtmf_input(restaurant_id={restaurant_id}, session_id=session_id, digits="the digits")
+5. The response will tell you the next step (expiry, then CVV, then authorized)
+6. Keep calling process_dtmf_input for each entry until you get "authorized" status
+7. Once authorized, call create_order() with payment_method="card"
+
+If payment fails:
+- Call retry_payment() to try a different card
+- Or call cancel_payment() and create_order() with payment_method="pay_at_pickup"
+
+IMPORTANT for card payments:
+- NEVER repeat card numbers, expiry, or CVV back to the customer
+- Just say "Got it" after each successful entry
+- Follow the exact prompts from each function response
 
 ## ENDING THE CALL
 Call end_call() ONLY after:
@@ -393,6 +417,106 @@ NEVER end call without:
                         }
                     },
                     "required": ["restaurant_id", "customer_name"]
+                },
+                "speak_during_execution": False,
+                "speak_after_execution": True,
+                "timeout_ms": 5000
+            },
+            {
+                "type": "custom",
+                "name": "initiate_payment_collection",
+                "description": "Start card payment collection via phone keypad. Call when customer wants to pay by card. Returns a prompt asking customer to enter card number.",
+                "url": f"{base_url}/initiate_payment_collection",
+                "method": "POST",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "restaurant_id": {
+                            "type": "integer",
+                            "description": f"The restaurant ID. Always use {restaurant_id}."
+                        },
+                        "session_id": {
+                            "type": "string",
+                            "description": "Your unique 8-char session ID generated at conversation start. REQUIRED."
+                        }
+                    },
+                    "required": ["restaurant_id", "session_id"]
+                },
+                "speak_during_execution": False,
+                "speak_after_execution": True,
+                "timeout_ms": 5000
+            },
+            {
+                "type": "custom",
+                "name": "process_dtmf_input",
+                "description": "Process digits entered by customer on phone keypad. Call after customer enters card number, expiry, or CVV. The response tells you the next step.",
+                "url": f"{base_url}/process_dtmf_input",
+                "method": "POST",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "restaurant_id": {
+                            "type": "integer",
+                            "description": f"The restaurant ID. Always use {restaurant_id}."
+                        },
+                        "session_id": {
+                            "type": "string",
+                            "description": "Your unique 8-char session ID generated at conversation start. REQUIRED."
+                        },
+                        "digits": {
+                            "type": "string",
+                            "description": "The digits entered by customer via phone keypad (DTMF tones)"
+                        }
+                    },
+                    "required": ["restaurant_id", "session_id", "digits"]
+                },
+                "speak_during_execution": False,
+                "speak_after_execution": True,
+                "timeout_ms": 30000
+            },
+            {
+                "type": "custom",
+                "name": "retry_payment",
+                "description": "Reset payment to try a different card. Call if customer wants to try another card after a declined payment.",
+                "url": f"{base_url}/retry_payment",
+                "method": "POST",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "restaurant_id": {
+                            "type": "integer",
+                            "description": f"The restaurant ID. Always use {restaurant_id}."
+                        },
+                        "session_id": {
+                            "type": "string",
+                            "description": "Your unique 8-char session ID generated at conversation start. REQUIRED."
+                        }
+                    },
+                    "required": ["restaurant_id", "session_id"]
+                },
+                "speak_during_execution": False,
+                "speak_after_execution": True,
+                "timeout_ms": 5000
+            },
+            {
+                "type": "custom",
+                "name": "cancel_payment",
+                "description": "Cancel card payment and switch to pay-at-pickup. Call if customer doesn't want to pay by card.",
+                "url": f"{base_url}/cancel_payment",
+                "method": "POST",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "restaurant_id": {
+                            "type": "integer",
+                            "description": f"The restaurant ID. Always use {restaurant_id}."
+                        },
+                        "session_id": {
+                            "type": "string",
+                            "description": "Your unique 8-char session ID generated at conversation start. REQUIRED."
+                        }
+                    },
+                    "required": ["restaurant_id", "session_id"]
                 },
                 "speak_during_execution": False,
                 "speak_after_execution": True,

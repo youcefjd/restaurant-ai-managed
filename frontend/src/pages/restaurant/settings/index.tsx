@@ -5,6 +5,7 @@ import { useAuth } from '../../../contexts/AuthContext'
 import PageHeader from '../../../components/ui/PageHeader'
 import OperatingHoursSettings from './OperatingHoursSettings'
 import TaxRateSettings from './TaxRateSettings'
+import ToastSettings from './ToastSettings'
 
 export default function Settings() {
   const { user } = useAuth()
@@ -78,6 +79,13 @@ export default function Settings() {
       <TaxRateSettings
         accountId={accountId}
         currentTaxRate={account?.tax_rate ?? null}
+      />
+
+      <ToastSettings
+        accountId={accountId}
+        toastEnabled={account?.toast_enabled ?? null}
+        toastClientId={account?.toast_client_id ?? null}
+        toastRestaurantGuid={account?.toast_restaurant_guid ?? null}
       />
     </div>
   )

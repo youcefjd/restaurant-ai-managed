@@ -23,6 +23,8 @@ from pydantic import BaseModel, Field, field_validator
 
 from backend.database import get_db, SupabaseDB
 from backend.services.cart_service import cart_service
+from backend.services.payment_orchestrator import payment_orchestrator, PaymentProvider
+from backend.services.toast_service import toast_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -1203,6 +1205,105 @@ async def create_order(
         if all_requests:
             special_instructions += "\n" + "\n".join(all_requests)
 
+        # Check for authorized payment session
+        payment_session = payment_orchestrator.get_payment_session(cart_key, db)
+        has_authorized_payment = payment_session and payment_session.get("status") == "authorized"
+
+        # Determine payment method and status
+        if has_authorized_payment:
+            payment_method = "card"
+            payment_status = "pending"  # Will be "paid" after applying
+            external_provider = "toast" if payment_session.get("toast_payment_uuid") else "stripe"
+            payment_collected_via = "dtmf"
+        else:
+            payment_method = "pay_at_pickup"
+            payment_status = "unpaid"
+            external_provider = None
+            payment_collected_via = None
+
+        # Get Toast config for restaurant
+        toast_config = await toast_service.get_restaurant_config(restaurant_id, db)
+        toast_order_guid = None
+        toast_payment_uuid = None
+
+        # If Toast is enabled, sync order to Toast POS
+        if toast_config:
+            try:
+                # Get Toast item mappings for menu items
+                menu_item_mappings = {}
+                for item in items:
+                    # Look up toast_item_guid from menu_items table
+                    menu_item = db.query_one("menu_items", {"name": item["name"]})
+                    if menu_item and menu_item.get("toast_item_guid"):
+                        menu_item_mappings[item["name"]] = menu_item["toast_item_guid"]
+
+                if menu_item_mappings:
+                    # Build Toast order
+                    toast_order_payload = toast_service.build_toast_order(
+                        items=items,
+                        customer_name=customer_name,
+                        customer_phone=cart.get("customer_phone", ""),
+                        scheduled_time=scheduled_time,
+                        menu_item_mappings=menu_item_mappings,
+                        restaurant_guid=toast_config["restaurant_guid"]
+                    )
+
+                    # Calculate prices with Toast
+                    prices_result = await toast_service.calculate_prices(toast_order_payload, toast_config)
+
+                    if prices_result.get("success"):
+                        # Create order in Toast
+                        toast_result = await toast_service.create_order(toast_order_payload, toast_config)
+
+                        if toast_result.get("success"):
+                            toast_order_guid = toast_result.get("guid")
+                            logger.info(f"Created Toast order {toast_order_guid}")
+
+                            # Apply payment to Toast order if authorized
+                            if has_authorized_payment and payment_session.get("toast_payment_uuid"):
+                                apply_result = await toast_service.apply_payment_to_order(
+                                    toast_config=toast_config,
+                                    order_guid=toast_order_guid,
+                                    payment_uuid=payment_session["toast_payment_uuid"]
+                                )
+
+                                if apply_result.get("success"):
+                                    toast_payment_uuid = payment_session["toast_payment_uuid"]
+                                    payment_status = "paid"
+                                    logger.info(f"Applied payment to Toast order {toast_order_guid}")
+                                else:
+                                    # Payment apply failed - order exists but payment not applied
+                                    logger.error(f"Failed to apply payment to Toast order: {apply_result.get('error')}")
+                                    special_instructions += "\n[ALERT: Payment authorized but not applied to Toast]"
+                        else:
+                            # Toast order creation failed - continue with local order
+                            logger.error(f"Toast order creation failed: {toast_result.get('error')}")
+                            special_instructions += "\n[Toast sync failed - manual sync required]"
+                    else:
+                        logger.error(f"Toast price calculation failed: {prices_result.get('error')}")
+                else:
+                    logger.warning("No Toast menu item mappings found - skipping Toast sync")
+
+            except Exception as toast_error:
+                # Toast integration failed - continue with local order
+                logger.error(f"Toast integration error: {toast_error}")
+                special_instructions += "\n[Toast sync error - manual sync required]"
+
+        # For Stripe payments, capture the authorized payment
+        if has_authorized_payment and payment_session.get("stripe_payment_intent_id"):
+            try:
+                import stripe
+                stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+                payment_intent = stripe.PaymentIntent.capture(
+                    payment_session["stripe_payment_intent_id"]
+                )
+                if payment_intent.status == "succeeded":
+                    payment_status = "paid"
+                    logger.info(f"Captured Stripe payment {payment_session['stripe_payment_intent_id']}")
+            except Exception as stripe_error:
+                logger.error(f"Stripe capture error: {stripe_error}")
+                special_instructions += "\n[ALERT: Stripe payment capture failed]"
+
         # Create order
         order_data = {
             "account_id": restaurant_id,
@@ -1227,14 +1328,27 @@ async def create_order(
             "delivery_fee": 0,
             "total": total,
             "status": "pending",
-            "payment_method": "pickup",
-            "payment_status": "unpaid",
+            "payment_method": payment_method,
+            "payment_status": payment_status,
             "special_instructions": special_instructions,
-            "conversation_id": call_id
+            "conversation_id": call_id,
+            # Toast integration fields
+            "toast_order_guid": toast_order_guid,
+            "toast_payment_uuid": toast_payment_uuid,
+            "external_payment_provider": external_provider,
+            "payment_collected_via": payment_collected_via,
+            # Stripe payment if applicable
+            "payment_intent_id": payment_session.get("stripe_payment_intent_id") if has_authorized_payment else None
         }
 
         # Insert order - cart deletion happens AFTER successful insert (Phase 5 fix)
         order = db.insert("orders", order_data)
+
+        # Update payment session if it exists
+        if payment_session:
+            payment_orchestrator.update_payment_session(payment_session["id"], {
+                "status": "completed"
+            }, db)
 
         # Build order summary BEFORE deleting cart (in case delete fails, order is still complete)
         items_text = ", ".join([
@@ -1250,6 +1364,12 @@ async def create_order(
         # Clear simulation session to ensure next test gets a fresh cart
         clear_simulation_session(agent_id)
 
+        # Build confirmation message based on payment status
+        if payment_status == "paid":
+            payment_msg = "Your payment has been processed."
+        else:
+            payment_msg = "Please pay when you pick up."
+
         return JSONResponse({
             "success": True,
             "order_id": order["id"],
@@ -1257,7 +1377,9 @@ async def create_order(
             "items_summary": items_text,
             "total": f"${total / 100:.2f}",
             "pickup_time": pickup_display,
-            "message": f"Order #{order['id']} confirmed for {customer_name}. {items_text} for ${total / 100:.0f}. Ready for pickup {pickup_display}."
+            "payment_status": payment_status,
+            "toast_synced": bool(toast_order_guid),
+            "message": f"Order #{order['id']} confirmed for {customer_name}. {items_text} for ${total / 100:.0f}. {payment_msg} Ready for pickup {pickup_display}."
         })
 
     except Exception as e:
@@ -1467,6 +1589,515 @@ async def end_call(
         "reason": reason,
         "message": "Thank you for calling. Goodbye!"
     })
+
+
+# ==================== DTMF Payment Collection ====================
+
+class InitiatePaymentArgs(BaseModel):
+    """Arguments for initiate_payment_collection function."""
+    restaurant_id: Optional[int] = None
+    session_id: Optional[str] = Field(default=None, max_length=20)
+
+
+class InitiatePaymentRequest(BaseModel):
+    """Request to start DTMF payment collection."""
+    call: Optional[RetellCallInfo] = None
+    name: Optional[str] = None
+    args: Optional[InitiatePaymentArgs] = None
+    call_id: Optional[str] = None
+    restaurant_id: Optional[int] = None
+    session_id: Optional[str] = Field(default=None, max_length=20)
+
+    def get_restaurant_id(self) -> Optional[int]:
+        if self.args and self.args.restaurant_id:
+            return self.args.restaurant_id
+        return self.restaurant_id
+
+    def get_call_id(self) -> Optional[str]:
+        if self.call and self.call.call_id:
+            return self.call.call_id
+        return self.call_id
+
+    def get_agent_id(self) -> Optional[str]:
+        if self.call and self.call.agent_id:
+            return self.call.agent_id
+        return None
+
+    def get_session_id(self) -> Optional[str]:
+        if self.args and self.args.session_id:
+            return self.args.session_id
+        return self.session_id
+
+
+@router.post("/initiate_payment_collection")
+async def initiate_payment_collection(
+    request: InitiatePaymentRequest,
+    db: SupabaseDB = Depends(get_db),
+    _verified: bool = Depends(verify_retell_request)
+):
+    """
+    Start DTMF payment collection flow.
+
+    Creates a payment session and prompts customer to enter card number
+    via phone keypad.
+    """
+    try:
+        restaurant_id = request.get_restaurant_id()
+        call_id = request.get_call_id()
+        agent_id = request.get_agent_id()
+        session_id = request.get_session_id()
+
+        cart_key = get_unique_cart_key(call_id, agent_id, restaurant_id, session_id)
+
+        # Get cart to determine amount
+        cart = cart_service.get_cart(cart_key, db)
+        if not cart or not cart.get("items"):
+            return JSONResponse({
+                "success": False,
+                "message": "Your cart is empty. Please add items first."
+            })
+
+        restaurant_id = restaurant_id or cart.get("restaurant_id")
+        if not restaurant_id:
+            return JSONResponse({
+                "success": False,
+                "message": "Restaurant not identified"
+            })
+
+        # Check if restaurant can collect payments
+        can_collect = await payment_orchestrator.can_collect_payment(restaurant_id, db)
+
+        if not can_collect.get("can_collect"):
+            return JSONResponse({
+                "success": True,
+                "payment_available": False,
+                "message": "This restaurant only accepts payment at pickup. You can pay when you arrive."
+            })
+
+        # Calculate cart total
+        items = cart.get("items", [])
+        account = db.query_one("restaurant_accounts", {"id": restaurant_id})
+        tax_rate = float(account.get("tax_rate", 0.08)) if account else 0.08
+
+        subtotal = sum(item["price_cents"] * item["quantity"] for item in items)
+        tax = int(subtotal * tax_rate)
+        total = subtotal + tax
+
+        # Create payment session
+        payment_session = payment_orchestrator.create_payment_session(
+            call_id=cart_key,
+            session_id=session_id,
+            restaurant_id=restaurant_id,
+            amount_cents=total,
+            db=db
+        )
+
+        logger.info(f"Initiated payment collection for ${total/100:.2f}, session {payment_session['id']}")
+
+        return JSONResponse({
+            "success": True,
+            "payment_available": True,
+            "session_id": payment_session["id"],
+            "amount": f"${total / 100:.2f}",
+            "amount_cents": total,
+            "status": "collecting_card",
+            "message": f"Great, your total including tax is ${total / 100:.2f}. Please enter your 16-digit card number using your phone keypad now."
+        })
+
+    except Exception as e:
+        logger.error(f"Error in initiate_payment_collection: {e}", exc_info=True)
+        return JSONResponse({
+            "success": False,
+            "message": "Error starting payment. Would you like to pay at pickup instead?"
+        })
+
+
+class ProcessDTMFArgs(BaseModel):
+    """Arguments for process_dtmf_input function."""
+    restaurant_id: Optional[int] = None
+    session_id: Optional[str] = Field(default=None, max_length=20)
+    digits: Optional[str] = Field(default=None, max_length=50)
+
+
+class ProcessDTMFRequest(BaseModel):
+    """Request to process DTMF digits."""
+    call: Optional[RetellCallInfo] = None
+    name: Optional[str] = None
+    args: Optional[ProcessDTMFArgs] = None
+    call_id: Optional[str] = None
+    restaurant_id: Optional[int] = None
+    session_id: Optional[str] = Field(default=None, max_length=20)
+    digits: Optional[str] = Field(default=None, max_length=50)
+
+    def get_restaurant_id(self) -> Optional[int]:
+        if self.args and self.args.restaurant_id:
+            return self.args.restaurant_id
+        return self.restaurant_id
+
+    def get_call_id(self) -> Optional[str]:
+        if self.call and self.call.call_id:
+            return self.call.call_id
+        return self.call_id
+
+    def get_agent_id(self) -> Optional[str]:
+        if self.call and self.call.agent_id:
+            return self.call.agent_id
+        return None
+
+    def get_session_id(self) -> Optional[str]:
+        if self.args and self.args.session_id:
+            return self.args.session_id
+        return self.session_id
+
+    def get_digits(self) -> Optional[str]:
+        if self.args and self.args.digits:
+            return self.args.digits
+        return self.digits
+
+
+@router.post("/process_dtmf_input")
+async def process_dtmf_input(
+    request: ProcessDTMFRequest,
+    db: SupabaseDB = Depends(get_db),
+    _verified: bool = Depends(verify_retell_request)
+):
+    """
+    Process DTMF digits entered by customer.
+
+    State machine:
+    - collecting_card -> validate 13-19 digits -> collecting_expiry
+    - collecting_expiry -> validate MMYY -> collecting_cvv
+    - collecting_cvv -> validate 3-4 digits -> authorize -> authorized/failed
+    """
+    try:
+        restaurant_id = request.get_restaurant_id()
+        call_id = request.get_call_id()
+        agent_id = request.get_agent_id()
+        session_id = request.get_session_id()
+        digits = request.get_digits()
+
+        # Log raw request for debugging DTMF issues
+        logger.info(f"[DTMF] Raw request: {request.model_dump_json()}")
+        logger.info(f"[DTMF] Extracted digits: '{digits}' (length: {len(digits) if digits else 0})")
+
+        if not digits:
+            return JSONResponse({
+                "success": False,
+                "message": "I didn't catch that. Please enter the digits using your phone keypad."
+            })
+
+        cart_key = get_unique_cart_key(call_id, agent_id, restaurant_id, session_id)
+
+        # Get payment session
+        payment_session = payment_orchestrator.get_payment_session(cart_key, db)
+
+        if not payment_session:
+            return JSONResponse({
+                "success": False,
+                "message": "No payment in progress. Would you like to start paying now?"
+            })
+
+        status = payment_session.get("status")
+        restaurant_id = restaurant_id or payment_session.get("restaurant_id")
+
+        # State machine handling
+        if status == "collecting_card":
+            # Validate card number
+            validation = payment_orchestrator.validate_card_number(digits)
+
+            if not validation.get("valid"):
+                return JSONResponse({
+                    "success": False,
+                    "status": "collecting_card",
+                    "message": validation.get("message")
+                })
+
+            # Encrypt and store card number
+            encrypted_card = payment_orchestrator.encrypt_for_storage(validation["clean_digits"])
+
+            payment_orchestrator.update_payment_session(payment_session["id"], {
+                "status": "collecting_expiry",
+                "card_number_encrypted": encrypted_card
+            }, db)
+
+            logger.info(f"Card number collected for session {payment_session['id']}")
+
+            return JSONResponse({
+                "success": True,
+                "status": "collecting_expiry",
+                "message": "Got it. Now please enter your card's expiration date as 4 digits. For example, enter 0 5 2 5 for May 2025."
+            })
+
+        elif status == "collecting_expiry":
+            # Validate expiry
+            validation = payment_orchestrator.validate_expiry(digits)
+
+            if not validation.get("valid"):
+                return JSONResponse({
+                    "success": False,
+                    "status": "collecting_expiry",
+                    "message": validation.get("message")
+                })
+
+            # Encrypt and store expiry
+            encrypted_expiry = payment_orchestrator.encrypt_for_storage(validation["clean_digits"])
+
+            payment_orchestrator.update_payment_session(payment_session["id"], {
+                "status": "collecting_cvv",
+                "expiry_encrypted": encrypted_expiry
+            }, db)
+
+            logger.info(f"Expiry collected for session {payment_session['id']}")
+
+            return JSONResponse({
+                "success": True,
+                "status": "collecting_cvv",
+                "message": "Got it. Finally, please enter your card's 3 or 4 digit security code from the back of your card."
+            })
+
+        elif status == "collecting_cvv":
+            # Validate CVV
+            validation = payment_orchestrator.validate_cvv(digits)
+
+            if not validation.get("valid"):
+                return JSONResponse({
+                    "success": False,
+                    "status": "collecting_cvv",
+                    "message": validation.get("message")
+                })
+
+            # Update status to authorizing
+            payment_orchestrator.update_payment_session(payment_session["id"], {
+                "status": "authorizing"
+            }, db)
+
+            # Decrypt stored data
+            card_number = payment_orchestrator.decrypt_from_storage(
+                payment_session["card_number_encrypted"]
+            )
+            expiry = payment_orchestrator.decrypt_from_storage(
+                payment_session["expiry_encrypted"]
+            )
+            cvv = validation["clean_digits"]
+
+            logger.info(f"Authorizing payment for session {payment_session['id']}")
+
+            # Authorize payment
+            auth_result = await payment_orchestrator.authorize_payment(
+                restaurant_id=restaurant_id,
+                amount_cents=payment_session["amount_cents"],
+                card_number=card_number,
+                expiry=expiry,
+                cvv=cvv,
+                guest_identifier=payment_session.get("guest_identifier", str(uuid.uuid4())),
+                db=db
+            )
+
+            if auth_result.get("success"):
+                # Update session with authorization
+                update_data = {
+                    "status": "authorized",
+                    "card_number_encrypted": None,  # Clear sensitive data
+                    "expiry_encrypted": None,
+                    "cvv_hash": None
+                }
+
+                # Store provider-specific IDs
+                if auth_result.get("provider") == "toast":
+                    update_data["toast_payment_uuid"] = auth_result.get("payment_uuid")
+                elif auth_result.get("provider") == "stripe":
+                    update_data["stripe_payment_intent_id"] = auth_result.get("payment_intent_id")
+
+                payment_orchestrator.update_payment_session(payment_session["id"], update_data, db)
+
+                card_last_four = auth_result.get("card_last_four", "****")
+
+                logger.info(f"Payment authorized for session {payment_session['id']}")
+
+                return JSONResponse({
+                    "success": True,
+                    "status": "authorized",
+                    "card_last_four": card_last_four,
+                    "message": f"Payment authorized for your card ending in {card_last_four}. Now let me finalize your order."
+                })
+            else:
+                # Authorization failed
+                error_msg = auth_result.get("error", "Payment declined")
+
+                payment_orchestrator.update_payment_session(payment_session["id"], {
+                    "status": "failed",
+                    "error_message": error_msg,
+                    "card_number_encrypted": None,  # Clear sensitive data
+                    "expiry_encrypted": None
+                }, db)
+
+                logger.warning(f"Payment declined for session {payment_session['id']}: {error_msg}")
+
+                return JSONResponse({
+                    "success": False,
+                    "status": "failed",
+                    "message": f"{error_msg}. Would you like to try a different card, or pay when you pick up?"
+                })
+
+        else:
+            return JSONResponse({
+                "success": False,
+                "message": f"Payment is in unexpected state: {status}. Would you like to start over?"
+            })
+
+    except Exception as e:
+        logger.error(f"Error in process_dtmf_input: {e}", exc_info=True)
+        return JSONResponse({
+            "success": False,
+            "message": "Error processing payment. Would you like to try again or pay at pickup?"
+        })
+
+
+class RetryPaymentRequest(BaseModel):
+    """Request to retry payment collection."""
+    call: Optional[RetellCallInfo] = None
+    name: Optional[str] = None
+    args: Optional[Dict[str, Any]] = None
+    call_id: Optional[str] = None
+    restaurant_id: Optional[int] = None
+    session_id: Optional[str] = None
+
+    def get_call_id(self) -> Optional[str]:
+        if self.call and self.call.call_id:
+            return self.call.call_id
+        return self.call_id
+
+    def get_agent_id(self) -> Optional[str]:
+        if self.call and self.call.agent_id:
+            return self.call.agent_id
+        return None
+
+    def get_session_id(self) -> Optional[str]:
+        if self.args and self.args.get("session_id"):
+            return self.args["session_id"]
+        return self.session_id
+
+    def get_restaurant_id(self) -> Optional[int]:
+        if self.args and self.args.get("restaurant_id"):
+            return int(self.args["restaurant_id"])
+        return self.restaurant_id
+
+
+@router.post("/retry_payment")
+async def retry_payment(
+    request: RetryPaymentRequest,
+    db: SupabaseDB = Depends(get_db),
+    _verified: bool = Depends(verify_retell_request)
+):
+    """
+    Reset payment session to collecting_card state for retry.
+    """
+    try:
+        call_id = request.get_call_id()
+        agent_id = request.get_agent_id()
+        session_id = request.get_session_id()
+        restaurant_id = request.get_restaurant_id()
+
+        cart_key = get_unique_cart_key(call_id, agent_id, restaurant_id, session_id)
+
+        payment_session = payment_orchestrator.get_payment_session(cart_key, db)
+
+        if not payment_session:
+            return JSONResponse({
+                "success": False,
+                "message": "No payment session found. Let me start the payment process."
+            })
+
+        # Reset session
+        payment_orchestrator.update_payment_session(payment_session["id"], {
+            "status": "collecting_card",
+            "card_number_encrypted": None,
+            "expiry_encrypted": None,
+            "cvv_hash": None,
+            "error_message": None
+        }, db)
+
+        logger.info(f"Reset payment session {payment_session['id']} for retry")
+
+        return JSONResponse({
+            "success": True,
+            "status": "collecting_card",
+            "message": "OK, let's try again. Please enter your 16-digit card number using your phone keypad."
+        })
+
+    except Exception as e:
+        logger.error(f"Error in retry_payment: {e}", exc_info=True)
+        return JSONResponse({
+            "success": False,
+            "message": "Error resetting payment. Would you like to pay at pickup instead?"
+        })
+
+
+class CancelPaymentRequest(BaseModel):
+    """Request to cancel payment and switch to pay-at-pickup."""
+    call: Optional[RetellCallInfo] = None
+    name: Optional[str] = None
+    args: Optional[Dict[str, Any]] = None
+    call_id: Optional[str] = None
+    restaurant_id: Optional[int] = None
+    session_id: Optional[str] = None
+
+    def get_call_id(self) -> Optional[str]:
+        if self.call and self.call.call_id:
+            return self.call.call_id
+        return self.call_id
+
+    def get_agent_id(self) -> Optional[str]:
+        if self.call and self.call.agent_id:
+            return self.call.agent_id
+        return None
+
+    def get_session_id(self) -> Optional[str]:
+        if self.args and self.args.get("session_id"):
+            return self.args["session_id"]
+        return self.session_id
+
+    def get_restaurant_id(self) -> Optional[int]:
+        if self.args and self.args.get("restaurant_id"):
+            return int(self.args["restaurant_id"])
+        return self.restaurant_id
+
+
+@router.post("/cancel_payment")
+async def cancel_payment(
+    request: CancelPaymentRequest,
+    db: SupabaseDB = Depends(get_db),
+    _verified: bool = Depends(verify_retell_request)
+):
+    """
+    Cancel payment collection and switch to pay-at-pickup.
+    """
+    try:
+        call_id = request.get_call_id()
+        agent_id = request.get_agent_id()
+        session_id = request.get_session_id()
+        restaurant_id = request.get_restaurant_id()
+
+        cart_key = get_unique_cart_key(call_id, agent_id, restaurant_id, session_id)
+
+        # Delete payment session
+        payment_orchestrator.delete_payment_session(cart_key, db)
+
+        logger.info(f"Cancelled payment for call {cart_key}")
+
+        return JSONResponse({
+            "success": True,
+            "payment_method": "pay_at_pickup",
+            "message": "No problem. You can pay when you pick up your order. Let me finalize your order now."
+        })
+
+    except Exception as e:
+        logger.error(f"Error in cancel_payment: {e}", exc_info=True)
+        return JSONResponse({
+            "success": True,
+            "payment_method": "pay_at_pickup",
+            "message": "OK, you can pay when you pick up. Let me finalize your order."
+        })
 
 
 # ==================== Call Initialization ====================

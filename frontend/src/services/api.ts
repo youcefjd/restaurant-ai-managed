@@ -116,6 +116,14 @@ export const restaurantAPI = {
     api.patch(`/onboarding/accounts/${accountId}/tax-rate`, { tax_rate: taxRate }),
   updateOrderSettings: (accountId: number, maxAdvanceOrderDays: number) =>
     api.patch(`/onboarding/accounts/${accountId}/order-settings`, { max_advance_order_days: maxAdvanceOrderDays }),
+  updateToastConfig: (accountId: number, data: {
+    toast_enabled: boolean
+    toast_client_id?: string
+    toast_client_secret?: string
+    toast_restaurant_guid?: string
+  }) => api.patch(`/onboarding/accounts/${accountId}/toast-config`, data),
+  testToastConnection: (accountId: number) =>
+    api.post(`/onboarding/accounts/${accountId}/toast-test`),
   searchGoogleMaps: (query: string, location?: string) =>
     api.get('/onboarding/google-maps/search', { params: { query, location } }),
   getGoogleMapsPlace: (placeId: string) =>

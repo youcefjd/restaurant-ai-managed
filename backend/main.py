@@ -605,8 +605,8 @@ async def catch_all(request: Request, path_name: str):
 
 if __name__ == "__main__":
     # Get configuration from environment
-    host = os.getenv("API_HOST", "IP_ADDRESS_REDACTED")
-    port = int(os.getenv("API_PORT", "8000"))
+    host = os.getenv("API_HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", os.getenv("API_PORT", "8000")))
     reload = os.getenv("ENVIRONMENT", "development") == "development"
     workers = int(os.getenv("API_WORKERS", "1"))
     

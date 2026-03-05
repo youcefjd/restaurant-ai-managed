@@ -122,22 +122,7 @@ export default function AdminLogin() {
           </form>
         </div>
 
-        {/* Demo Credentials */}
-        <div className="mt-6 glass-card p-4" style={{ background: 'linear-gradient(135deg, rgba(255, 184, 108, 0.1) 0%, var(--bg-card) 100%)' }}>
-          <p className="text-sm font-medium mb-2" style={{ color: 'var(--accent-orange)' }}>Demo Admin Credentials:</p>
-          <button
-            type="button"
-            onClick={() => {
-              setEmail('admin@restaurantai.com')
-              setPassword('admin123')
-            }}
-            className="w-full text-left p-2 rounded-xl transition-all hover:scale-[1.02]"
-            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)' }}
-          >
-            <p className="text-xs font-mono" style={{ color: 'var(--accent-orange)' }}>admin@restaurantai.com</p>
-            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Password: admin123</p>
-          </button>
-        </div>
+
       </div>
     </div>
   )

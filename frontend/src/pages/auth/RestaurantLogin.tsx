@@ -129,32 +129,7 @@ export default function RestaurantLogin() {
           </form>
         </div>
 
-        {/* Demo Credentials */}
-        <div className="mt-6 glass-card p-4" style={{ background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.1) 0%, var(--bg-card) 100%)' }}>
-          <p className="text-sm font-medium mb-3" style={{ color: 'var(--accent-cyan)' }}>Test Accounts (password: test123)</p>
-          <div className="grid grid-cols-2 gap-2">
-            {[
-              { email: 'mario@example.com', name: "Mario's Italian Kitchen" },
-              { email: 'john@testpizza.com', name: 'Test Pizza Place' },
-              { email: 'owner@tacotown.com', name: 'Taco Town' },
-              { email: 'sierra.nesbit@gmail.com', name: "Sierra's Palace" },
-            ].map((account) => (
-              <button
-                key={account.email}
-                type="button"
-                onClick={() => {
-                  setEmail(account.email)
-                  setPassword('test123')
-                }}
-                className="text-left p-2 rounded-xl transition-all hover:scale-[1.02]"
-                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)' }}
-              >
-                <p className="text-xs font-mono" style={{ color: 'var(--accent-cyan)' }}>{account.email}</p>
-                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{account.name}</p>
-              </button>
-            ))}
-          </div>
-        </div>
+
       </div>
     </div>
   )

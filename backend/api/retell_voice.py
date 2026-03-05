@@ -62,15 +62,31 @@ def _cleanup_old_calls():
         logger.info(f"Cleaned up {len(expired)} expired calls from memory")
 
 
+def _parse_retell_transcript(transcript: str) -> list:
+    """Parse Retell transcript text into message format."""
+    messages = []
+    for line in transcript.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith("Agent:"):
+            messages.append({"role": "assistant", "content": line[6:].strip()})
+        elif line.startswith("User:"):
+            messages.append({"role": "user", "content": line[5:].strip()})
+    return messages
+
+
 async def fetch_and_save_retell_transcript(
     call_id: str,
     restaurant_id: int,
     customer_phone: str,
     restaurant_phone: str,
-    db: SupabaseDB
+    db: SupabaseDB,
+    call_data: Dict[str, Any] = None
 ) -> bool:
     """
     Fetch transcript from Retell API and save it.
+    Optionally accepts pre-fetched call_data to avoid an extra API call.
     Returns True if successful, False otherwise.
     """
     global saved_transcripts
@@ -81,8 +97,9 @@ async def fetch_and_save_retell_transcript(
         return True
 
     try:
-        # Fetch call details from Retell API
-        call_data = await retell_service.get_call(call_id)
+        # Use pre-fetched call_data or fetch from API
+        if not call_data:
+            call_data = await retell_service.get_call(call_id)
 
         if not call_data:
             logger.warning(f"Could not fetch call data from Retell for {call_id}")
@@ -93,28 +110,27 @@ async def fetch_and_save_retell_transcript(
             logger.warning(f"No transcript in Retell response for {call_id}")
             return False
 
-        # Parse Retell transcript into message format
-        # Retell transcript format: "Agent: Hello...\nUser: Hi...\n"
-        messages = []
-        for line in transcript.split("\n"):
-            line = line.strip()
-            if not line:
-                continue
-
-            if line.startswith("Agent:"):
-                messages.append({
-                    "role": "assistant",
-                    "content": line[6:].strip()
-                })
-            elif line.startswith("User:"):
-                messages.append({
-                    "role": "user",
-                    "content": line[5:].strip()
-                })
-
+        messages = _parse_retell_transcript(transcript)
         if not messages:
             logger.warning(f"No messages parsed from transcript for {call_id}")
             return False
+
+        # Extract summary from call analysis
+        call_analysis = call_data.get("call_analysis") or {}
+        summary = call_analysis.get("call_summary")
+
+        # Calculate duration from timestamps (milliseconds)
+        duration_seconds = None
+        start_ts = call_data.get("start_timestamp")
+        end_ts = call_data.get("end_timestamp")
+        if start_ts and end_ts:
+            duration_seconds = int((end_ts - start_ts) / 1000)
+
+        # Use phone numbers from call_data if not provided
+        if not customer_phone:
+            customer_phone = call_data.get("from_number", "")
+        if not restaurant_phone:
+            restaurant_phone = call_data.get("to_number", "")
 
         # Save to database
         transcript_service.save_transcript(
@@ -124,11 +140,13 @@ async def fetch_and_save_retell_transcript(
             customer_phone=customer_phone,
             conversation_id=call_id,
             messages=messages,
-            twilio_phone=restaurant_phone
+            twilio_phone=restaurant_phone,
+            summary=summary,
+            duration_seconds=duration_seconds
         )
 
         saved_transcripts.add(call_id)
-        logger.info(f"Saved Retell transcript for call {call_id} ({len(messages)} messages)")
+        logger.info(f"Saved Retell transcript for call {call_id} ({len(messages)} messages, summary={'yes' if summary else 'no'})")
         return True
 
     except Exception as e:
@@ -172,13 +190,15 @@ async def retell_webhook(request: Request, db: SupabaseDB = Depends(get_db)):
     # Get raw body for signature verification
     body = await request.body()
 
-    # Verify webhook signature if present
-    # Note: Retell's signature format may vary - log but allow for now
+    # Verify webhook signature
     signature = request.headers.get("X-Retell-Signature", "")
-    if signature and not retell_service.verify_webhook_signature(body, signature):
-        logger.warning("Retell webhook signature mismatch - check API key configuration")
-        # Allow webhook for now to avoid blocking calls
-        # TODO: Implement proper Retell signature verification once format is confirmed
+    if retell_service.is_enabled():
+        if not signature:
+            logger.warning("Retell webhook missing X-Retell-Signature header")
+            return JSONResponse(status_code=401, content={"error": "Missing signature"})
+        if not retell_service.verify_webhook_signature(body, signature):
+            logger.warning("Retell webhook signature verification failed")
+            return JSONResponse(status_code=401, content={"error": "Invalid signature"})
 
     try:
         event_data = json.loads(body)
@@ -279,6 +299,86 @@ async def retell_webhook(request: Request, db: SupabaseDB = Depends(get_db)):
     except Exception as e:
         logger.error(f"Webhook error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Sync Transcripts ====================
+
+@router.post("/sync-transcripts/{account_id}")
+async def sync_transcripts(account_id: int, db: SupabaseDB = Depends(get_db), user=Depends(get_current_user)):
+    """
+    Sync transcripts from Retell for a restaurant account.
+    Fetches all calls for the restaurant's Retell agent and saves any
+    transcripts that aren't already in the database.
+    """
+    # Look up the restaurant's retell_agent_id
+    restaurant = db.query_one("restaurant_accounts", {"id": account_id})
+    if not restaurant:
+        raise HTTPException(status_code=404, detail="Restaurant not found")
+
+    retell_agent_id = restaurant.get("retell_agent_id")
+    if not retell_agent_id:
+        raise HTTPException(status_code=400, detail="Restaurant has no Retell agent configured")
+
+    # Fetch calls from Retell filtered by agent_id
+    calls = await retell_service.list_calls(
+        filter_criteria={"agent_id": [retell_agent_id]},
+        limit=100,
+        sort_order="descending"
+    )
+
+    if not calls:
+        return JSONResponse({"synced": 0, "message": "No calls found in Retell"})
+
+    synced = 0
+    skipped = 0
+    errors = 0
+
+    for call in calls:
+        call_id = call.get("call_id")
+        if not call_id:
+            continue
+
+        # Check if transcript already exists in DB
+        existing = db.query_one("transcripts", {
+            "conversation_id": call_id,
+            "account_id": account_id
+        })
+        if existing:
+            skipped += 1
+            continue
+
+        # Skip calls without transcripts
+        transcript_text = call.get("transcript")
+        if not transcript_text:
+            continue
+
+        # Fetch full call details (list_calls may not include full analysis)
+        call_data = await retell_service.get_call(call_id)
+        if not call_data:
+            errors += 1
+            continue
+
+        success = await fetch_and_save_retell_transcript(
+            call_id=call_id,
+            restaurant_id=account_id,
+            customer_phone=call_data.get("from_number", ""),
+            restaurant_phone=call_data.get("to_number", ""),
+            db=db,
+            call_data=call_data
+        )
+
+        if success:
+            synced += 1
+        else:
+            errors += 1
+
+    logger.info(f"Sync transcripts for account {account_id}: synced={synced}, skipped={skipped}, errors={errors}")
+    return JSONResponse({
+        "synced": synced,
+        "skipped": skipped,
+        "errors": errors,
+        "message": f"Synced {synced} new transcript(s)"
+    })
 
 
 # ==================== Custom LLM WebSocket ====================
@@ -1080,6 +1180,31 @@ async def configure_custom_llm(
         }
     else:
         raise HTTPException(status_code=404, detail="Agent not found")
+
+
+@router.post("/agents/{agent_id}/set-webhook")
+async def set_agent_webhook(
+    agent_id: str,
+    current_user: dict = Depends(get_current_admin)
+):
+    """Set the webhook URL on a Retell agent so call_analyzed events fire."""
+    if not retell_service.is_enabled():
+        raise HTTPException(status_code=503, detail="Retell service not configured")
+
+    webhook_url = os.getenv(
+        "RETELL_WEBHOOK_URL",
+        "https://restaurant-ai-backend-production-b1df.up.railway.app/api/retell/webhook"
+    )
+
+    result = await retell_service.update_agent(agent_id, webhook_url=webhook_url)
+    if result:
+        return {
+            "success": True,
+            "agent_id": agent_id,
+            "webhook_url": webhook_url,
+            "message": f"Webhook URL set on agent {agent_id}"
+        }
+    raise HTTPException(status_code=500, detail="Failed to update agent webhook URL")
 
 
 # ==================== Phone Number Management ====================

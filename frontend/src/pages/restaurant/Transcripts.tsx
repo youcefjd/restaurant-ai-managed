@@ -1,8 +1,8 @@
 import { useState, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../../contexts/AuthContext'
 import { restaurantAPI } from '../../services/api'
-import { MessageSquare, Phone, MessageCircle, Calendar, Clock, Search, X } from 'lucide-react'
+import { MessageSquare, Phone, MessageCircle, Calendar, Clock, Search, X, RefreshCw } from 'lucide-react'
 import PageHeader from '../../components/ui/PageHeader'
 
 interface Transcript {
@@ -28,9 +28,32 @@ interface Transcript {
 export default function Transcripts() {
   const { user } = useAuth()
   const accountId = user?.id
+  const queryClient = useQueryClient()
   const [filter, setFilter] = useState<'all' | 'sms' | 'voice'>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedTranscript, setSelectedTranscript] = useState<Transcript | null>(null)
+  const [syncing, setSyncing] = useState(false)
+  const [syncMessage, setSyncMessage] = useState<string | null>(null)
+
+  const handleSync = async () => {
+    if (!accountId || syncing) return
+    setSyncing(true)
+    setSyncMessage(null)
+    try {
+      const res = await restaurantAPI.syncTranscripts(accountId)
+      const { synced, message } = res.data
+      setSyncMessage(message)
+      if (synced > 0) {
+        queryClient.invalidateQueries({ queryKey: ['transcripts'] })
+      }
+      setTimeout(() => setSyncMessage(null), 4000)
+    } catch {
+      setSyncMessage('Failed to sync transcripts')
+      setTimeout(() => setSyncMessage(null), 4000)
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   const { data: transcriptsResponse, isLoading } = useQuery({
     queryKey: ['transcripts', accountId, filter],
@@ -121,7 +144,18 @@ export default function Transcripts() {
                   {type.charAt(0).toUpperCase() + type.slice(1)}
                 </button>
               ))}
+              <button
+                onClick={handleSync}
+                disabled={syncing}
+                className="btn btn-sm btn-secondary"
+                title="Sync transcripts from Retell"
+              >
+                <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
+              </button>
             </div>
+            {syncMessage && (
+              <p className="text-xs text-dim">{syncMessage}</p>
+            )}
           </div>
 
           {/* Transcript List */}

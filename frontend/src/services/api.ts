@@ -154,6 +154,8 @@ export const restaurantAPI = {
   // Transcripts
   getTranscripts: (accountId: number, params?: { transcript_type?: string }) =>
     api.get(`/onboarding/accounts/${accountId}/transcripts`, { params }),
+  syncTranscripts: (accountId: number) =>
+    api.post(`/retell/sync-transcripts/${accountId}`),
 }
 
 // Stripe Connect API

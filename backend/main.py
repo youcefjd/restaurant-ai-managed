@@ -481,8 +481,7 @@ async def submit_contact(form: ContactForm):
     msg["Reply-To"] = form.email
 
     try:
-        with smtplib.SMTP("smtp.mail.me.com", 587) as s:
-            s.starttls()
+        with smtplib.SMTP_SSL("smtp.mail.me.com", 465, timeout=10) as s:
             s.login(smtp_user, smtp_pass)
             s.send_message(msg)
         return {"ok": True}

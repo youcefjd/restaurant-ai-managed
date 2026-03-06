@@ -4,9 +4,11 @@ Main FastAPI application entry point with CORS, middleware, and route registrati
 """
 
 import logging
+import smtplib
 import time
 from contextlib import asynccontextmanager
-from typing import Dict, Any
+from email.mime.text import MIMEText
+from typing import Dict, Any, Optional
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -443,6 +445,50 @@ async def health_check() -> Dict[str, Any]:
         "environment": os.getenv("ENVIRONMENT", "development"),
         "cors_origins": cors_origins
     }
+
+
+# ── Contact form (public, no auth) ──────────────────────────────
+from pydantic import BaseModel
+
+class ContactForm(BaseModel):
+    name: str
+    email: str
+    restaurant: str
+    phone: Optional[str] = None
+    message: Optional[str] = None
+
+@app.post("/api/contact")
+async def submit_contact(form: ContactForm):
+    """Send a contact-form inquiry via SMTP (iCloud)."""
+    smtp_user = os.getenv("SMTP_USER")          # e.g. djeddar@icloud.com
+    smtp_pass = os.getenv("SMTP_APP_PASSWORD")   # app-specific password
+    to_email = os.getenv("CONTACT_EMAIL", "djeddar@icloud.com")
+
+    body_lines = [
+        f"Name: {form.name}",
+        f"Email: {form.email}",
+        f"Restaurant: {form.restaurant}",
+    ]
+    if form.phone:
+        body_lines.append(f"Phone: {form.phone}")
+    body_lines.append("")
+    body_lines.append(form.message or "(No message provided)")
+
+    msg = MIMEText("\n".join(body_lines))
+    msg["Subject"] = f"Belltab AI — New Inquiry from {form.name} ({form.restaurant})"
+    msg["From"] = smtp_user
+    msg["To"] = to_email
+    msg["Reply-To"] = form.email
+
+    try:
+        with smtplib.SMTP("smtp.mail.me.com", 587) as s:
+            s.starttls()
+            s.login(smtp_user, smtp_pass)
+            s.send_message(msg)
+        return {"ok": True}
+    except Exception as e:
+        logger.error(f"Contact email failed: {e}")
+        return JSONResponse(status_code=500, content={"detail": "Failed to send email. Please try again."})
 
 
 # Register API routers with unique prefixes

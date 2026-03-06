@@ -4,10 +4,8 @@ Main FastAPI application entry point with CORS, middleware, and route registrati
 """
 
 import logging
-import smtplib
 import time
 from contextlib import asynccontextmanager
-from email.mime.text import MIMEText
 from typing import Dict, Any, Optional
 
 from fastapi import FastAPI, Request, status
@@ -459,9 +457,9 @@ class ContactForm(BaseModel):
 
 @app.post("/api/contact")
 async def submit_contact(form: ContactForm):
-    """Send a contact-form inquiry via SMTP (iCloud)."""
-    smtp_user = os.getenv("SMTP_USER")          # e.g. djeddar@icloud.com
-    smtp_pass = os.getenv("SMTP_APP_PASSWORD")   # app-specific password
+    """Send a contact-form inquiry via Resend API."""
+    import resend
+    resend.api_key = os.getenv("RESEND_API_KEY")
     to_email = os.getenv("CONTACT_EMAIL", "djeddar@icloud.com")
 
     body_lines = [
@@ -474,16 +472,14 @@ async def submit_contact(form: ContactForm):
     body_lines.append("")
     body_lines.append(form.message or "(No message provided)")
 
-    msg = MIMEText("\n".join(body_lines))
-    msg["Subject"] = f"Belltab AI — New Inquiry from {form.name} ({form.restaurant})"
-    msg["From"] = smtp_user
-    msg["To"] = to_email
-    msg["Reply-To"] = form.email
-
     try:
-        with smtplib.SMTP_SSL("smtp.mail.me.com", 465, timeout=10) as s:
-            s.login(smtp_user, smtp_pass)
-            s.send_message(msg)
+        resend.Emails.send({
+            "from": "Belltab AI <onboarding@resend.dev>",
+            "to": [to_email],
+            "reply_to": form.email,
+            "subject": f"Belltab AI — New Inquiry from {form.name} ({form.restaurant})",
+            "text": "\n".join(body_lines),
+        })
         return {"ok": True}
     except Exception as e:
         logger.error(f"Contact email failed: {e}")

@@ -6,7 +6,7 @@ Main FastAPI application entry point with CORS, middleware, and route registrati
 import logging
 import time
 from contextlib import asynccontextmanager
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -443,6 +443,47 @@ async def health_check() -> Dict[str, Any]:
         "environment": os.getenv("ENVIRONMENT", "development"),
         "cors_origins": cors_origins
     }
+
+
+# ── Contact form (public, no auth) ──────────────────────────────
+from pydantic import BaseModel
+
+class ContactForm(BaseModel):
+    name: str
+    email: str
+    restaurant: str
+    phone: Optional[str] = None
+    message: Optional[str] = None
+
+@app.post("/api/contact")
+async def submit_contact(form: ContactForm):
+    """Send a contact-form inquiry via Resend API."""
+    import resend
+    resend.api_key = os.getenv("RESEND_API_KEY")
+    to_email = os.getenv("CONTACT_EMAIL", "djeddar@icloud.com")
+
+    body_lines = [
+        f"Name: {form.name}",
+        f"Email: {form.email}",
+        f"Restaurant: {form.restaurant}",
+    ]
+    if form.phone:
+        body_lines.append(f"Phone: {form.phone}")
+    body_lines.append("")
+    body_lines.append(form.message or "(No message provided)")
+
+    try:
+        resend.Emails.send({
+            "from": "Belltab AI <onboarding@resend.dev>",
+            "to": [to_email],
+            "reply_to": form.email,
+            "subject": f"Belltab AI — New Inquiry from {form.name} ({form.restaurant})",
+            "text": "\n".join(body_lines),
+        })
+        return {"ok": True}
+    except Exception as e:
+        logger.error(f"Contact email failed: {e}")
+        return JSONResponse(status_code=500, content={"detail": "Failed to send email. Please try again."})
 
 
 # Register API routers with unique prefixes

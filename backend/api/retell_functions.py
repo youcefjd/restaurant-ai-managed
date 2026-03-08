@@ -170,6 +170,7 @@ class AddToCartArgs(BaseModel):
     item_name: Optional[str] = Field(default=None, max_length=200)
     quantity: Optional[int] = Field(default=1, ge=1, le=99)
     special_requests: Optional[str] = Field(default=None, max_length=500)
+    size: Optional[str] = Field(default=None, max_length=50)
 
 
 class AddToCartRequest(BaseModel):
@@ -185,6 +186,7 @@ class AddToCartRequest(BaseModel):
     item_name: Optional[str] = Field(default=None, max_length=200)
     quantity: int = Field(default=1, ge=1, le=99)
     special_requests: Optional[str] = Field(default=None, max_length=500)
+    size: Optional[str] = Field(default=None, max_length=50)
 
     def get_restaurant_id(self) -> Optional[int]:
         if self.args and self.args.restaurant_id:
@@ -220,6 +222,11 @@ class AddToCartRequest(BaseModel):
         if self.args and self.args.special_requests:
             return self.args.special_requests
         return self.special_requests
+
+    def get_size(self) -> Optional[str]:
+        if self.args and self.args.size:
+            return self.args.size
+        return self.size
 
 
 class UpdateCartItemArgs(BaseModel):
@@ -512,7 +519,7 @@ def fetch_menu_data(db: SupabaseDB, restaurant_id: int) -> Dict[str, Any]:
         "menus": []
     }
 
-    # Bulk fetch all data in 3 queries instead of N+1
+    # Bulk fetch all data in 4 queries instead of N+1
     menus = db.query_all("menus", {"account_id": restaurant_id})
     if not menus:
         return menu_data
@@ -522,6 +529,10 @@ def fetch_menu_data(db: SupabaseDB, restaurant_id: int) -> Dict[str, Any]:
 
     category_ids = [c["id"] for c in all_categories]
     all_items = db.query_in("menu_items", "category_id", category_ids) if category_ids else []
+
+    # Fetch modifiers for all items
+    item_ids = [i["id"] for i in all_items]
+    all_modifiers = db.query_in("menu_modifiers", "item_id", item_ids) if item_ids else []
 
     # Build lookup maps for efficient assembly
     categories_by_menu = {}
@@ -537,6 +548,13 @@ def fetch_menu_data(db: SupabaseDB, restaurant_id: int) -> Dict[str, Any]:
         if cat_id not in items_by_category:
             items_by_category[cat_id] = []
         items_by_category[cat_id].append(item)
+
+    modifiers_by_item = {}
+    for mod in all_modifiers:
+        item_id = mod["item_id"]
+        if item_id not in modifiers_by_item:
+            modifiers_by_item[item_id] = []
+        modifiers_by_item[item_id].append(mod)
 
     # Assemble menu structure in memory (no DB queries)
     for menu in menus:
@@ -554,7 +572,7 @@ def fetch_menu_data(db: SupabaseDB, restaurant_id: int) -> Dict[str, Any]:
             }
 
             for item in items_by_category.get(category["id"], []):
-                category_dict["items"].append({
+                item_dict = {
                     "id": item["id"],
                     "name": item["name"],
                     "description": item.get("description", ""),
@@ -562,7 +580,24 @@ def fetch_menu_data(db: SupabaseDB, restaurant_id: int) -> Dict[str, Any]:
                     "price_dollars": item.get("price_cents", 0) / 100,
                     "dietary_tags": item.get("dietary_tags") or [],
                     "aliases": item.get("aliases") or []
-                })
+                }
+
+                # Add modifiers if they exist
+                item_mods = modifiers_by_item.get(item["id"], [])
+                if item_mods:
+                    modifier_groups = {}
+                    for mod in item_mods:
+                        group = mod.get("modifier_group", "Options")
+                        if group not in modifier_groups:
+                            modifier_groups[group] = []
+                        modifier_groups[group].append({
+                            "name": mod["name"],
+                            "price_adjustment_cents": mod.get("price_adjustment_cents", 0),
+                            "is_default": mod.get("is_default", False)
+                        })
+                    item_dict["modifier_groups"] = modifier_groups
+
+                category_dict["items"].append(item_dict)
 
             menu_dict["categories"].append(category_dict)
         menu_data["menus"].append(menu_dict)
@@ -679,12 +714,23 @@ async def get_menu(
 
                 categories_found.add(cat["name"])
                 for item in cat.get("items", []):
-                    items_list.append({
+                    item_entry = {
                         "name": item["name"],
                         "price": f"${item['price_dollars']:.0f}",
                         "description": item.get("description", "")[:100],
                         "category": cat["name"]
-                    })
+                    }
+
+                    # Include size/modifier info if available
+                    if item.get("modifier_groups", {}).get("Size"):
+                        sizes = item["modifier_groups"]["Size"]
+                        size_info = []
+                        for s in sorted(sizes, key=lambda x: x["price_adjustment_cents"]):
+                            adjusted = item["price_cents"] + s["price_adjustment_cents"]
+                            size_info.append(f"{s['name']} ${adjusted / 100:.0f}")
+                        item_entry["sizes"] = ", ".join(size_info)
+
+                    items_list.append(item_entry)
 
         # Build a SHORT, conversational message - just highlight popular items
         if items_list:
@@ -692,7 +738,13 @@ async def get_menu(
                 # User asked about a specific category - list those items briefly
                 cat_items = items_list[:5]
                 if include_prices:
-                    items_text = ", ".join([f"{i['name']} for {i['price']}" for i in cat_items])
+                    parts = []
+                    for i in cat_items:
+                        if i.get("sizes"):
+                            parts.append(f"{i['name']} ({i['sizes']})")
+                        else:
+                            parts.append(f"{i['name']} for {i['price']}")
+                    items_text = ", ".join(parts)
                 else:
                     items_text = ", ".join([i['name'] for i in cat_items])
                 message = f"We have {items_text}."
@@ -720,7 +772,7 @@ async def get_menu(
                 else:
                     message = "What are you in the mood for today?"
         else:
-            message = "Let me know what you're in the mood for - tacos, burritos, something else?"
+            message = "Let me know what you're in the mood for today."
 
         return JSONResponse({
             "success": True,
@@ -757,6 +809,7 @@ async def add_to_cart(
         item_name = request.get_item_name()
         quantity = request.get_quantity()
         special_requests = request.get_special_requests()
+        size = request.get_size()
 
         cart_key = get_unique_cart_key(call_id, agent_id, restaurant_id, session_id)
 
@@ -786,11 +839,41 @@ async def add_to_cart(
                 "suggestion": "Please check our menu for available items"
             })
 
+        # Calculate price with size modifier if applicable
+        item_price_cents = menu_item["price_cents"]
+        size_label = None
+        has_sizes = bool(menu_item.get("modifier_groups", {}).get("Size"))
+
+        if has_sizes:
+            size_mods = menu_item["modifier_groups"]["Size"]
+            if size:
+                # Find the matching size modifier
+                size_mod = next((s for s in size_mods if s["name"].lower() == size.lower()), None)
+                if size_mod:
+                    item_price_cents += size_mod["price_adjustment_cents"]
+                    size_label = size_mod["name"]
+                else:
+                    valid_sizes = ", ".join([s["name"] for s in size_mods])
+                    return JSONResponse({
+                        "success": False,
+                        "message": f"We don't have that size. Available sizes are: {valid_sizes}."
+                    })
+            else:
+                # No size specified but item has sizes — ask the customer
+                valid_sizes = ", ".join([s["name"] for s in size_mods])
+                return JSONResponse({
+                    "success": False,
+                    "message": f"What size would you like? We have {valid_sizes}."
+                })
+
         # Add item using cart service
         items = cart.get("items", [])
+        # Build cart item name with size
+        cart_item_name = f"{size_label} {menu_item['name']}" if size_label else menu_item["name"]
+
         existing_idx = None
         for idx, item in enumerate(items):
-            if item.get("name", "").lower() == menu_item["name"].lower():
+            if item.get("name", "").lower() == cart_item_name.lower():
                 existing_idx = idx
                 break
 
@@ -806,9 +889,9 @@ async def add_to_cart(
         else:
             # Add new item
             items.append({
-                "name": menu_item["name"],
+                "name": cart_item_name,
                 "quantity": quantity,
-                "price_cents": menu_item["price_cents"],
+                "price_cents": item_price_cents,
                 "special_requests": special_requests or ""
             })
 
@@ -824,18 +907,18 @@ async def add_to_cart(
         tax = int(subtotal * tax_rate)
         total = subtotal + tax
 
-        logger.info(f"Added to cart: {quantity}x {menu_item['name']} for call {call_id}")
+        logger.info(f"Added to cart: {quantity}x {cart_item_name} for call {call_id}")
 
-        item_price = menu_item['price_cents'] / 100
+        item_price = item_price_cents / 100
         quantity_text = f"{quantity} " if quantity > 1 else ""
         special_text = f" with {special_requests}" if special_requests else ""
-        message = f"Got it, {quantity_text}{menu_item['name']}{special_text} for ${item_price:.0f}. Your total is ${total / 100:.0f}. Anything else?"
+        message = f"Got it, {quantity_text}{cart_item_name}{special_text} for ${item_price:.0f}. Your total is ${total / 100:.0f}. Anything else?"
 
         return JSONResponse({
             "success": True,
             "message": message,
             "added_item": {
-                "name": menu_item["name"],
+                "name": cart_item_name,
                 "quantity": quantity,
                 "price": f"${item_price:.0f}"
             },

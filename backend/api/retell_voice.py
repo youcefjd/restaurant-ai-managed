@@ -132,6 +132,12 @@ async def fetch_and_save_retell_transcript(
         if not restaurant_phone:
             restaurant_phone = call_data.get("to_number", "")
 
+        # Use Retell's start_timestamp as the actual call time
+        call_started_at = None
+        if start_ts:
+            from datetime import datetime, timezone
+            call_started_at = datetime.fromtimestamp(start_ts / 1000, tz=timezone.utc).isoformat()
+
         # Save to database
         transcript_service.save_transcript(
             db=db,
@@ -142,7 +148,8 @@ async def fetch_and_save_retell_transcript(
             messages=messages,
             twilio_phone=restaurant_phone,
             summary=summary,
-            duration_seconds=duration_seconds
+            duration_seconds=duration_seconds,
+            created_at=call_started_at
         )
 
         saved_transcripts.add(call_id)
@@ -268,7 +275,7 @@ async def retell_webhook(request: Request, db: SupabaseDB = Depends(get_db)):
             call_context = active_calls.get(call_id, {})
             restaurant_id = call_context.get("restaurant_id") or call_context.get("metadata", {}).get("restaurant_id")
 
-            # If no restaurant_id in context, try to look it up by phone number
+            # If no restaurant_id in context, try to look it up by phone number or agent_id
             if not restaurant_id and call_data.get("to_number"):
                 try:
                     restaurant = db.query_one(
@@ -278,7 +285,18 @@ async def retell_webhook(request: Request, db: SupabaseDB = Depends(get_db)):
                     if restaurant:
                         restaurant_id = restaurant["id"]
                 except Exception as e:
-                    logger.error(f"Failed to look up restaurant: {e}")
+                    logger.error(f"Failed to look up restaurant by phone: {e}")
+
+            if not restaurant_id and call_data.get("agent_id"):
+                try:
+                    restaurant = db.query_one(
+                        "restaurant_accounts",
+                        {"retell_agent_id": call_data.get("agent_id")}
+                    )
+                    if restaurant:
+                        restaurant_id = restaurant["id"]
+                except Exception as e:
+                    logger.error(f"Failed to look up restaurant by agent_id: {e}")
 
             if restaurant_id:
                 # Fetch clean transcript from Retell API

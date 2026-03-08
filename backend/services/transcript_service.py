@@ -106,7 +106,8 @@ class TranscriptService:
         twilio_phone: Optional[str] = None,
         summary: Optional[str] = None,
         outcome: Optional[str] = None,
-        duration_seconds: Optional[int] = None
+        duration_seconds: Optional[int] = None,
+        created_at: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Save or update a transcript.
@@ -167,6 +168,8 @@ class TranscriptService:
                 "duration_seconds": duration_seconds,
                 "order_id": order_id
             }
+            if created_at:
+                insert_data["created_at"] = created_at
             transcript = db.insert("transcripts", insert_data)
             logger.info(f"Created transcript {transcript['id']} for conversation {conversation_id}, order_id: {order_id}")
             return transcript

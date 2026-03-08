@@ -161,7 +161,10 @@ export default function RestaurantOrders() {
                     </td>
                     <td className="text-dim">
                       {order.order_items.length > 0
-                        ? `${order.order_items.length} item${order.order_items.length > 1 ? 's' : ''}`
+                        ? (() => {
+                            const totalQty = order.order_items.reduce((sum: number, item: any) => sum + (item.quantity || 1), 0)
+                            return `${totalQty} item${totalQty > 1 ? 's' : ''}`
+                          })()
                         : '-'}
                     </td>
                     <td>${(order.total / 100).toFixed(2)}</td>

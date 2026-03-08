@@ -4,7 +4,7 @@ import {
   Bell, Phone, Bot, Zap, BarChart3, UtensilsCrossed,
   CheckCircle, ArrowRight, Clock, CreditCard, MessageSquare,
   TrendingUp, CalendarCheck, Mic, FileText, Smartphone,
-  Store, Settings, Globe
+  Store, Settings, Globe, Languages
 } from 'lucide-react'
 import ContactFormModal from '../components/ContactFormModal'
 
@@ -24,6 +24,7 @@ export default function LandingPage() {
         { icon: Phone, text: '24/7 phone answering — never miss a call' },
         { icon: UtensilsCrossed, text: 'Menu-aware conversations with dietary info' },
         { icon: Mic, text: 'Natural voice powered by advanced AI' },
+        { icon: Languages, text: 'Multi-language support — English, Spanish & more' },
         { icon: FileText, text: 'Call transcripts with AI summaries' },
       ],
     },

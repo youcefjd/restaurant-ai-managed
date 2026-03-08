@@ -65,7 +65,7 @@ export default function AdminLogin() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="input-glass pl-10"
-                  placeholder="admin@restaurantai.com"
+                  placeholder="admin@belltab.com"
                   required
                   autoComplete="email"
                 />

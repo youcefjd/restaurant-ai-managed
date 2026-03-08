@@ -38,7 +38,7 @@ export default function RestaurantLogin() {
           <div className="icon-box icon-box-lg icon-box-cyan rounded-2xl mx-auto mb-4">
             <Phone className="w-8 h-8" />
           </div>
-          <h1 className="text-3xl font-bold text-white">RestaurantAI</h1>
+          <h1 className="text-3xl font-bold text-white">Belltab</h1>
           <p className="mt-2" style={{ color: 'var(--text-muted)' }}>Restaurant Portal Login</p>
         </div>
 

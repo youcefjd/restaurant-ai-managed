@@ -1,6 +1,6 @@
 # Getting Started
 
-Quick guide to set up and run the Restaurant AI Platform locally.
+Quick guide to set up and run the Belltab Platform locally.
 
 ## Prerequisites
 

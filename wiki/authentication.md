@@ -40,7 +40,7 @@ POST /auth/admin/login
 Content-Type: application/json
 
 {
-  "email": "admin@restaurantai.com",
+  "email": "admin@belltab.com",
   "password": "admin123"
 }
 ```

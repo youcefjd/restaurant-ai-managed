@@ -1,6 +1,6 @@
 # Development Practices
 
-Guidelines and conventions for working on the Restaurant AI Platform.
+Guidelines and conventions for working on the Belltab Platform.
 
 ## Code Organization
 

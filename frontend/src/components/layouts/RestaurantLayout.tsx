@@ -50,7 +50,7 @@ export default function RestaurantLayout() {
       {/* Sidebar */}
       <aside className="w-56 border-r border-[--border] flex flex-col" style={{ background: 'var(--bg-card)' }}>
         <div className="p-4 border-b border-[--border]">
-          <h1 className="font-semibold">RestaurantAI</h1>
+          <h1 className="font-semibold">Belltab</h1>
           <p className="text-xs text-dim truncate">{user?.business_name}</p>
         </div>
 

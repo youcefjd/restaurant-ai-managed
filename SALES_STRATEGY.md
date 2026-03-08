@@ -1,4 +1,4 @@
-# RestaurantAI Sales Strategy
+# Belltab Sales Strategy
 
 ## Executive Summary
 
@@ -192,7 +192,7 @@ This document outlines our go-to-market strategy for converting independent rest
 **Why it works:** Restaurant owners respect face-to-face, you can demo on the spot, shows you're local/invested.
 
 **Script for walk-in:**
-> "Hey, I'm [Name] from RestaurantAI. I'm not here to sell you anything today—I just wanted to drop off my card and ask a quick question. During your dinner rush, how many calls do you think you might be missing? [Let them answer]
+> "Hey, I'm [Name] from Belltab. I'm not here to sell you anything today—I just wanted to drop off my card and ask a quick question. During your dinner rush, how many calls do you think you might be missing? [Let them answer]
 >
 > Yeah, industry data shows it's about 43% for most restaurants. We built something that might help. Can I leave you this card and maybe stop by Tuesday afternoon for a 10-minute demo?"
 
@@ -207,7 +207,7 @@ This document outlines our go-to-market strategy for converting independent rest
 **Best for:** Following up after walk-in, reaching owners who aren't on-site
 
 **Script:**
-> "Hi, this is [Name] from RestaurantAI. Is [Owner Name] available?
+> "Hi, this is [Name] from Belltab. Is [Owner Name] available?
 >
 > [If available] Hey [Owner], I'll keep this super quick—I know you're busy. We help restaurants like yours answer more phone calls and take more orders without hiring anyone. Right now we're offering a free 2-week trial. Would you have 10 minutes this week for a quick demo? I can come by whenever works for you."
 
@@ -295,7 +295,7 @@ This document outlines our go-to-market strategy for converting independent rest
 ## Competitive Positioning
 
 ### vs. Hiring Staff
-| Factor | Staff | RestaurantAI |
+| Factor | Staff | Belltab |
 |--------|-------|--------------|
 | Cost | $15-20/hr + benefits | $49/mo flat |
 | Availability | Shifts only, call-outs | 24/7/365 |
@@ -325,7 +325,7 @@ NEVER MISS ANOTHER PHONE ORDER
 43% of restaurant calls go unanswered during busy times.
 That's real money walking out the door.
 
-RestaurantAI answers your phone 24/7, takes orders
+Belltab answers your phone 24/7, takes orders
 perfectly, and sends them straight to your kitchen.
 
 ✓ Answers instantly—no hold music

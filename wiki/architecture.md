@@ -1,6 +1,6 @@
 # System Architecture
 
-High-level overview of the Restaurant AI Platform architecture.
+High-level overview of the Belltab Platform architecture.
 
 ## Architecture Diagram
 

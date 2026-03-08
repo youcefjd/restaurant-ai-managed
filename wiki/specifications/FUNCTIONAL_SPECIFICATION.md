@@ -1,14 +1,14 @@
-# Restaurant AI Platform - Functional Specification
+# Belltab Platform - Functional Specification
 
 **Version:** 1.0  
 **Date:** January 2026  
-**Purpose:** Complete functional specification for recreating the Restaurant AI Platform
+**Purpose:** Complete functional specification for recreating the Belltab Platform
 
 ---
 
 ## Executive Summary
 
-The Restaurant AI Platform is a **multi-tenant SaaS platform** that enables restaurants to manage their operations with AI-powered phone ordering, menu management, table reservations, order processing, and payment handling. The platform provides restaurants with an AI assistant that answers phone calls and text messages, takes orders, makes reservations, and handles customer inquiries automatically.
+The Belltab Platform is a **multi-tenant SaaS platform** that enables restaurants to manage their operations with AI-powered phone ordering, menu management, table reservations, order processing, and payment handling. The platform provides restaurants with an AI assistant that answers phone calls and text messages, takes orders, makes reservations, and handles customer inquiries automatically.
 
 ### Key Differentiators
 

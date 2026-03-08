@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Comprehensive End-to-End Test for Restaurant AI Voice Assistant
+Comprehensive End-to-End Test for Belltab Voice Assistant
 Tests: Specific orders, ambiguous orders, recommendations, takeout, delivery, table bookings
 """
 

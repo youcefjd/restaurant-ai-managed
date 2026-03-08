@@ -1,6 +1,6 @@
 # Technology Stack
 
-Current technologies used in the Restaurant AI Platform.
+Current technologies used in the Belltab Platform.
 
 ## Backend
 

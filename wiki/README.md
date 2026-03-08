@@ -1,4 +1,4 @@
-# Restaurant AI Platform - Wiki
+# Belltab Platform - Wiki
 
 A multi-tenant SaaS platform enabling restaurants to automate phone ordering through AI-powered voice agents.
 

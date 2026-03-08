@@ -1,6 +1,6 @@
 # API Reference
 
-Detailed endpoint documentation for the Restaurant AI Platform.
+Detailed endpoint documentation for the Belltab Platform.
 
 ## Authentication
 

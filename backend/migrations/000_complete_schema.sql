@@ -1,4 +1,4 @@
--- Complete Database Schema for Restaurant AI Platform
+-- Complete Database Schema for Belltab Platform
 -- This script creates all tables, indexes, and functions from scratch
 
 -- ============================================

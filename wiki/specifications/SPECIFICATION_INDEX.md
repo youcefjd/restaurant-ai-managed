@@ -1,4 +1,4 @@
-# Restaurant AI Platform - Functional Specification Index
+# Belltab Platform - Functional Specification Index
 
 **Purpose**: Index and overview of all functional specification documents
 
@@ -6,7 +6,7 @@
 
 ## Document Overview
 
-This set of functional specification documents provides a complete, implementation-agnostic description of the Restaurant AI Platform. These documents focus on **what** the system does and **how** it works functionally, without specifying technical implementation details.
+This set of functional specification documents provides a complete, implementation-agnostic description of the Belltab Platform. These documents focus on **what** the system does and **how** it works functionally, without specifying technical implementation details.
 
 Another development team can use these specifications to:
 - Understand all features and capabilities

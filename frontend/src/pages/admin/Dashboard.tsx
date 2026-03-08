@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { adminAPI } from '../../services/api'
-import { Store, ShoppingBag, DollarSign, TrendingUp, ArrowRight } from 'lucide-react'
+import { Store, ShoppingBag, DollarSign, TrendingUp, ArrowRight, Receipt } from 'lucide-react'
 import PageHeader from '../../components/ui/PageHeader'
 import StatCard from '../../components/ui/StatCard'
 
@@ -54,7 +54,7 @@ export default function AdminDashboard() {
       />
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard
           label="Total Restaurants"
           value={statsData?.total_restaurants || 0}
@@ -68,8 +68,15 @@ export default function AdminDashboard() {
         />
         <StatCard
           label="Platform Revenue"
-          value={`$${((statsData?.total_revenue_cents || 0) / 100).toFixed(2)}`}
+          value={`$${((statsData?.total_platform_revenue_cents || statsData?.total_revenue_cents || 0) / 100).toFixed(2)}`}
           icon={DollarSign}
+          subtitle="Commission + per-order fees"
+        />
+        <StatCard
+          label="Per-Order Fees"
+          value={`$${((statsData?.per_order_fees_cents || 0) / 100).toFixed(2)}`}
+          icon={Receipt}
+          subtitle={`${statsData?.total_orders || 0} orders × $0.50`}
         />
         <StatCard
           label="Commission Earned"

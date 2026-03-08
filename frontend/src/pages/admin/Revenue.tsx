@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { adminAPI } from '../../services/api'
-import { DollarSign, TrendingUp, Percent } from 'lucide-react'
+import { DollarSign, TrendingUp, Receipt } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { useState } from 'react'
 
@@ -31,8 +31,9 @@ export default function AdminRevenue() {
   // Use totals from API response (more accurate than recalculating)
   const totalProcessed = revenueResponse.gross_revenue_cents || 0
   const totalCommission = revenueResponse.platform_commission_cents || 0
+  const totalOrderFees = revenueResponse.per_order_fees_cents || 0
+  const totalPlatformRevenue = revenueResponse.total_platform_revenue_cents || (totalCommission + totalOrderFees)
   const restaurantEarnings = revenueResponse.restaurant_payout_cents || (totalProcessed - totalCommission)
-  const avgCommissionRate = totalProcessed > 0 ? (totalCommission / totalProcessed) * 100 : 0
 
   // Prepare chart data (API returns revenue_cents and commission_cents)
   const chartData = revenueData.map((item: any) => ({
@@ -52,12 +53,20 @@ export default function AdminRevenue() {
       subtext: 'All transactions',
     },
     {
-      label: 'Platform Commission',
-      value: `$${(totalCommission / 100).toFixed(2)}`,
+      label: 'Platform Revenue',
+      value: `$${(totalPlatformRevenue / 100).toFixed(2)}`,
       icon: TrendingUp,
       color: 'text-green-600',
       bgColor: 'bg-green-50',
-      subtext: 'Your earnings',
+      subtext: 'Commission + per-order fees',
+    },
+    {
+      label: 'Per-Order Fees',
+      value: `$${(totalOrderFees / 100).toFixed(2)}`,
+      icon: Receipt,
+      color: 'text-cyan-600',
+      bgColor: 'bg-cyan-50',
+      subtext: `${revenueResponse.total_orders || 0} orders × $0.50`,
     },
     {
       label: 'Restaurant Earnings',
@@ -66,14 +75,6 @@ export default function AdminRevenue() {
       color: 'text-purple-600',
       bgColor: 'bg-purple-50',
       subtext: 'Paid to restaurants',
-    },
-    {
-      label: 'Avg Commission Rate',
-      value: `${avgCommissionRate.toFixed(1)}%`,
-      icon: Percent,
-      color: 'text-orange-600',
-      bgColor: 'bg-orange-50',
-      subtext: 'Platform fee',
     },
   ]
 
@@ -166,6 +167,7 @@ export default function AdminRevenue() {
                   <th className="text-right py-3 px-4 font-medium text-gray-700">Total Revenue</th>
                   <th className="text-right py-3 px-4 font-medium text-gray-700">Commission Rate</th>
                   <th className="text-right py-3 px-4 font-medium text-gray-700">Commission</th>
+                  <th className="text-right py-3 px-4 font-medium text-gray-700">Order Fees</th>
                   <th className="text-right py-3 px-4 font-medium text-gray-700">Restaurant Gets</th>
                 </tr>
               </thead>
@@ -180,6 +182,9 @@ export default function AdminRevenue() {
                     <td className="text-right py-3 px-4">{item.commission_rate || 10}%</td>
                     <td className="text-right py-3 px-4 text-green-600 font-medium">
                       ${((item.commission_cents || 0) / 100).toFixed(2)}
+                    </td>
+                    <td className="text-right py-3 px-4 text-cyan-600 font-medium">
+                      ${((item.order_fees_total_cents || 0) / 100).toFixed(2)}
                     </td>
                     <td className="text-right py-3 px-4 text-purple-600 font-medium">
                       ${(((item.revenue_cents || 0) - (item.commission_cents || 0)) / 100).toFixed(2)}

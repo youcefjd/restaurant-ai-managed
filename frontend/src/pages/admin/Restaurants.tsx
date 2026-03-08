@@ -211,9 +211,13 @@ export default function AdminRestaurants() {
 
                     <p className="text-sm text-dim mt-1">{restaurant.owner_email}</p>
 
-                    <div className="flex items-center gap-4 mt-2 text-sm text-dim">
+                    <div className="flex items-center gap-4 mt-2 text-sm text-dim flex-wrap">
                       <span>Tier: <span className="font-medium">{restaurant.subscription_tier}</span></span>
                       <span>Commission: <span className="font-medium">{restaurant.platform_commission_rate ?? 10}%</span></span>
+                      <span>Per-order: <span className="font-medium">${((restaurant.per_order_fee_cents ?? 50) / 100).toFixed(2)}</span></span>
+                      {restaurant.total_orders > 0 && (
+                        <span>Orders: <span className="font-medium">{restaurant.total_orders}</span></span>
+                      )}
                       {restaurant.total_revenue_cents > 0 && (
                         <span className="flex items-center gap-1">
                           <DollarSign className="w-4 h-4" />
@@ -333,10 +337,10 @@ export default function AdminRestaurants() {
                   value={newRestaurant.subscription_tier}
                   onChange={(e) => setNewRestaurant({ ...newRestaurant, subscription_tier: e.target.value })}
                 >
-                  <option value="free">Free (Trial) - 15% commission</option>
-                  <option value="starter">Starter ($49/mo) - 0% commission</option>
-                  <option value="growth">Growth ($149/mo) - 3% commission</option>
-                  <option value="scale">Scale ($299/mo) - 3% commission</option>
+                  <option value="free">Free (Trial) - 15% commission, no per-order fee</option>
+                  <option value="starter">Starter ($49/mo) - $0.50/order</option>
+                  <option value="growth">Growth ($149/mo) - 3% + $0.50/order</option>
+                  <option value="scale">Scale ($299/mo) - 3% + $0.50/order</option>
                 </select>
               </div>
 
@@ -454,7 +458,7 @@ export default function AdminRestaurants() {
               {/* Revenue Stats */}
               <div className="border-t border-[--border] pt-4">
                 <h3 className="font-semibold mb-3">Revenue Statistics</h3>
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="bg-white/5 rounded-lg p-3">
                     <p className="text-xs text-dim mb-1">Total Orders</p>
                     <p className="text-2xl font-bold text-accent">{selectedRestaurant.total_orders}</p>
@@ -469,6 +473,15 @@ export default function AdminRestaurants() {
                     <p className="text-xs text-dim mb-1">Commission Owed</p>
                     <p className="text-2xl font-bold text-warning">
                       ${(selectedRestaurant.commission_owed_cents / 100).toFixed(2)}
+                    </p>
+                  </div>
+                  <div className="bg-white/5 rounded-lg p-3">
+                    <p className="text-xs text-dim mb-1">Per-Order Fees</p>
+                    <p className="text-2xl font-bold text-warning">
+                      ${((selectedRestaurant.order_fees_total_cents || 0) / 100).toFixed(2)}
+                    </p>
+                    <p className="text-xs text-dim mt-1">
+                      {selectedRestaurant.total_orders} orders × ${((selectedRestaurant.per_order_fee_cents ?? 50) / 100).toFixed(2)}
                     </p>
                   </div>
                 </div>

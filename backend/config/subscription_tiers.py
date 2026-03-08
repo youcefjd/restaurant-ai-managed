@@ -11,23 +11,30 @@ SUBSCRIPTION_TIERS = {
         "name": "Free Trial",
         "monthly_price": 0,
         "commission_rate": 15.0,  # 15% commission during trial
+        "per_order_fee_cents": 0,  # No per-order fee during trial
     },
     "starter": {
         "name": "Starter",
         "monthly_price": 49,
         "commission_rate": 0.0,  # $49/mo flat fee, no commission
+        "per_order_fee_cents": 50,  # $0.50 per order
     },
     "growth": {
         "name": "Growth",
         "monthly_price": 149,
         "commission_rate": 3.0,  # $149/mo + 3% commission
+        "per_order_fee_cents": 50,  # $0.50 per order
     },
     "scale": {
         "name": "Scale",
         "monthly_price": 299,
         "commission_rate": 3.0,  # $299/mo + 3% commission
+        "per_order_fee_cents": 50,  # $0.50 per order
     },
 }
+
+# Default per-order fee for all paid tiers
+DEFAULT_PER_ORDER_FEE_CENTS = 50  # $0.50
 
 
 def get_default_commission_for_tier(tier: str) -> float:
@@ -52,3 +59,11 @@ def get_tier_monthly_price(tier: str) -> int:
     if tier_config:
         return tier_config["monthly_price"]
     return 0
+
+
+def get_per_order_fee_for_tier(tier: str) -> int:
+    """Get the per-order fee in cents for a subscription tier."""
+    tier_config = SUBSCRIPTION_TIERS.get(tier.lower())
+    if tier_config:
+        return tier_config["per_order_fee_cents"]
+    return DEFAULT_PER_ORDER_FEE_CENTS

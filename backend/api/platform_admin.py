@@ -17,7 +17,7 @@ from backend.database import get_db, SupabaseDB
 from backend.auth import get_current_admin
 from backend.services.audit_service import get_audit_service
 from backend.utils.datetime_utils import utc_now, days_ago
-from backend.config.subscription_tiers import get_default_commission_for_tier
+from backend.config.subscription_tiers import get_default_commission_for_tier, get_per_order_fee_for_tier, DEFAULT_PER_ORDER_FEE_CENTS
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -35,6 +35,8 @@ class PlatformStats(BaseModel):
     total_bookings: int
     total_revenue_cents: int
     platform_commission_cents: int
+    per_order_fees_cents: int = 0
+    total_platform_revenue_cents: int = 0  # commission + per-order fees
 
     class Config:
         from_attributes = True
@@ -55,6 +57,8 @@ class RestaurantAccountSummary(BaseModel):
     commission_owed_cents: int = 0
     platform_commission_rate: float = 10.0
     commission_enabled: bool = True
+    per_order_fee_cents: int = 50
+    order_fees_total_cents: int = 0  # total_orders * per_order_fee_cents
     created_at: datetime
 
     class Config:
@@ -68,6 +72,8 @@ class RevenueBreakdown(BaseModel):
     total_orders: int
     gross_revenue_cents: int
     platform_commission_cents: int
+    per_order_fees_cents: int = 0
+    total_platform_revenue_cents: int = 0  # commission + per-order fees
     restaurant_payout_cents: int
     by_restaurant: List[dict]
 
@@ -137,6 +143,9 @@ async def get_platform_stats(
     # Calculate commission (average 10%)
     platform_commission = int(orders_sum * 0.10)
 
+    # Calculate per-order fees ($0.50 per order)
+    per_order_fees = total_orders * DEFAULT_PER_ORDER_FEE_CENTS
+
     return PlatformStats(
         total_restaurants=total_restaurants,
         active_restaurants=active_restaurants,
@@ -145,7 +154,9 @@ async def get_platform_stats(
         total_orders=total_orders,
         total_bookings=total_bookings,
         total_revenue_cents=int(orders_sum),
-        platform_commission_cents=platform_commission
+        platform_commission_cents=platform_commission,
+        per_order_fees_cents=per_order_fees,
+        total_platform_revenue_cents=platform_commission + per_order_fees
     )
 
 
@@ -197,6 +208,10 @@ async def list_all_restaurants(
         commission_rate = account.get("platform_commission_rate", 10.0) or 10.0
         commission = int(total_revenue * (commission_rate / 100))
 
+        tier = account.get("subscription_tier", "starter")
+        per_order_fee = get_per_order_fee_for_tier(tier)
+        order_fees_total = total_orders * per_order_fee
+
         summary = RestaurantAccountSummary(
             id=account["id"],
             business_name=account["business_name"],
@@ -211,6 +226,8 @@ async def list_all_restaurants(
             commission_owed_cents=commission,
             platform_commission_rate=commission_rate,
             commission_enabled=account.get("commission_enabled", True),
+            per_order_fee_cents=per_order_fee,
+            order_fees_total_cents=order_fees_total,
             created_at=account["created_at"]
         )
         results.append(summary)
@@ -283,6 +300,8 @@ async def create_restaurant(
         commission_owed_cents=0,
         platform_commission_rate=account.get("platform_commission_rate", 10.0),
         commission_enabled=account.get("commission_enabled", True),
+        per_order_fee_cents=get_per_order_fee_for_tier(tier),
+        order_fees_total_cents=0,
         created_at=account["created_at"]
     )
 
@@ -342,6 +361,10 @@ async def get_restaurant_details(
     commission_rate = account.get("platform_commission_rate", 10.0) or 10.0
     commission = int(total_revenue * (commission_rate / 100))
 
+    tier = account.get("subscription_tier", "starter")
+    per_order_fee = get_per_order_fee_for_tier(tier)
+    order_fees_total = total_orders * per_order_fee
+
     # Booking stats
     total_bookings = 0
     for restaurant_id in restaurant_ids:
@@ -384,7 +407,9 @@ async def get_restaurant_details(
         "order_stats": {
             "total_orders": total_orders,
             "total_revenue_cents": total_revenue,
-            "commission_owed_cents": commission
+            "commission_owed_cents": commission,
+            "per_order_fee_cents": per_order_fee,
+            "order_fees_total_cents": order_fees_total
         },
         "booking_stats": {
             "total_bookings": total_bookings
@@ -448,13 +473,17 @@ async def get_revenue_breakdown(
 
         if account_id not in restaurant_revenue:
             commission_rate = account.get("platform_commission_rate", 10.0) or 10.0
+            tier = account.get("subscription_tier", "starter")
+            per_order_fee = get_per_order_fee_for_tier(tier)
             restaurant_revenue[account_id] = {
                 "account_id": account_id,
                 "business_name": account["business_name"],
                 "orders": 0,
                 "revenue_cents": 0,
                 "commission_rate": float(commission_rate),
-                "commission_cents": 0
+                "commission_cents": 0,
+                "per_order_fee_cents": per_order_fee,
+                "order_fees_total_cents": 0
             }
 
         order_total = order.get("total", 0) or 0
@@ -463,9 +492,12 @@ async def get_revenue_breakdown(
         restaurant_revenue[account_id]["commission_cents"] += int(
             order_total * (restaurant_revenue[account_id]["commission_rate"] / 100)
         )
+        restaurant_revenue[account_id]["order_fees_total_cents"] += restaurant_revenue[account_id]["per_order_fee_cents"]
 
-    # Calculate total commission
+    # Calculate totals
     total_commission = sum(r["commission_cents"] for r in restaurant_revenue.values())
+    total_order_fees = sum(r["order_fees_total_cents"] for r in restaurant_revenue.values())
+    total_platform_revenue = total_commission + total_order_fees
     restaurant_payout = gross_revenue - total_commission
 
     return RevenueBreakdown(
@@ -474,6 +506,8 @@ async def get_revenue_breakdown(
         total_orders=total_orders,
         gross_revenue_cents=gross_revenue,
         platform_commission_cents=total_commission,
+        per_order_fees_cents=total_order_fees,
+        total_platform_revenue_cents=total_platform_revenue,
         restaurant_payout_cents=restaurant_payout,
         by_restaurant=list(restaurant_revenue.values())
     )
@@ -523,6 +557,9 @@ async def update_subscription(
     commission_rate = account.get("platform_commission_rate", 10.0) or 10.0
     commission = int(total_revenue * (commission_rate / 100))
 
+    updated_tier = account.get("subscription_tier", "starter")
+    updated_per_order_fee = get_per_order_fee_for_tier(updated_tier)
+
     return RestaurantAccountSummary(
         id=account["id"],
         business_name=account["business_name"],
@@ -535,6 +572,8 @@ async def update_subscription(
         total_orders=total_orders,
         total_revenue_cents=total_revenue,
         commission_owed_cents=commission,
+        per_order_fee_cents=updated_per_order_fee,
+        order_fees_total_cents=total_orders * updated_per_order_fee,
         created_at=account["created_at"]
     )
 
@@ -616,6 +655,9 @@ async def update_commission_settings(
         f"rate={account.get('platform_commission_rate')}%, enabled={account.get('commission_enabled')}"
     )
 
+    comm_tier = account.get("subscription_tier", "starter")
+    comm_per_order_fee = get_per_order_fee_for_tier(comm_tier)
+
     return RestaurantAccountSummary(
         id=account["id"],
         business_name=account["business_name"],
@@ -630,6 +672,8 @@ async def update_commission_settings(
         commission_owed_cents=commission,
         platform_commission_rate=account.get("platform_commission_rate", 10.0),
         commission_enabled=account.get("commission_enabled", True),
+        per_order_fee_cents=comm_per_order_fee,
+        order_fees_total_cents=total_orders * comm_per_order_fee,
         created_at=account["created_at"]
     )
 

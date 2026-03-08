@@ -72,7 +72,7 @@ export default function RestaurantDashboard() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title={`Welcome back${user?.business_name ? `, ${user.business_name}` : ''}`}
+        title="Welcome back"
         subtitle="Here's what's happening today"
       />
 

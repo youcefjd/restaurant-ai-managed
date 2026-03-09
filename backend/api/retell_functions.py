@@ -1234,13 +1234,14 @@ async def create_order(
 
         # Get restaurant info
         account = db.query_one("restaurant_accounts", {"id": restaurant_id})
-        restaurant = db.query_one("restaurants", {"account_id": restaurant_id})
-
-        if not account or not restaurant:
+        if not account:
             return JSONResponse({
                 "success": False,
                 "message": "Restaurant configuration error"
             })
+        restaurant = db.query_one("restaurants", {"account_id": restaurant_id})
+        # If no separate location row, use the account id as restaurant_id
+        location_id = restaurant["id"] if restaurant else restaurant_id
 
         # Get or create customer by phone using upsert (atomic, no race condition)
         customer_phone = cart.get("customer_phone", "")
@@ -1390,7 +1391,7 @@ async def create_order(
         # Create order
         order_data = {
             "account_id": restaurant_id,
-            "restaurant_id": restaurant["id"],
+            "restaurant_id": location_id,
             "customer_id": customer["id"],
             "customer_name": customer_name,
             "customer_phone": cart.get("customer_phone", ""),

@@ -600,6 +600,18 @@ async def setup_restaurant(db, restaurant_config: dict, public_url: str) -> dict
     restaurant_id = account["id"]
     logger.info(f"[{name}] Created account: ID={restaurant_id}")
 
+    # Step 1b: Create restaurant location row (required for orders FK constraint)
+    location = db.insert("restaurants", {
+        "account_id": restaurant_id,
+        "name": name,
+        "address": restaurant_config.get("address", "New York, NY"),
+        "phone": restaurant_config["owner_phone"],
+        "email": email,
+        "opening_time": restaurant_config["opening_time"],
+        "closing_time": restaurant_config["closing_time"],
+    })
+    logger.info(f"[{name}] Created location: restaurants.id={location['id']}")
+
     # Step 2: Create menu
     menu_data = restaurant_config["menu"]
     logger.info(f"[{name}] Creating menu...")

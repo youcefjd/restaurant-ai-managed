@@ -415,11 +415,11 @@ async def update_order_status(
     # Validate status transition
     current_status = order.get("status", "pending")
     valid_transitions = {
-        "pending": ["confirmed", "preparing", "ready", "completed", "cancelled"],
-        "confirmed": ["preparing", "ready", "completed", "cancelled"],
-        "preparing": ["ready", "completed", "cancelled"],
-        "ready": ["picked_up", "out_for_delivery", "completed", "cancelled"],
-        "out_for_delivery": ["delivered", "completed", "cancelled"],
+        "pending": ["confirmed", "preparing", "ready", "completed"],
+        "confirmed": ["preparing", "ready", "completed"],
+        "preparing": ["ready", "completed"],
+        "ready": ["picked_up", "out_for_delivery", "completed"],
+        "out_for_delivery": ["delivered", "completed"],
         "picked_up": ["completed"],
         "delivered": ["completed"],
         "completed": [],  # Terminal state

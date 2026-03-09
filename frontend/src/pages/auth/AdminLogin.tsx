@@ -28,8 +28,8 @@ export default function AdminLogin() {
     <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'var(--bg-primary)' }}>
       {/* Ambient background */}
       <div className="bg-ambient">
-        <div className="ambient-blob ambient-blob-purple w-[500px] h-[500px] -top-[200px] -right-[200px] opacity-20" />
-        <div className="ambient-blob ambient-blob-pink w-[400px] h-[400px] bottom-[10%] -left-[150px] opacity-15" />
+        <div className="ambient-blob ambient-blob-purple w-[250px] h-[250px] sm:w-[500px] sm:h-[500px] -top-[100px] -right-[100px] sm:-top-[200px] sm:-right-[200px] opacity-20" />
+        <div className="ambient-blob ambient-blob-pink w-[200px] h-[200px] sm:w-[400px] sm:h-[400px] bottom-[10%] -left-[80px] sm:-left-[150px] opacity-15" />
       </div>
 
       <div className="w-full max-w-md relative z-10">
@@ -43,7 +43,7 @@ export default function AdminLogin() {
         </div>
 
         {/* Login Card */}
-        <div className="glass-card p-8">
+        <div className="glass-card p-6 sm:p-8">
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Error Message */}
             {error && (

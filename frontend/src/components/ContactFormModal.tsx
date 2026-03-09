@@ -78,13 +78,13 @@ export default function ContactFormModal({ open, onClose }: ContactFormModalProp
 
           {/* Ambient blobs */}
           <div className="absolute inset-0 pointer-events-none overflow-hidden">
-            <div className="ambient-blob ambient-blob-cyan w-[400px] h-[400px] -top-[100px] -left-[100px] opacity-15" />
-            <div className="ambient-blob ambient-blob-pink w-[300px] h-[300px] bottom-[5%] -right-[80px] opacity-10" />
+            <div className="ambient-blob ambient-blob-cyan w-[200px] h-[200px] sm:w-[400px] sm:h-[400px] -top-[50px] -left-[50px] sm:-top-[100px] sm:-left-[100px] opacity-15" />
+            <div className="ambient-blob ambient-blob-pink w-[150px] h-[150px] sm:w-[300px] sm:h-[300px] bottom-[5%] -right-[40px] sm:-right-[80px] opacity-10" />
           </div>
 
           {/* Card */}
           <motion.div
-            className="glass-card p-8 w-full max-w-lg relative z-10 max-h-[90vh] overflow-y-auto"
+            className="glass-card p-5 sm:p-8 w-full max-w-lg relative z-10 max-h-[90vh] overflow-y-auto"
             initial={{ opacity: 0, scale: 0.95, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 10 }}

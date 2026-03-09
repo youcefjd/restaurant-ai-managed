@@ -101,7 +101,7 @@ export default function RestaurantOrders() {
       {/* Filter and Sound Toggle */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex gap-2 flex-wrap">
-          {['all', 'pending', 'preparing', 'ready', 'completed', 'cancelled'].map((status) => (
+          {['all', 'pending', 'preparing', 'ready', 'completed'].map((status) => (
             <button
               key={status}
               onClick={() => setStatusFilter(status)}
@@ -127,96 +127,159 @@ export default function RestaurantOrders() {
         </button>
       </div>
 
-      {/* Orders Table */}
-      <div className="card p-0">
-        {orderData.length === 0 ? (
+      {/* Orders - Mobile cards / Desktop table */}
+      {orderData.length === 0 ? (
+        <div className="card">
           <p className="text-dim text-sm p-8 text-center">No orders found</p>
-        ) : (
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Order</th>
-                <th>Customer</th>
-                <th>Items</th>
-                <th>Total</th>
-                <th>Status</th>
-                <th>Payment</th>
-                <th>Date/Time</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {orderData.map((order: any) => (
-                  <tr key={order.id}>
-                    <td className="font-medium">#{order.id}</td>
-                    <td>
-                      <div className="flex items-center gap-1.5">
-                        <span>{order.customer_name || 'Guest'}</span>
-                        {order.special_instructions && (
-                          <span title="Has special instructions">
-                            <MessageSquare className="w-3.5 h-3.5 text-yellow-400" />
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="text-dim">
-                      {order.order_items.length > 0
-                        ? (() => {
-                            const totalQty = order.order_items.reduce((sum: number, item: any) => sum + (item.quantity || 1), 0)
-                            return `${totalQty} item${totalQty > 1 ? 's' : ''}`
-                          })()
-                        : '-'}
-                    </td>
-                    <td>${(order.total / 100).toFixed(2)}</td>
-                    <td>
-                      {order.status === 'completed' || order.status === 'cancelled' ? (
-                        <span className={`badge ${STATUS_CONFIG[order.status as OrderStatus]?.badgeClass || 'badge-secondary'}`}>
-                          {STATUS_CONFIG[order.status as OrderStatus]?.label || order.status}
-                        </span>
-                      ) : (
-                        <div className="relative inline-block">
-                          <select
-                            value={order.status}
-                            onChange={(e) => updateStatusMutation.mutate({ id: order.id, status: e.target.value })}
-                            disabled={updateStatusMutation.isPending}
-                            className={`appearance-none cursor-pointer rounded px-2 py-1 pr-6 text-xs font-medium border-0 focus:ring-1 focus:ring-accent ${STATUS_CONFIG[order.status as OrderStatus]?.badgeClass || 'bg-gray-500/20'}`}
-                          >
-                            {ORDER_STATUSES.filter(s => s !== 'cancelled').map((s) => (
-                              <option key={s} value={s} className="bg-[--card] text-white">
-                                {STATUS_CONFIG[s].label}
-                              </option>
-                            ))}
-                          </select>
-                          <ChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none opacity-60" />
-                        </div>
-                      )}
-                    </td>
-                    <td>
-                      <span className={`badge ${
-                        order.payment_status === 'paid' ? 'badge-success' :
-                        order.payment_status === 'pending' ? 'badge-warning' : 'badge-danger'
-                      }`}>
-                        {order.payment_status || 'pending'}
+        </div>
+      ) : (
+        <>
+          {/* Mobile card layout */}
+          <div className="space-y-3 md:hidden">
+            {orderData.map((order: any) => (
+              <div
+                key={order.id}
+                className="card cursor-pointer"
+                onClick={() => setSelectedOrder(order)}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">#{order.id}</span>
+                    <span className="text-sm text-dim">{order.customer_name || 'Guest'}</span>
+                    {order.special_instructions && (
+                      <MessageSquare className="w-3.5 h-3.5 text-yellow-400" />
+                    )}
+                  </div>
+                  <span className="font-medium">${(order.total / 100).toFixed(2)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {order.status === 'completed' || order.status === 'cancelled' ? (
+                      <span className={`badge ${STATUS_CONFIG[order.status as OrderStatus]?.badgeClass || 'badge-secondary'}`}>
+                        {STATUS_CONFIG[order.status as OrderStatus]?.label || order.status}
                       </span>
-                    </td>
-                    <td className="text-dim text-sm">
-                      <div>{new Date(order.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}</div>
-                      <div>{new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-                    </td>
-                    <td>
-                      <button
-                        onClick={() => setSelectedOrder(order)}
-                        className="text-accent text-sm hover:underline"
-                      >
-                        View
-                      </button>
-                    </td>
-                  </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+                    ) : (
+                      <div className="relative inline-block" onClick={(e) => e.stopPropagation()}>
+                        <select
+                          value={order.status}
+                          onChange={(e) => updateStatusMutation.mutate({ id: order.id, status: e.target.value })}
+                          disabled={updateStatusMutation.isPending}
+                          className={`appearance-none cursor-pointer rounded px-2 py-1 pr-6 text-xs font-medium border-0 focus:ring-1 focus:ring-accent ${STATUS_CONFIG[order.status as OrderStatus]?.badgeClass || 'bg-gray-500/20'}`}
+                        >
+                          {ORDER_STATUSES.filter(s => s !== 'cancelled').map((s) => (
+                            <option key={s} value={s} className="bg-[--card] text-white">
+                              {STATUS_CONFIG[s].label}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none opacity-60" />
+                      </div>
+                    )}
+                    <span className={`badge ${
+                      order.payment_status === 'paid' ? 'badge-success' :
+                      order.payment_status === 'pending' ? 'badge-warning' : 'badge-danger'
+                    }`}>
+                      {order.payment_status || 'pending'}
+                    </span>
+                  </div>
+                  <span className="text-xs text-dim">
+                    {new Date(order.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                    {' '}
+                    {new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop table */}
+          <div className="card p-0 hidden md:block">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Order</th>
+                  <th>Customer</th>
+                  <th>Items</th>
+                  <th>Total</th>
+                  <th>Status</th>
+                  <th>Payment</th>
+                  <th>Date/Time</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {orderData.map((order: any) => (
+                    <tr key={order.id}>
+                      <td className="font-medium">#{order.id}</td>
+                      <td>
+                        <div className="flex items-center gap-1.5">
+                          <span>{order.customer_name || 'Guest'}</span>
+                          {order.special_instructions && (
+                            <span title="Has special instructions">
+                              <MessageSquare className="w-3.5 h-3.5 text-yellow-400" />
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="text-dim">
+                        {order.order_items.length > 0
+                          ? (() => {
+                              const totalQty = order.order_items.reduce((sum: number, item: any) => sum + (item.quantity || 1), 0)
+                              return `${totalQty} item${totalQty > 1 ? 's' : ''}`
+                            })()
+                          : '-'}
+                      </td>
+                      <td>${(order.total / 100).toFixed(2)}</td>
+                      <td>
+                        {order.status === 'completed' || order.status === 'cancelled' ? (
+                          <span className={`badge ${STATUS_CONFIG[order.status as OrderStatus]?.badgeClass || 'badge-secondary'}`}>
+                            {STATUS_CONFIG[order.status as OrderStatus]?.label || order.status}
+                          </span>
+                        ) : (
+                          <div className="relative inline-block">
+                            <select
+                              value={order.status}
+                              onChange={(e) => updateStatusMutation.mutate({ id: order.id, status: e.target.value })}
+                              disabled={updateStatusMutation.isPending}
+                              className={`appearance-none cursor-pointer rounded px-2 py-1 pr-6 text-xs font-medium border-0 focus:ring-1 focus:ring-accent ${STATUS_CONFIG[order.status as OrderStatus]?.badgeClass || 'bg-gray-500/20'}`}
+                            >
+                              {ORDER_STATUSES.filter(s => s !== 'cancelled').map((s) => (
+                                <option key={s} value={s} className="bg-[--card] text-white">
+                                  {STATUS_CONFIG[s].label}
+                                </option>
+                              ))}
+                            </select>
+                            <ChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none opacity-60" />
+                          </div>
+                        )}
+                      </td>
+                      <td>
+                        <span className={`badge ${
+                          order.payment_status === 'paid' ? 'badge-success' :
+                          order.payment_status === 'pending' ? 'badge-warning' : 'badge-danger'
+                        }`}>
+                          {order.payment_status || 'pending'}
+                        </span>
+                      </td>
+                      <td className="text-dim text-sm">
+                        <div>{new Date(order.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}</div>
+                        <div>{new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                      </td>
+                      <td>
+                        <button
+                          onClick={() => setSelectedOrder(order)}
+                          className="text-accent text-sm hover:underline"
+                        >
+                          View
+                        </button>
+                      </td>
+                    </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
 
       {/* Order Modal */}
       {selectedOrder && (
@@ -363,13 +426,6 @@ export default function RestaurantOrders() {
                         Complete Order
                       </button>
                     )}
-                    <button
-                      onClick={() => updateStatusMutation.mutate({ id: selectedOrder.id, status: 'cancelled' })}
-                      className="btn btn-sm btn-danger"
-                      disabled={updateStatusMutation.isPending}
-                    >
-                      Cancel
-                    </button>
                   </div>
                 </div>
               )}

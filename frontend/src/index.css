@@ -188,6 +188,99 @@ input::placeholder, textarea::placeholder {
 .text-danger { color: var(--danger); }
 .text-accent { color: var(--accent); }
 
+/* Glass UI (login pages, modals) */
+.glass-card {
+  background: rgba(26, 26, 29, 0.8);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+}
+
+.input-glass {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 0.75rem 0.75rem 0.75rem 2.5rem;
+  color: var(--text);
+  font-size: 0.875rem;
+  transition: border-color 0.2s;
+}
+
+.input-glass:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.input-glass::placeholder {
+  color: var(--text-dim);
+}
+
+.label-glass {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-dim);
+  margin-bottom: 0.5rem;
+}
+
+.icon-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 12px;
+}
+
+.icon-box-lg {
+  width: 3.5rem;
+  height: 3.5rem;
+}
+
+.icon-box-cyan {
+  background: rgba(34, 211, 238, 0.15);
+  color: var(--accent);
+}
+
+/* Ambient background blobs */
+.bg-ambient {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.ambient-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+}
+
+.ambient-blob-cyan {
+  background: radial-gradient(ellipse, rgba(34, 211, 238, 0.5) 0%, transparent 70%);
+}
+
+.ambient-blob-pink {
+  background: radial-gradient(ellipse, rgba(236, 72, 153, 0.5) 0%, transparent 70%);
+}
+
+.ambient-blob-purple {
+  background: radial-gradient(ellipse, rgba(167, 139, 250, 0.5) 0%, transparent 70%);
+}
+
+/* Border glass var */
+:root {
+  --border-glass: rgba(255, 255, 255, 0.08);
+  --accent-cyan: #22d3ee;
+  --accent-purple: #a78bfa;
+  --accent-cyan-rgb: 34, 211, 238;
+  --bg-primary: #111113;
+  --bg-card-rgb: 26, 26, 29;
+  --text-muted: #888;
+}
+
 /* Simple loading spinner */
 .spinner {
   width: 1.5rem;
@@ -200,4 +293,29 @@ input::placeholder, textarea::placeholder {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+/* Mobile sidebar */
+.sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 40;
+}
+
+/* Modal responsive */
+@media (max-width: 640px) {
+  .modal {
+    max-width: calc(100vw - 2rem);
+    margin: 1rem;
+  }
+
+  .table th, .table td {
+    padding: 0.5rem;
+    font-size: 0.75rem;
+  }
+
+  .ambient-blob {
+    transform: scale(0.5);
+  }
 }

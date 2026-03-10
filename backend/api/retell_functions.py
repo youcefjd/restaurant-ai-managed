@@ -62,7 +62,7 @@ async def verify_retell_request(
 # In-memory menu cache: restaurant_id -> (menu_data, timestamp)
 # Menus don't change during a call — cache avoids 4-5 DB queries per tool call
 _menu_cache: Dict[int, tuple] = {}
-MENU_CACHE_TTL = 300  # 5 minutes
+MENU_CACHE_TTL = 1800  # 30 minutes
 
 # Cache for simulation session cart keys
 # Maps agent_id -> (cart_key, timestamp)

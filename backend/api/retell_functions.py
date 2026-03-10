@@ -1452,9 +1452,9 @@ async def create_order(
 
         # Build confirmation message based on payment status
         if payment_status == "paid":
-            payment_msg = "Your payment has been processed."
+            payment_msg = " Your payment has been processed."
         else:
-            payment_msg = "Please pay when you pick up."
+            payment_msg = ""
 
         return JSONResponse({
             "success": True,
@@ -1465,7 +1465,7 @@ async def create_order(
             "pickup_time": pickup_display,
             "payment_status": payment_status,
             "toast_synced": bool(toast_order_guid),
-            "message": f"Order #{order['id']} confirmed for {customer_name}. {items_text} for ${total / 100:.0f}. {payment_msg} Ready for pickup {pickup_display}."
+            "message": f"Order #{order['id']} confirmed for {customer_name}. {items_text} for ${total / 100:.0f}.{payment_msg} Ready for pickup {pickup_display}."
         })
 
     except Exception as e:
@@ -1757,7 +1757,7 @@ async def initiate_payment_collection(
             return JSONResponse({
                 "success": True,
                 "payment_available": False,
-                "message": "This restaurant only accepts payment at pickup. You can pay when you arrive."
+                "message": "We only accept payment at pickup. You can pay when you arrive."
             })
 
         # Calculate cart total

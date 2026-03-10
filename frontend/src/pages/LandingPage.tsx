@@ -187,6 +187,25 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* Demo Video */}
+      <section className="py-20 px-4">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-10">
+            <h3 className="text-3xl md:text-4xl font-bold mb-4">See It In Action</h3>
+            <p className="text-dim text-lg">Watch our AI voice agent take a real restaurant order</p>
+          </div>
+          <div className="relative w-full rounded-2xl overflow-hidden border border-[--border]" style={{ paddingBottom: '56.25%' }}>
+            <iframe
+              className="absolute inset-0 w-full h-full"
+              src="https://www.youtube.com/embed/JEBXIFSeI14"
+              title="Belltab AI Demo"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+            />
+          </div>
+        </div>
+      </section>
+
       {/* Features */}
       <section id="features" className="py-20 px-4" style={{ background: 'var(--bg-card)' }}>
         <div className="max-w-6xl mx-auto">

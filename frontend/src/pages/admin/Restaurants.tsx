@@ -9,8 +9,6 @@ export default function AdminRestaurants() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [selectedRestaurant, setSelectedRestaurant] = useState<any>(null)
-  const [commissionRate, setCommissionRate] = useState(10)
-  const [commissionEnabled, setCommissionEnabled] = useState(true)
   const [selectedTier, setSelectedTier] = useState('free')
   const [newRestaurant, setNewRestaurant] = useState({
     business_name: '',
@@ -57,17 +55,6 @@ export default function AdminRestaurants() {
     },
   })
 
-  const updateCommissionMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number, data: any }) =>
-      adminAPI.updateCommission(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-restaurants'] })
-      // Close modal and refresh
-      setShowDetailsModal(false)
-      setSelectedRestaurant(null)
-    },
-  })
-
   const updateSubscriptionMutation = useMutation({
     mutationFn: ({ id, data }: { id: number, data: any }) =>
       adminAPI.updateSubscription(id, data),
@@ -78,21 +65,6 @@ export default function AdminRestaurants() {
 
   const handleCreateRestaurant = () => {
     createMutation.mutate(newRestaurant)
-  }
-
-  const handleUpdateCommission = () => {
-    if (selectedRestaurant) {
-      // Validate commission rate
-      const validRate = Math.min(Math.max(commissionRate, 0), 30)
-
-      updateCommissionMutation.mutate({
-        id: selectedRestaurant.id,
-        data: {
-          platform_commission_rate: validRate,
-          commission_enabled: commissionEnabled
-        }
-      })
-    }
   }
 
   const restaurantData = restaurants?.data || []
@@ -213,15 +185,14 @@ export default function AdminRestaurants() {
 
                     <div className="flex items-center gap-4 mt-2 text-sm text-dim flex-wrap">
                       <span>Tier: <span className="font-medium">{restaurant.subscription_tier}</span></span>
-                      <span>Commission: <span className="font-medium">{restaurant.platform_commission_rate ?? 10}%</span></span>
-                      <span>Per-order: <span className="font-medium">${((restaurant.per_order_fee_cents ?? 50) / 100).toFixed(2)}</span></span>
+                      <span>Per-order fee: <span className="font-medium">${((restaurant.per_order_fee_cents ?? 50) / 100).toFixed(2)}</span></span>
                       {restaurant.total_orders > 0 && (
                         <span>Orders: <span className="font-medium">{restaurant.total_orders}</span></span>
                       )}
-                      {restaurant.total_revenue_cents > 0 && (
+                      {restaurant.order_fees_total_cents > 0 && (
                         <span className="flex items-center gap-1">
                           <DollarSign className="w-4 h-4" />
-                          Revenue: <span className="font-medium">${(restaurant.total_revenue_cents / 100).toFixed(2)}</span>
+                          Fees owed: <span className="font-medium">${((restaurant.order_fees_total_cents || 0) / 100).toFixed(2)}</span>
                         </span>
                       )}
                     </div>
@@ -255,8 +226,6 @@ export default function AdminRestaurants() {
                   <button
                     onClick={() => {
                       setSelectedRestaurant(restaurant)
-                      setCommissionRate(restaurant.platform_commission_rate || 10)
-                      setCommissionEnabled(restaurant.commission_enabled ?? true)
                       setSelectedTier(restaurant.subscription_tier || 'free')
                       setShowDetailsModal(true)
                     }}
@@ -337,10 +306,10 @@ export default function AdminRestaurants() {
                   value={newRestaurant.subscription_tier}
                   onChange={(e) => setNewRestaurant({ ...newRestaurant, subscription_tier: e.target.value })}
                 >
-                  <option value="free">Free (Trial) - 15% commission, no per-order fee</option>
-                  <option value="starter">Starter ($49/mo) - $0.50/order</option>
-                  <option value="growth">Growth ($149/mo) - 3% + $0.50/order</option>
-                  <option value="scale">Scale ($299/mo) - 3% + $0.50/order</option>
+                  <option value="free">Free (Trial)</option>
+                  <option value="starter">Starter ($49/mo + $0.50/order)</option>
+                  <option value="growth">Growth ($149/mo + $0.50/order)</option>
+                  <option value="scale">Scale ($299/mo + $0.50/order)</option>
                 </select>
               </div>
 
@@ -429,10 +398,10 @@ export default function AdminRestaurants() {
                     value={selectedTier}
                     onChange={(e) => setSelectedTier(e.target.value)}
                   >
-                    <option value="free">Free (Trial) - 15% commission</option>
-                    <option value="starter">Starter ($49/mo) - 0% commission</option>
-                    <option value="growth">Growth ($149/mo) - 3% commission</option>
-                    <option value="scale">Scale ($299/mo) - 3% commission</option>
+                    <option value="free">Free (Trial)</option>
+                    <option value="starter">Starter ($49/mo + $0.50/order)</option>
+                    <option value="growth">Growth ($149/mo + $0.50/order)</option>
+                    <option value="scale">Scale ($299/mo + $0.50/order)</option>
                   </select>
                   <button
                     onClick={() => {
@@ -448,7 +417,7 @@ export default function AdminRestaurants() {
                   </button>
                 </div>
                 <p className="text-xs text-dim mt-2">
-                  Changing tier will automatically update the commission rate to the tier default.
+                  Changing tier will update pricing to the tier default.
                 </p>
                 {updateSubscriptionMutation.isSuccess && (
                   <p className="text-sm text-success mt-2">Tier updated successfully!</p>
@@ -457,26 +426,20 @@ export default function AdminRestaurants() {
 
               {/* Revenue Stats */}
               <div className="border-t border-[--border] pt-4">
-                <h3 className="font-semibold mb-3">Revenue Statistics</h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <h3 className="font-semibold mb-3">Order & Billing Statistics</h3>
+                <div className="grid grid-cols-3 gap-4">
                   <div className="bg-white/5 rounded-lg p-3">
                     <p className="text-xs text-dim mb-1">Total Orders</p>
                     <p className="text-2xl font-bold text-accent">{selectedRestaurant.total_orders}</p>
                   </div>
                   <div className="bg-white/5 rounded-lg p-3">
-                    <p className="text-xs text-dim mb-1">Total Revenue</p>
+                    <p className="text-xs text-dim mb-1">Order Revenue</p>
                     <p className="text-2xl font-bold text-success">
                       ${(selectedRestaurant.total_revenue_cents / 100).toFixed(2)}
                     </p>
                   </div>
                   <div className="bg-white/5 rounded-lg p-3">
-                    <p className="text-xs text-dim mb-1">Commission Owed</p>
-                    <p className="text-2xl font-bold text-warning">
-                      ${(selectedRestaurant.commission_owed_cents / 100).toFixed(2)}
-                    </p>
-                  </div>
-                  <div className="bg-white/5 rounded-lg p-3">
-                    <p className="text-xs text-dim mb-1">Per-Order Fees</p>
+                    <p className="text-xs text-dim mb-1">Per-Order Fees Owed</p>
                     <p className="text-2xl font-bold text-warning">
                       ${((selectedRestaurant.order_fees_total_cents || 0) / 100).toFixed(2)}
                     </p>
@@ -484,73 +447,6 @@ export default function AdminRestaurants() {
                       {selectedRestaurant.total_orders} orders × ${((selectedRestaurant.per_order_fee_cents ?? 50) / 100).toFixed(2)}
                     </p>
                   </div>
-                </div>
-              </div>
-
-              {/* Commission Settings - Editable */}
-              <div className="border-t border-[--border] pt-4">
-                <h3 className="font-semibold mb-3">Commission Settings</h3>
-                <div className="bg-white/5 rounded-lg p-4 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <label className="text-sm font-medium">Enable Commission</label>
-                      <p className="text-xs text-dim">
-                        When enabled, platform takes a percentage of each order
-                      </p>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={commissionEnabled}
-                      onChange={(e) => setCommissionEnabled(e.target.checked)}
-                      className="w-5 h-5"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="label">Commission Rate (%)</label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="30"
-                      step="0.1"
-                      value={commissionRate}
-                      onChange={(e) => {
-                        const value = parseFloat(e.target.value) || 0
-                        // Clamp value between 0 and 30
-                        setCommissionRate(Math.min(Math.max(value, 0), 30))
-                      }}
-                      className="input"
-                      disabled={!commissionEnabled}
-                      placeholder="10.0"
-                    />
-                    <p className="text-xs text-dim mt-1">
-                      {commissionRate > 30 ? (
-                        <span className="text-error font-medium">Rate must be between 0% and 30%</span>
-                      ) : (
-                        <>Example: At {commissionRate}%, a $10.00 order means ${(10 * (commissionRate / 100)).toFixed(2)} to platform, ${(10 * (1 - commissionRate / 100)).toFixed(2)} to restaurant</>
-                      )}
-                    </p>
-                  </div>
-
-                  <button
-                    onClick={handleUpdateCommission}
-                    disabled={updateCommissionMutation.isPending}
-                    className="btn btn-primary w-full"
-                  >
-                    {updateCommissionMutation.isPending ? 'Saving...' : 'Update Commission Settings'}
-                  </button>
-
-                  {updateCommissionMutation.isError && (
-                    <p className="text-sm text-error">
-                      Error updating commission: {String(updateCommissionMutation.error)}
-                    </p>
-                  )}
-
-                  {updateCommissionMutation.isSuccess && (
-                    <p className="text-sm text-success">
-                      Commission settings updated successfully!
-                    </p>
-                  )}
                 </div>
               </div>
 

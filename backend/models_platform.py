@@ -22,24 +22,24 @@ from backend.database import Base
 
 class SubscriptionTier(str, Enum):
     """Subscription tier levels."""
-    FREE = "free"        # Trial - 15% commission
-    STARTER = "starter"  # $49/month - 0% commission
-    GROWTH = "growth"    # $149/month - 3% commission
-    SCALE = "scale"      # $299/month - 3% commission
+    FREE = "free"        # Trial - no commission
+    STARTER = "starter"  # $49/month + $0.50/order
+    GROWTH = "growth"    # $149/month + $0.50/order
+    SCALE = "scale"      # $299/month + $0.50/order
 
 
-# Default commission rates per tier (admins can override per-restaurant)
+# Default commission rates per tier (not currently used — pricing is flat fee + per-order)
 TIER_COMMISSION_RATES = {
-    "free": 15.0,      # Trial: 15% commission
-    "starter": 0.0,    # $49/mo flat fee, no commission
-    "growth": 3.0,     # $149/mo + 3% commission
-    "scale": 3.0,      # $299/mo + 3% commission
+    "free": 0.0,
+    "starter": 0.0,
+    "growth": 0.0,
+    "scale": 0.0,
 }
 
 
 def get_default_commission_for_tier(tier: str) -> float:
     """Get the default commission rate for a subscription tier."""
-    return TIER_COMMISSION_RATES.get(tier, 15.0)  # Default to 15% if unknown
+    return TIER_COMMISSION_RATES.get(tier, 0.0)
 
 
 class SubscriptionStatus(str, Enum):

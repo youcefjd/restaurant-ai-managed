@@ -54,7 +54,7 @@ export default function AdminDashboard() {
       />
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           label="Total Restaurants"
           value={statsData?.total_restaurants || 0}
@@ -67,21 +67,16 @@ export default function AdminDashboard() {
           icon={ShoppingBag}
         />
         <StatCard
-          label="Platform Revenue"
-          value={`$${((statsData?.total_platform_revenue_cents || statsData?.total_revenue_cents || 0) / 100).toFixed(2)}`}
+          label="Order Revenue"
+          value={`$${((statsData?.total_revenue_cents || 0) / 100).toFixed(2)}`}
           icon={DollarSign}
-          subtitle="Commission + per-order fees"
+          subtitle="All restaurant orders"
         />
         <StatCard
-          label="Per-Order Fees"
+          label="Per-Order Fees Earned"
           value={`$${((statsData?.per_order_fees_cents || 0) / 100).toFixed(2)}`}
           icon={Receipt}
           subtitle={`${statsData?.total_orders || 0} orders × $0.50`}
-        />
-        <StatCard
-          label="Commission Earned"
-          value={`$${((statsData?.platform_commission_cents || 0) / 100).toFixed(2)}`}
-          icon={TrendingUp}
         />
       </div>
 

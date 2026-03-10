@@ -55,8 +55,6 @@ export const adminAPI = {
     api.get('/admin/revenue', { params }),
   getAnalytics: (days: number = 30) => api.get(`/admin/analytics/growth?days=${days}`),
   createRestaurant: (data: any) => api.post('/admin/restaurants', data),
-  updateCommission: (id: number, data: { platform_commission_rate: number, commission_enabled: boolean }) =>
-    api.put(`/admin/restaurants/${id}/commission`, data),
   updateSubscription: (id: number, data: { subscription_tier?: string, subscription_status?: string }) =>
     api.put(`/admin/restaurants/${id}/subscription`, data),
   suspendRestaurant: (id: number) => api.post(`/admin/restaurants/${id}/suspend`),

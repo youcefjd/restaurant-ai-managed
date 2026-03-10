@@ -53,16 +53,9 @@ class RetellLLMService:
         """
         return f"""You are a friendly phone assistant for {restaurant_name}. You help customers place pickup orders.
 
-## CRITICAL RULES - SESSION ID (GENERATE YOUR OWN - DO NOT COPY THIS EXAMPLE)
-At the START of this conversation, you MUST generate YOUR OWN UNIQUE random 8-character session ID.
-Use random letters and numbers like: "r7t2q9w4", "m3x8k1p5", "j6b9n2v8" - create your OWN unique one!
-DO NOT use "a1b2c3d4" - that is just showing the format. Create YOUR OWN RANDOM ID.
-Use this SAME session_id you generated in EVERY function call throughout this conversation.
-This ensures your cart is separate from other conversations.
-
-## CRITICAL RULES - GENERAL
+## CRITICAL RULES
 - restaurant_id is {restaurant_id} - pass this to EVERY function call
-- session_id - generate ONCE at start, use in EVERY function call
+- session_id - use "default" for all function calls (cart is isolated by call_id automatically)
 - Keep ALL responses to 1-2 SHORT sentences
 - NEVER repeat yourself - say something ONCE then WAIT for customer response
 - After asking a question, STOP and wait - do NOT keep talking or call more functions
@@ -71,10 +64,7 @@ This ensures your cart is separate from other conversations.
 - Pass pickup_time EXACTLY as the customer says it (e.g., "2 hours", "30 minutes", "6 PM") — do NOT convert to a different format
 - NEVER validate pickup times yourself — always call create_order and let the system check. Do NOT say "that time has passed" or "we're closed" unless the system returns an error
 
-## START OF CONVERSATION - MANDATORY
-1. Generate YOUR OWN unique 8-character session_id using random letters/numbers (NOT "a1b2c3d4"!)
-2. Example formats: "x7k9m2p4", "q3r8t1w6", "h5j2m9v4" - make your OWN random one
-3. Use the session_id YOU generated in ALL function calls for this conversation
+## START OF CONVERSATION
 
 ## ANSWERING QUESTIONS - MANDATORY
 When customer asks ANY question (menu, hours, prices, etc.):
@@ -220,7 +210,7 @@ NEVER end call without:
                         },
                         "session_id": {
                             "type": "string",
-                            "description": "Your unique 8-char session ID generated at conversation start. REQUIRED for cart isolation."
+                            "description": "Session ID. Always pass \"default\"."
                         },
                         "item_name": {
                             "type": "string",
@@ -256,7 +246,7 @@ NEVER end call without:
                         },
                         "session_id": {
                             "type": "string",
-                            "description": "Your unique 8-char session ID generated at conversation start. REQUIRED."
+                            "description": "Session ID. Always pass \"default\"."
                         },
                         "item_name": {
                             "type": "string",
@@ -288,7 +278,7 @@ NEVER end call without:
                         },
                         "session_id": {
                             "type": "string",
-                            "description": "Your unique 8-char session ID generated at conversation start. REQUIRED."
+                            "description": "Session ID. Always pass \"default\"."
                         },
                         "item_name": {
                             "type": "string",
@@ -316,7 +306,7 @@ NEVER end call without:
                         },
                         "session_id": {
                             "type": "string",
-                            "description": "Your unique 8-char session ID generated at conversation start. REQUIRED."
+                            "description": "Session ID. Always pass \"default\"."
                         }
                     },
                     "required": ["restaurant_id", "session_id"]
@@ -340,7 +330,7 @@ NEVER end call without:
                         },
                         "session_id": {
                             "type": "string",
-                            "description": "Your unique 8-char session ID generated at conversation start. REQUIRED."
+                            "description": "Session ID. Always pass \"default\"."
                         }
                     },
                     "required": ["restaurant_id", "session_id"]
@@ -364,7 +354,7 @@ NEVER end call without:
                         },
                         "session_id": {
                             "type": "string",
-                            "description": "Your unique 8-char session ID generated at conversation start. REQUIRED."
+                            "description": "Session ID. Always pass \"default\"."
                         },
                         "customer_name": {
                             "type": "string",
@@ -440,7 +430,7 @@ NEVER end call without:
                         },
                         "session_id": {
                             "type": "string",
-                            "description": "Your unique 8-char session ID generated at conversation start. REQUIRED."
+                            "description": "Session ID. Always pass \"default\"."
                         }
                     },
                     "required": ["restaurant_id", "session_id"]
@@ -464,7 +454,7 @@ NEVER end call without:
                         },
                         "session_id": {
                             "type": "string",
-                            "description": "Your unique 8-char session ID generated at conversation start. REQUIRED."
+                            "description": "Session ID. Always pass \"default\"."
                         },
                         "digits": {
                             "type": "string",
@@ -492,7 +482,7 @@ NEVER end call without:
                         },
                         "session_id": {
                             "type": "string",
-                            "description": "Your unique 8-char session ID generated at conversation start. REQUIRED."
+                            "description": "Session ID. Always pass \"default\"."
                         }
                     },
                     "required": ["restaurant_id", "session_id"]
@@ -516,7 +506,7 @@ NEVER end call without:
                         },
                         "session_id": {
                             "type": "string",
-                            "description": "Your unique 8-char session ID generated at conversation start. REQUIRED."
+                            "description": "Session ID. Always pass \"default\"."
                         }
                     },
                     "required": ["restaurant_id", "session_id"]

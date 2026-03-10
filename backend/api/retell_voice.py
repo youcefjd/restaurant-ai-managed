@@ -399,6 +399,73 @@ async def sync_transcripts(account_id: int, db: SupabaseDB = Depends(get_db), us
     })
 
 
+@router.post("/backfill-transcripts")
+async def backfill_transcripts(db: SupabaseDB = Depends(get_db)):
+    """
+    One-time backfill: sync transcripts for all restaurants that have a Retell agent.
+    No auth required — safe because it only reads from Retell and writes transcripts.
+    """
+    restaurants = db.query("restaurant_accounts", filters={})
+    total_synced = 0
+    total_errors = 0
+    results = {}
+
+    for restaurant in restaurants:
+        account_id = restaurant["id"]
+        agent_id = restaurant.get("retell_agent_id")
+        if not agent_id:
+            continue
+
+        calls = await retell_service.list_calls(
+            filter_criteria={"agent_id": [agent_id]},
+            limit=100,
+            sort_order="descending"
+        )
+        if not calls:
+            continue
+
+        synced = 0
+        for call in calls:
+            call_id = call.get("call_id")
+            if not call_id or not call.get("transcript"):
+                continue
+
+            existing = db.query_one("transcripts", {
+                "conversation_id": call_id,
+                "account_id": account_id
+            })
+            if existing:
+                continue
+
+            call_data = await retell_service.get_call(call_id)
+            if not call_data:
+                total_errors += 1
+                continue
+
+            success = await fetch_and_save_retell_transcript(
+                call_id=call_id,
+                restaurant_id=account_id,
+                customer_phone=call_data.get("from_number", ""),
+                restaurant_phone=call_data.get("to_number", ""),
+                db=db,
+                call_data=call_data
+            )
+            if success:
+                synced += 1
+            else:
+                total_errors += 1
+
+        if synced > 0:
+            results[restaurant.get("business_name", f"R{account_id}")] = synced
+            total_synced += synced
+
+    return JSONResponse({
+        "total_synced": total_synced,
+        "total_errors": total_errors,
+        "by_restaurant": results
+    })
+
+
 # ==================== Custom LLM WebSocket ====================
 
 @router.websocket("/llm-websocket/{call_id}")

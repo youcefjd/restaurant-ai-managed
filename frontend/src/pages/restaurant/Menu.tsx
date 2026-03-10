@@ -36,6 +36,12 @@ export default function RestaurantMenu() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['menu', accountId] }),
   })
 
+  const toggleAvailabilityMutation = useMutation({
+    mutationFn: ({ itemId, isAvailable }: { itemId: number; isAvailable: boolean }) =>
+      restaurantAPI.toggleItemAvailability(itemId, isAvailable),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['menu', accountId] }),
+  })
+
   const createMenuMutation = useMutation({
     mutationFn: (data: { name: string; description: string }) =>
       restaurantAPI.createMenu(accountId!, { menu_name: data.name, menu_description: data.description }),
@@ -133,15 +139,30 @@ export default function RestaurantMenu() {
                         {category.items?.length > 0 ? (
                           <div className="space-y-2">
                             {category.items.map((item: any) => (
-                              <div key={item.id} className="flex items-center justify-between py-2 px-3 rounded bg-white/5 group">
+                              <div key={item.id} className={`flex items-center justify-between py-2 px-3 rounded bg-white/5 group ${item.is_available === false ? 'opacity-50' : ''}`}>
                                 <div className="flex-1 min-w-0">
-                                  <p className="font-medium">{item.name}</p>
+                                  <p className="font-medium">
+                                    {item.name}
+                                    {item.is_available === false && <span className="ml-2 text-xs text-error font-normal">86'd</span>}
+                                  </p>
                                   {item.description && (
                                     <p className="text-xs text-dim truncate max-w-md">{item.description}</p>
                                   )}
                                 </div>
                                 <div className="flex items-center gap-3">
                                   <p className="font-medium">${((item.price_cents || 0) / 100).toFixed(2)}</p>
+                                  <button
+                                    onClick={() => toggleAvailabilityMutation.mutate({ itemId: item.id, isAvailable: item.is_available === false })}
+                                    className={`px-2 py-0.5 text-xs rounded-full font-medium transition-colors ${
+                                      item.is_available === false
+                                        ? 'bg-error/20 text-error hover:bg-error/30'
+                                        : 'bg-success/20 text-success hover:bg-success/30'
+                                    }`}
+                                    title={item.is_available === false ? 'Mark as available' : 'Mark as unavailable (86)'}
+                                    disabled={toggleAvailabilityMutation.isPending}
+                                  >
+                                    {item.is_available === false ? "86'd" : 'In Stock'}
+                                  </button>
                                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                     <button
                                       onClick={() => setEditingItem({ ...item, categoryId: category.id })}

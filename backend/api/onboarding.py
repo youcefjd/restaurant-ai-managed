@@ -798,6 +798,17 @@ async def toggle_menu_item_availability(
 
     item = db.update("menu_items", item_id, {"is_available": is_available})
 
+    # Invalidate menu cache so the agent picks up the change immediately
+    try:
+        from backend.api.retell_functions import _menu_cache
+        category = db.query_one("menu_categories", {"id": item["category_id"]})
+        if category:
+            menu = db.query_one("menus", {"id": category["menu_id"]})
+            if menu and menu["account_id"] in _menu_cache:
+                del _menu_cache[menu["account_id"]]
+    except Exception:
+        pass  # Cache miss is fine — next call will refetch
+
     return {
         "id": item["id"],
         "name": item["name"],

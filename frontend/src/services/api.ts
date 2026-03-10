@@ -99,6 +99,8 @@ export const restaurantAPI = {
   deleteMenu: (menuId: number) => api.delete(`/onboarding/menus/${menuId}`),
   createMenuItem: (data: any) => api.post('/onboarding/items', data),
   updateMenuItem: (itemId: number, data: any) => api.put(`/onboarding/items/${itemId}`, data),
+  toggleItemAvailability: (itemId: number, isAvailable: boolean) =>
+    api.patch(`/onboarding/items/${itemId}/availability`, null, { params: { is_available: isAvailable } }),
   deleteMenuItem: (itemId: number) => api.delete(`/onboarding/items/${itemId}`),
   deleteAllMenuItems: (accountId: number, menuId: number) =>
     api.delete(`/onboarding/accounts/${accountId}/menus/${menuId}/items`),

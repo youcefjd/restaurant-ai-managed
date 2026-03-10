@@ -586,6 +586,10 @@ def fetch_menu_data(db: SupabaseDB, restaurant_id: int) -> Dict[str, Any]:
             }
 
             for item in items_by_category.get(category["id"], []):
+                # Skip items marked as unavailable (86'd)
+                if not item.get("is_available", True):
+                    continue
+
                 item_dict = {
                     "id": item["id"],
                     "name": item["name"],

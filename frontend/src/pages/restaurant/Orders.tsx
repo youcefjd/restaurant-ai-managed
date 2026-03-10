@@ -313,9 +313,14 @@ export default function RestaurantOrders() {
                 <div className="space-y-2">
                   {selectedOrder.order_items.length > 0 ? (
                     selectedOrder.order_items.map((item: any, idx: number) => (
-                      <div key={idx} className="flex justify-between text-sm">
-                        <span>{item.quantity || 1}x {item.item_name || item.name || 'Item'}</span>
-                        <span className="text-dim">${((item.price_cents || 0) / 100).toFixed(2)}</span>
+                      <div key={idx} className="text-sm">
+                        <div className="flex justify-between">
+                          <span>{item.quantity || 1}x {item.item_name || item.name || 'Item'}</span>
+                          <span className="text-dim">${((item.price_cents || 0) / 100).toFixed(2)}</span>
+                        </div>
+                        {item.special_requests && (
+                          <p className="text-xs text-yellow-500 mt-0.5 ml-4">Note: {item.special_requests}</p>
+                        )}
                       </div>
                     ))
                   ) : (

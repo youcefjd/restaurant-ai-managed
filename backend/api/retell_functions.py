@@ -876,18 +876,16 @@ async def add_to_cart(
         existing_idx = None
         for idx, item in enumerate(items):
             if item.get("name", "").lower() == cart_item_name.lower():
-                existing_idx = idx
-                break
+                # Only merge if special requests match (both empty or both the same)
+                existing_sr = (item.get("special_requests") or "").strip().lower()
+                new_sr = (special_requests or "").strip().lower()
+                if existing_sr == new_sr:
+                    existing_idx = idx
+                    break
 
         if existing_idx is not None:
-            # Update quantity
+            # Update quantity for identical item (same name + same special requests)
             items[existing_idx]["quantity"] = items[existing_idx].get("quantity", 1) + quantity
-            if special_requests:
-                existing_requests = items[existing_idx].get("special_requests", "")
-                if existing_requests:
-                    items[existing_idx]["special_requests"] = f"{existing_requests}; {special_requests}"
-                else:
-                    items[existing_idx]["special_requests"] = special_requests
         else:
             # Add new item
             items.append({

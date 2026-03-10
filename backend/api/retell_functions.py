@@ -1534,6 +1534,20 @@ async def get_hours(
         opening = account.get("opening_time", "N/A")
         closing = account.get("closing_time", "N/A")
 
+        def to_12h(t: str) -> str:
+            """Convert 24h time like '22:00' to '10 PM'."""
+            try:
+                h, m = t.split(":")
+                h = int(h)
+                suffix = "AM" if h < 12 else "PM"
+                h = h % 12 or 12
+                return f"{h}:{m} {suffix}" if m != "00" else f"{h} {suffix}"
+            except Exception:
+                return t
+
+        opening_12 = to_12h(opening)
+        closing_12 = to_12h(closing)
+
         days = account.get("operating_days", [])
         if days and isinstance(days[0], str):
             days_str = ", ".join(days)
@@ -1545,10 +1559,10 @@ async def get_hours(
 
         return JSONResponse({
             "success": True,
-            "opening_time": opening,
-            "closing_time": closing,
+            "opening_time": opening_12,
+            "closing_time": closing_12,
             "operating_days": days_str,
-            "message": f"We're open from {opening} to {closing}, {days_str}."
+            "message": f"We're open from {opening_12} to {closing_12}, {days_str}."
         })
 
     except Exception as e:

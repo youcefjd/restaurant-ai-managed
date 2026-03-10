@@ -1280,14 +1280,8 @@ async def create_order(
                         "message": f"Sorry, we can only accept orders up to {max_advance_days} day{'s' if max_advance_days > 1 else ''} in advance. Would you like to choose an earlier pickup time?"
                     })
 
-        # Build special instructions from all items
+        # Build special instructions (pickup info only; item-level notes are stored per order_item)
         special_instructions = f"Pickup: {pickup_display}"
-        all_requests = []
-        for item in items:
-            if item.get("special_requests"):
-                all_requests.append(f"{item['name']}: {item['special_requests']}")
-        if all_requests:
-            special_instructions += "\n" + "\n".join(all_requests)
 
         # Check for authorized payment session
         payment_session = payment_orchestrator.get_payment_session(cart_key, db)

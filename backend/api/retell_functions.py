@@ -769,8 +769,14 @@ async def get_menu(
                             featured_items.append(item["name"])
 
                 if featured_items:
-                    categories_text = ", ".join(sorted(seen_categories)[:3]) if len(seen_categories) > 1 else "more"
-                    message = f"Popular items include {', '.join(featured_items)}. We also have {categories_text}. What sounds good?"
+                    # Get all categories and exclude ones already represented by featured items
+                    all_categories = set(item["category"] for item in items_list)
+                    remaining_categories = sorted(all_categories - seen_categories)
+                    if remaining_categories:
+                        categories_text = ", ".join(remaining_categories)
+                        message = f"Popular items include {', '.join(featured_items)}. We also have {categories_text}. What sounds good?"
+                    else:
+                        message = f"Popular items include {', '.join(featured_items)}. What sounds good?"
                 else:
                     message = "What are you in the mood for today?"
         else:

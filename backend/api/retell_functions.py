@@ -59,6 +59,11 @@ async def verify_retell_request(
 
 # ==================== Helper Functions ====================
 
+# In-memory menu cache: restaurant_id -> (menu_data, timestamp)
+# Menus don't change during a call — cache avoids 4-5 DB queries per tool call
+_menu_cache: Dict[int, tuple] = {}
+MENU_CACHE_TTL = 300  # 5 minutes
+
 # Cache for simulation session cart keys
 # Maps agent_id -> (cart_key, timestamp)
 _simulation_sessions: Dict[str, tuple] = {}
@@ -511,7 +516,14 @@ def lookup_menu_item(item_name: str, menu_data: Dict) -> Optional[Dict]:
 
 
 def fetch_menu_data(db: SupabaseDB, restaurant_id: int) -> Dict[str, Any]:
-    """Fetch full menu data for a restaurant using bulk queries (optimized)."""
+    """Fetch full menu data for a restaurant, with in-memory cache."""
+    # Check cache first — avoids 4-5 DB round-trips on repeated calls
+    cached = _menu_cache.get(restaurant_id)
+    if cached:
+        data, ts = cached
+        if (datetime.now() - ts).total_seconds() < MENU_CACHE_TTL:
+            return data
+
     account = db.query_one("restaurant_accounts", {"id": restaurant_id})
     if not account:
         return {}
@@ -604,6 +616,9 @@ def fetch_menu_data(db: SupabaseDB, restaurant_id: int) -> Dict[str, Any]:
             menu_dict["categories"].append(category_dict)
         menu_data["menus"].append(menu_dict)
 
+    # Cache for subsequent calls (get_menu, add_to_cart, etc.)
+    _menu_cache[restaurant_id] = (menu_data, datetime.now())
+
     return menu_data
 
 
@@ -649,15 +664,18 @@ def parse_pickup_time(time_str: str) -> tuple[Optional[datetime], str]:
             hour += 12
         elif am_pm == 'am' and hour == 12:
             hour = 0
+        elif am_pm is None and hour < 12:
+            # No am/pm specified: assume PM for typical restaurant hours (12-11 PM)
+            hour += 12
 
         scheduled = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
-        # If "tomorrow" was mentioned, add a day
+        # Only bump to tomorrow if explicitly mentioned
         if is_tomorrow:
             scheduled += timedelta(days=1)
-        # If time is in past and tomorrow wasn't mentioned, assume tomorrow
-        elif scheduled < now:
-            scheduled += timedelta(days=1)
+        # If time is in the past today and NOT explicitly "tomorrow",
+        # keep it as today — let the caller handle "time already passed"
+        # instead of silently bumping to tomorrow (which triggers advance-order rejection)
 
         # Include date in display if not today
         time_display = scheduled.strftime("%I:%M %p").lstrip("0")
@@ -1269,6 +1287,13 @@ async def create_order(
 
         # Parse pickup time
         scheduled_time, pickup_display = parse_pickup_time(pickup_time)
+
+        # Validate pickup time is not in the past
+        if scheduled_time and scheduled_time < datetime.now():
+            return JSONResponse({
+                "success": False,
+                "message": "That pickup time has already passed. What time works for you today?"
+            })
 
         # Validate advance order days
         max_advance_days = int(account.get("max_advance_order_days", 0))

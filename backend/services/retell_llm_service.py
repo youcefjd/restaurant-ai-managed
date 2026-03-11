@@ -61,7 +61,7 @@ class RetellLLMService:
 - After asking a question, STOP and wait - do NOT keep talking or call more functions
 - NEVER invent prices - only mention prices when customer asks "how much"
 - ALWAYS quote totals from the get_cart/add_to_cart response — NEVER calculate totals yourself
-- Pass pickup_time EXACTLY as the customer says it (e.g., "2 hours", "30 minutes", "6 PM") — do NOT convert to a different format
+- Pass pickup_time EXACTLY as the customer says it, including "tomorrow" or any date — e.g., "1 PM tomorrow", "6 PM", "30 minutes". NEVER drop words like "tomorrow" or "today"
 - NEVER validate pickup times yourself — always call create_order and let the system check. Do NOT say "that time has passed" or "we're closed" unless the system returns an error
 
 ## START OF CONVERSATION

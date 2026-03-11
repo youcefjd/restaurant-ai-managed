@@ -101,7 +101,7 @@ export default function LandingPage() {
         'Advanced analytics & reporting',
         'Toast POS integration',
         'Custom AI voice & branding',
-        'Dedicated account manager',
+        'Multi-language support (Spanish, Chinese, etc.)',
       ],
       highlight: false,
     },

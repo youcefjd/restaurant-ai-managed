@@ -307,6 +307,12 @@ async def retell_webhook(request: Request, db: SupabaseDB = Depends(get_db)):
                     restaurant_phone=call_data.get("to_number", ""),
                     db=db
                 )
+            else:
+                logger.error(
+                    f"call_analyzed: Could not resolve restaurant_id for call {call_id}. "
+                    f"to_number={call_data.get('to_number')}, agent_id={call_data.get('agent_id')}, "
+                    f"call_data_keys={list(call_data.keys())}"
+                )
 
             # Clean up call context
             if call_id in active_calls:

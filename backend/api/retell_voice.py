@@ -1030,12 +1030,14 @@ async def create_native_llm_agent(
         raise HTTPException(status_code=404, detail="Restaurant not found")
 
     restaurant_name = restaurant.get("business_name", "the restaurant")
+    owner_phone = restaurant.get("owner_phone", "")
 
     # Create Retell LLM with function calling
     llm_config = await retell_llm_service.create_llm(
         restaurant_name=restaurant_name,
         restaurant_id=request.restaurant_id,
-        model=request.model
+        model=request.model,
+        owner_phone=owner_phone
     )
 
     if not llm_config:
@@ -1114,12 +1116,14 @@ async def configure_native_llm(
         raise HTTPException(status_code=404, detail="Restaurant not found")
 
     restaurant_name = restaurant.get("business_name", "the restaurant")
+    owner_phone = restaurant.get("owner_phone", "")
 
     # Create Retell LLM with function calling
     llm_config = await retell_llm_service.create_llm(
         restaurant_name=restaurant_name,
         restaurant_id=request.restaurant_id,
-        model=request.model
+        model=request.model,
+        owner_phone=owner_phone
     )
 
     if not llm_config:
@@ -1189,12 +1193,14 @@ async def refresh_llm_tools(
         )
 
     restaurant_name = restaurant.get("business_name", "the restaurant")
+    owner_phone = restaurant.get("owner_phone", "")
 
     # Update the LLM with current tools and prompt
     updated = await retell_llm_service.update_llm(
         llm_id=llm_id,
         restaurant_name=restaurant_name,
-        restaurant_id=request.restaurant_id
+        restaurant_id=request.restaurant_id,
+        owner_phone=owner_phone
     )
 
     if not updated:

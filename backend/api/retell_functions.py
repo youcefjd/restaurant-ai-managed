@@ -696,6 +696,99 @@ def parse_pickup_time(time_str: str) -> tuple[Optional[datetime], str]:
 
 # ==================== Function Endpoints ====================
 
+@router.post("/check_customer")
+async def check_customer(
+    request: GetMenuRequest,  # Reuse — only needs restaurant_id and call info
+    db: SupabaseDB = Depends(get_db),
+    _verified: bool = Depends(verify_retell_request)
+):
+    """
+    Check if the caller is a returning customer.
+    Uses caller ID from the cart (set during call_started webhook).
+    Returns customer name and last order summary if found.
+    """
+    try:
+        from backend.services.cart_service import cart_service
+
+        restaurant_id = request.get_restaurant_id()
+        call_id = request.get_call_id()
+
+        # Get customer phone from cart (set by call_started webhook from caller ID)
+        customer_phone = None
+        if call_id:
+            cart = cart_service.get_cart(call_id, db)
+            customer_phone = cart.get("customer_phone") if cart else None
+
+        if not customer_phone or customer_phone == "unknown":
+            return JSONResponse({
+                "success": True,
+                "returning_customer": False,
+                "message": "New customer. Greet them normally."
+            })
+
+        # Look up customer by phone
+        customer = db.query_one("customers", {"phone": customer_phone})
+        if not customer:
+            return JSONResponse({
+                "success": True,
+                "returning_customer": False,
+                "message": "New customer. Greet them normally."
+            })
+
+        customer_name = customer.get("name", "")
+
+        # Find their most recent completed order at this restaurant
+        recent_orders = db.query_all(
+            "orders",
+            {"customer_phone": customer_phone},
+            order_by="created_at",
+            order_direction="desc",
+            limit=3
+        )
+
+        # Filter to this restaurant's orders
+        if restaurant_id:
+            recent_orders = [o for o in recent_orders if o.get("restaurant_id") == restaurant_id]
+
+        if not recent_orders:
+            return JSONResponse({
+                "success": True,
+                "returning_customer": True,
+                "customer_name": customer_name,
+                "message": f"Returning customer: {customer_name}. No previous orders at this restaurant."
+            })
+
+        # Build last order summary
+        last_order = recent_orders[0]
+        items = last_order.get("items", [])
+        if isinstance(items, str):
+            import json as json_lib
+            try:
+                items = json_lib.loads(items)
+            except Exception:
+                items = []
+
+        item_names = [f"{i.get('quantity', 1)}x {i.get('name', '?')}" for i in items[:5]]
+        items_str = ", ".join(item_names) if item_names else "unknown items"
+
+        return JSONResponse({
+            "success": True,
+            "returning_customer": True,
+            "customer_name": customer_name,
+            "last_order_items": items_str,
+            "total_orders": len(recent_orders),
+            "message": f"Welcome back! This is {customer_name}, who previously ordered: {items_str}. Greet them by name and ask if they'd like the same thing."
+        })
+
+    except Exception as e:
+        logger.error(f"Error in check_customer: {e}", exc_info=True)
+        return JSONResponse({
+            "success": True,
+            "returning_customer": False,
+            "message": "New customer. Greet them normally."
+        })
+
+
 @router.post("/get_menu")
 async def get_menu(
     request: GetMenuRequest,

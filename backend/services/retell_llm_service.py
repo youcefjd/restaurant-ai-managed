@@ -65,6 +65,29 @@ class RetellLLMService:
 - NEVER validate pickup times yourself — always call create_order and let the system check. Do NOT say "that time has passed" or "we're closed" unless the system returns an error
 
 ## START OF CONVERSATION
+1. Call check_customer(restaurant_id={restaurant_id}) FIRST — it uses the caller's phone number automatically
+2. If they're a returning customer, greet them by name: "Welcome back, [name]! Would you like your usual [last order items]?"
+3. If they're new, just greet them normally
+
+## UPSELLING - NATURAL SUGGESTIONS
+When the customer says "that's it" or "that's all":
+- Before reading back the order, make ONE brief suggestion based on what's in their cart:
+  - If they have a main but no drink: "Would you like to add a drink with that?"
+  - If they have a main but no side: "Want to add a side to go with that?"
+  - If they have only one item: "Can I add anything else — maybe a [popular item]?"
+- Keep it to ONE short suggestion, then move on. Do NOT push if they decline.
+
+## TRANSFER TO STAFF
+If the customer is upset, angry, asks to speak to a manager, or has a complaint you can't resolve:
+- Say "Let me connect you with the restaurant staff"
+- Use the transfer_call tool to transfer them
+
+## MULTI-LANGUAGE SUPPORT
+If the customer speaks in a language other than English (e.g., Spanish, Chinese, French):
+- Immediately switch to their language for the rest of the conversation
+- Continue all prompts, confirmations, and order readbacks in their language
+- Menu item names should stay in English (as they appear on the menu) but everything else in their language
+- If you're unsure of the language, ask: "Would you prefer I speak in [detected language]?"
 
 ## ANSWERING QUESTIONS - MANDATORY
 When customer asks ANY question (menu, hours, prices, etc.):
@@ -516,6 +539,32 @@ NEVER end call without:
                 "timeout_ms": 5000
             },
             {
+                "type": "custom",
+                "name": "check_customer",
+                "description": "Check if the caller is a returning customer. Call this FIRST at the start of every conversation. Returns customer name and last order if they've ordered before.",
+                "url": f"{base_url}/check_customer",
+                "method": "POST",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "restaurant_id": {
+                            "type": "integer",
+                            "description": f"The restaurant ID. Always use {restaurant_id}."
+                        }
+                    },
+                    "required": ["restaurant_id"]
+                },
+                "speak_during_execution": False,
+                "speak_after_execution": True,
+                "timeout_ms": 5000
+            },
+            {
+                "type": "transfer_call",
+                "name": "transfer_call",
+                "description": "Transfer the call to restaurant staff. Use when customer is upset, asks for a manager, or has a complaint you can't resolve.",
+                "number": "{{owner_phone}}"
+            },
+            {
                 "type": "end_call",
                 "name": "end_call",
                 "description": "End the call. Use when customer says goodbye or conversation is complete."
@@ -526,7 +575,8 @@ NEVER end call without:
         self,
         restaurant_name: str = "the restaurant",
         restaurant_id: int = None,
-        model: str = "gpt-4o-mini"
+        model: str = "gpt-4o-mini",
+        owner_phone: str = None
     ) -> Optional[Dict[str, Any]]:
         """
         Create a Retell LLM configuration with function calling.
@@ -550,7 +600,8 @@ NEVER end call without:
             "general_tools": self._get_tools_config(restaurant_id),
             "default_dynamic_variables": {
                 "restaurant_name": restaurant_name,
-                "restaurant_id": str(restaurant_id) if restaurant_id else ""
+                "restaurant_id": str(restaurant_id) if restaurant_id else "",
+                "owner_phone": owner_phone or ""
             }
         }
 
@@ -580,7 +631,8 @@ NEVER end call without:
         llm_id: str,
         restaurant_name: str = None,
         restaurant_id: int = None,
-        model: str = None
+        model: str = None,
+        owner_phone: str = None
     ) -> Optional[Dict[str, Any]]:
         """Update an existing Retell LLM configuration."""
         if not self.enabled:
@@ -595,6 +647,14 @@ NEVER end call without:
 
         # Always update tools in case PUBLIC_URL changed or new tools added
         payload["general_tools"] = self._get_tools_config(restaurant_id)
+
+        # Update dynamic variables if provided
+        if restaurant_name or owner_phone:
+            payload["default_dynamic_variables"] = {
+                "restaurant_name": restaurant_name or "",
+                "restaurant_id": str(restaurant_id) if restaurant_id else "",
+                "owner_phone": owner_phone or ""
+            }
 
         try:
             async with httpx.AsyncClient() as client:

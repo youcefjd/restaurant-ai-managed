@@ -405,7 +405,7 @@ async def backfill_transcripts(db: SupabaseDB = Depends(get_db)):
     One-time backfill: sync transcripts for all restaurants that have a Retell agent.
     No auth required — safe because it only reads from Retell and writes transcripts.
     """
-    restaurants = db.query("restaurant_accounts", filters={})
+    restaurants = db.query_all("restaurant_accounts", filters={})
     total_synced = 0
     total_errors = 0
     results = {}

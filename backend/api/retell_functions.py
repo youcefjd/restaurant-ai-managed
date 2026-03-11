@@ -833,7 +833,7 @@ async def get_menu(
                 for item in cat.get("items", []):
                     item_entry = {
                         "name": item["name"],
-                        "price": f"${item['price_dollars']:.0f}",
+                        "price": f"${item['price_dollars']:.2f}",
                         "description": item.get("description", "")[:100],
                         "category": cat["name"]
                     }
@@ -844,7 +844,7 @@ async def get_menu(
                         size_info = []
                         for s in sorted(sizes, key=lambda x: x["price_adjustment_cents"]):
                             adjusted = item["price_cents"] + s["price_adjustment_cents"]
-                            size_info.append(f"{s['name']} ${adjusted / 100:.0f}")
+                            size_info.append(f"{s['name']} ${adjusted / 100:.2f}")
                         item_entry["sizes"] = ", ".join(size_info)
 
                     items_list.append(item_entry)
@@ -1033,7 +1033,7 @@ async def add_to_cart(
         item_price = item_price_cents / 100
         quantity_text = f"{quantity} " if quantity > 1 else ""
         special_text = f" with {special_requests}" if special_requests else ""
-        message = f"Got it, {quantity_text}{cart_item_name}{special_text} for ${item_price:.0f}. Your total is ${total / 100:.0f}. Anything else?"
+        message = f"Got it, {quantity_text}{cart_item_name}{special_text} for ${item_price:.2f}. Your total is ${total / 100:.2f}. Anything else?"
 
         return JSONResponse({
             "success": True,
@@ -1041,9 +1041,9 @@ async def add_to_cart(
             "added_item": {
                 "name": cart_item_name,
                 "quantity": quantity,
-                "price": f"${item_price:.0f}"
+                "price": f"${item_price:.2f}"
             },
-            "cart_total": f"${total / 100:.0f}",
+            "cart_total": f"${total / 100:.2f}",
             "cart_item_count": sum(item["quantity"] for item in items)
         })
 
@@ -1112,14 +1112,14 @@ async def update_cart_item(
         tax = int(subtotal * tax_rate)
         total = subtotal + tax
 
-        message = f"Updated to {new_quantity} {item_name}. Your total is ${total / 100:.0f}. Anything else?"
+        message = f"Updated to {new_quantity} {item_name}. Your total is ${total / 100:.2f}. Anything else?"
 
         return JSONResponse({
             "success": True,
             "message": message,
             "updated_item": item_name,
             "new_quantity": new_quantity,
-            "cart_total": f"${total / 100:.0f}",
+            "cart_total": f"${total / 100:.2f}",
             "cart_item_count": sum(item["quantity"] for item in items)
         })
 
@@ -1227,7 +1227,7 @@ async def remove_from_cart(
         total = subtotal + tax
 
         if new_items:
-            message = f"Done, I removed the {item_name}. Your new total is ${total / 100:.0f}. Anything else?"
+            message = f"Done, I removed the {item_name}. Your new total is ${total / 100:.2f}. Anything else?"
         else:
             message = f"Done, I removed the {item_name}. Your cart is now empty. What would you like to order?"
 
@@ -1235,7 +1235,7 @@ async def remove_from_cart(
             "success": True,
             "message": message,
             "removed_item": item_name,
-            "cart_total": f"${total / 100:.0f}",
+            "cart_total": f"${total / 100:.2f}",
             "cart_item_count": sum(item["quantity"] for item in new_items)
         })
 
@@ -1289,7 +1289,7 @@ async def get_cart(
             {
                 "name": item["name"],
                 "quantity": item["quantity"],
-                "price": f"${item['price_cents'] * item['quantity'] / 100:.0f}",
+                "price": f"${item['price_cents'] * item['quantity'] / 100:.2f}",
                 "special_requests": item.get("special_requests", "")
             }
             for item in items
@@ -1300,13 +1300,13 @@ async def get_cart(
             f"{item['quantity']} {item['name']}" if item['quantity'] > 1 else item['name']
             for item in items_summary
         ])
-        message = f"You have {items_text}. Total is ${total / 100:.0f}. Anything else?"
+        message = f"You have {items_text}. Total is ${total / 100:.2f}. Anything else?"
 
         return JSONResponse({
             "success": True,
             "message": message,
             "items": items_summary,
-            "cart_total": f"${total / 100:.0f}",
+            "cart_total": f"${total / 100:.2f}",
             "cart_item_count": sum(item["quantity"] for item in items)
         })
 
@@ -1585,7 +1585,7 @@ async def create_order(
             "pickup_time": pickup_display,
             "payment_status": payment_status,
             "toast_synced": bool(toast_order_guid),
-            "message": f"Order #{order['id']} confirmed for {customer_name}. {items_text} for ${total / 100:.0f}.{payment_msg} Ready for pickup {pickup_display}."
+            "message": f"Order #{order['id']} confirmed for {customer_name}. {items_text} for ${total / 100:.2f}.{payment_msg} Ready for pickup {pickup_display}."
         })
 
     except Exception as e:

@@ -438,7 +438,14 @@ NEVER end call without:
                 "type": "transfer_call",
                 "name": "transfer_call",
                 "description": "Transfer the call to restaurant staff. Use when customer is upset, asks for a manager, or has a complaint you can't resolve.",
-                "number": "{{owner_phone}}"
+                "transfer_destination": {
+                    "type": "predefined",
+                    "number": "{{owner_phone}}"
+                },
+                "transfer_option": {
+                    "type": "cold_transfer",
+                    "show_transferee_as_caller": False
+                }
             },
             {
                 "type": "end_call",

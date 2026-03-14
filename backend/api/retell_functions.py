@@ -497,6 +497,8 @@ def lookup_menu_item(item_name: str, menu_data: Dict) -> Optional[Dict]:
         return None
 
     item_name_lower = item_name.lower().strip()
+    if not item_name_lower:
+        return None
     input_words = set(item_name_lower.split())
 
     candidates = []
@@ -1462,7 +1464,8 @@ async def create_order(
         customer_name = request.get_customer_name()
         pickup_time = request.get_pickup_time()
 
-        # Reject placeholder names
+        # Reject placeholder/empty names
+        customer_name = customer_name.strip() if customer_name else ""
         if not customer_name or customer_name.lower() in ("default", "customer", "guest", "unknown"):
             return JSONResponse({
                 "success": False,

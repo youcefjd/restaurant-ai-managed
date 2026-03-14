@@ -52,6 +52,7 @@ class OrderResponse(BaseModel):
     customer_name: Optional[str] = None
     customer_phone: Optional[str] = None
     order_date: datetime
+    scheduled_time: Optional[datetime] = None
     delivery_address: str
     order_items: str
     subtotal: int
@@ -62,6 +63,7 @@ class OrderResponse(BaseModel):
     payment_method: Optional[str] = None
     payment_status: Optional[str] = None
     special_instructions: Optional[str] = None
+    conversation_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

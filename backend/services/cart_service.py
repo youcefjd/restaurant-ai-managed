@@ -112,10 +112,16 @@ class CartService:
         """
         cart = self.get_cart(call_id, db)
         if cart:
+            updates = {}
             # Update restaurant_id if provided and not set
             if restaurant_id and not cart.get("restaurant_id"):
-                self.update_cart(call_id, {"restaurant_id": restaurant_id}, db)
-                cart["restaurant_id"] = restaurant_id
+                updates["restaurant_id"] = restaurant_id
+            # Update customer_phone if provided and not set
+            if customer_phone and not cart.get("customer_phone"):
+                updates["customer_phone"] = customer_phone
+            if updates:
+                self.update_cart(call_id, updates, db)
+                cart.update(updates)
             return cart
         return self.create_cart(call_id, restaurant_id, customer_phone, db)
 

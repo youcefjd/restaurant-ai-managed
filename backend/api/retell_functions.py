@@ -512,6 +512,11 @@ def lookup_menu_item(item_name: str, menu_data: Dict) -> Optional[Dict]:
                     if alias_lower == item_name_lower or item_name_lower in alias_lower:
                         return item
 
+                # Check description (e.g., "Coke" matches Fountain Soda's "Coke, Sprite, or Fanta")
+                description = item.get("description", "").lower()
+                if description and item_name_lower in description:
+                    return item
+
     return None
 
 

@@ -775,26 +775,77 @@ async def check_customer(
         restaurant_id = request.get_restaurant_id()
         call_id = request.get_call_id()
 
+        # Check if restaurant is currently open
+        is_open = True
+        hours_msg = ""
+        accepts_tomorrow = False
+        account = db.query_one("restaurant_accounts", {"id": restaurant_id}) if restaurant_id else None
+        if account:
+            opening_time = account.get("opening_time", "")
+            closing_time = account.get("closing_time", "")
+            if opening_time and closing_time:
+                try:
+                    open_h, open_m = map(int, opening_time.split(":"))
+                    close_h, close_m = map(int, closing_time.split(":"))
+                    open_minutes = open_h * 60 + open_m
+                    close_minutes = close_h * 60 + close_m
+                    now = datetime.now()
+                    now_minutes = now.hour * 60 + now.minute
+                    if now_minutes < open_minutes or now_minutes >= close_minutes:
+                        is_open = False
+                    def _to_12h(t):
+                        h, m = map(int, t.split(":"))
+                        suffix = "AM" if h < 12 else "PM"
+                        h = h % 12 or 12
+                        return f"{h}:{m:02d} {suffix}" if m else f"{h} {suffix}"
+                    hours_msg = f"{_to_12h(opening_time)} to {_to_12h(closing_time)}"
+                    max_adv = int(account.get("max_advance_order_days", 0))
+                    if max_adv > 0:
+                        accepts_tomorrow = True
+                except (ValueError, AttributeError):
+                    pass
+
         # Get customer phone from cart (set by call_started webhook from caller ID)
         customer_phone = None
         if call_id:
             cart = cart_service.get_cart(call_id, db)
             customer_phone = cart.get("customer_phone") if cart else None
 
+        # Build hours info for the response
+        hours_info = {}
+        if not is_open:
+            hours_info["is_open"] = False
+            hours_info["hours"] = hours_msg
+            hours_info["accepts_advance_orders"] = accepts_tomorrow
+            if accepts_tomorrow:
+                closed_msg = f"IMPORTANT: The restaurant is currently CLOSED. Hours are {hours_msg}. Tell the customer we're closed but you'd be happy to take an order for pickup tomorrow during business hours."
+            else:
+                closed_msg = f"IMPORTANT: The restaurant is currently CLOSED. Hours are {hours_msg}. Let the customer know and suggest they call back during business hours."
+        else:
+            hours_info["is_open"] = True
+
         if not customer_phone or customer_phone == "unknown":
+            msg = "New customer. Greet them normally."
+            if not is_open:
+                msg = closed_msg
             return JSONResponse({
                 "success": True,
                 "returning_customer": False,
-                "message": "New customer. Greet them normally."
+                **hours_info,
+                "message": msg
             })
 
         # Look up customer by phone
         customer = db.query_one("customers", {"phone": customer_phone})
         if not customer:
+            msg = "New customer. Greet them normally."
+            if not is_open:
+                msg = closed_msg
             return JSONResponse({
                 "success": True,
                 "returning_customer": False,
-                "message": "New customer. Greet them normally."
+                **hours_info,
+                "message": msg
             })
 
         customer_name = customer.get("name", "")
@@ -813,11 +864,15 @@ async def check_customer(
             recent_orders = [o for o in recent_orders if o.get("restaurant_id") == restaurant_id]
 
         if not recent_orders:
+            msg = f"Returning customer: {customer_name}. No previous orders at this restaurant."
+            if not is_open:
+                msg = f"{closed_msg} This is a returning customer: {customer_name}."
             return JSONResponse({
                 "success": True,
                 "returning_customer": True,
                 "customer_name": customer_name,
-                "message": f"Returning customer: {customer_name}. No previous orders at this restaurant."
+                **hours_info,
+                "message": msg
             })
 
         # Build last order summary
@@ -833,13 +888,18 @@ async def check_customer(
         item_names = [f"{i.get('quantity', 1)}x {i.get('name', '?')}" for i in items[:5]]
         items_str = ", ".join(item_names) if item_names else "unknown items"
 
+        msg = f"Welcome back! This is {customer_name}, who previously ordered: {items_str}. Greet them by name and ask if they'd like the same thing."
+        if not is_open:
+            msg = f"{closed_msg} This is returning customer {customer_name}, who previously ordered: {items_str}."
+
         return JSONResponse({
             "success": True,
             "returning_customer": True,
             "customer_name": customer_name,
             "last_order_items": items_str,
             "total_orders": len(recent_orders),
-            "message": f"Welcome back! This is {customer_name}, who previously ordered: {items_str}. Greet them by name and ask if they'd like the same thing."
+            **hours_info,
+            "message": msg
         })
 
     except Exception as e:

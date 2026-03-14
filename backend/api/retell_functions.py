@@ -492,46 +492,49 @@ def get_or_create_cart(call_id: str, restaurant_id: int, db: SupabaseDB, custome
 
 
 def lookup_menu_item(item_name: str, menu_data: Dict) -> Optional[Dict]:
-    """Look up a menu item by name (fuzzy match with ranked candidates)."""
+    """Look up a menu item by name using word-level matching."""
     if not menu_data or not menu_data.get("menus"):
         return None
 
     item_name_lower = item_name.lower().strip()
+    input_words = set(item_name_lower.split())
 
-    # Collect all items with match scores (higher = better)
     candidates = []
     for menu in menu_data.get("menus", []):
         for category in menu.get("categories", []):
             for item in category.get("items", []):
                 menu_item_name = item.get("name", "").lower().strip()
+                menu_words = set(menu_item_name.split())
                 score = 0
 
-                # Exact match (best)
+                # Exact match
                 if menu_item_name == item_name_lower:
                     score = 100
-                # Input contains menu item name (e.g., "Cheese Pizza Slice" contains "Cheese Pizza")
-                elif menu_item_name in item_name_lower:
-                    # Score by word overlap ratio: what fraction of input words does this item cover?
-                    input_words = set(item_name_lower.split())
-                    match_words = set(menu_item_name.split())
-                    # Penalize items that miss important input words
-                    missed = input_words - match_words
-                    score = 50 - len(missed) * 5
-                    # Bonus: if the LAST word of the input appears in the item name
-                    # (users tend to put the specific noun last: "cheese pizza slice" → "slice" is key)
-                    last_word = item_name_lower.split()[-1]
-                    if last_word in match_words:
-                        score += 20
-                # Menu item name contains input (e.g., "Pepperoni Pizza" contains "Pepperoni")
-                elif item_name_lower in menu_item_name:
-                    score = 20 + len(item_name_lower)
                 else:
+                    # Word overlap: how many menu item words appear in input?
+                    overlap = input_words & menu_words
+                    if overlap:
+                        # Score = fraction of menu item words matched × fraction of input words matched
+                        menu_coverage = len(overlap) / len(menu_words)   # all menu words found?
+                        input_coverage = len(overlap) / len(input_words)  # how much of input is explained?
+                        score = int((menu_coverage * 40) + (input_coverage * 30))
+
+                        # Full menu item match (all words found in input)
+                        if menu_words <= input_words:
+                            score += 20
+                            # Tiebreaker: prefer item containing the last word of input
+                            # ("cheese pizza slice" → "slice" is the qualifier)
+                            last_word = item_name_lower.split()[-1]
+                            if last_word in menu_words:
+                                score += 10
+
                     # Check aliases
-                    for alias in item.get("aliases", []):
-                        alias_lower = alias.lower().strip()
-                        if alias_lower == item_name_lower or item_name_lower in alias_lower:
-                            score = 50
-                            break
+                    if score == 0:
+                        for alias in item.get("aliases", []):
+                            alias_lower = alias.lower().strip()
+                            if alias_lower == item_name_lower or item_name_lower in alias_lower:
+                                score = 50
+                                break
 
                     # Check description (e.g., "Coke" matches Fountain Soda's "Coke, Sprite, or Fanta")
                     if score == 0:
@@ -545,7 +548,6 @@ def lookup_menu_item(item_name: str, menu_data: Dict) -> Optional[Dict]:
     if not candidates:
         return None
 
-    # Return highest-scoring match
     candidates.sort(key=lambda x: x[0], reverse=True)
     return candidates[0][1]
 
@@ -1459,6 +1461,13 @@ async def create_order(
         session_id = request.get_session_id()
         customer_name = request.get_customer_name()
         pickup_time = request.get_pickup_time()
+
+        # Reject placeholder names
+        if not customer_name or customer_name.lower() in ("default", "customer", "guest", "unknown"):
+            return JSONResponse({
+                "success": False,
+                "message": "I still need your name for the order. What name should I put it under?"
+            })
 
         cart_key = get_unique_cart_key(call_id, agent_id, restaurant_id, session_id)
         cart = cart_service.get_cart(cart_key, db)

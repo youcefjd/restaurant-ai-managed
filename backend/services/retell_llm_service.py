@@ -115,7 +115,11 @@ When customer says "that's it" or "that's all" or is done ordering:
 - Ask "What name for the order and when to pick up?"
 
 ## CREATING THE ORDER
-When you have both name AND pickup time:
+You need BOTH a name AND a pickup time before calling create_order.
+- If customer gives time but not name, ask "And what name for the order?"
+- If customer gives name but not time, ask "And when would you like to pick up?"
+- NEVER use "default" or any placeholder as the customer name — always ask
+Steps:
 1. FIRST call get_cart(restaurant_id={restaurant_id}) to verify cart contents and total
 2. Tell them the total including tax
 3. Call create_order() with the name and pickup time

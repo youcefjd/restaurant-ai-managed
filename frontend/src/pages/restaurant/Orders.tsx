@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { restaurantAPI } from '../../services/api'
-import { X, DollarSign, CreditCard, MessageSquare, ChevronDown, Volume2, VolumeX, Phone } from 'lucide-react'
+import { X, DollarSign, CreditCard, MessageSquare, ChevronDown, Volume2, VolumeX, Phone, Clock } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useOrderNotification } from '../../hooks/useOrderNotification'
@@ -152,14 +152,20 @@ export default function RestaurantOrders() {
                   </div>
                   <span className="font-medium">${(order.total / 100).toFixed(2)}</span>
                 </div>
-                {order.customer_phone && (
-                  <div className="mb-2">
-                    <a href={`tel:${order.customer_phone}`} className="text-xs text-dim flex items-center gap-1 hover:text-accent">
+                <div className="flex items-center gap-3 mb-2 text-xs text-dim">
+                  {order.customer_phone && (
+                    <a href={`tel:${order.customer_phone}`} className="flex items-center gap-1 hover:text-accent">
                       <Phone className="w-3 h-3" />
                       {order.customer_phone}
                     </a>
-                  </div>
-                )}
+                  )}
+                  <span className="flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    {order.scheduled_time
+                      ? new Date(order.scheduled_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                      : 'ASAP'}
+                  </span>
+                </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     {order.status === 'completed' || order.status === 'cancelled' ? (
@@ -210,6 +216,7 @@ export default function RestaurantOrders() {
                   <th>Phone</th>
                   <th>Items</th>
                   <th>Total</th>
+                  <th>Pickup</th>
                   <th>Status</th>
                   <th>Payment</th>
                   <th>Date/Time</th>
@@ -247,6 +254,16 @@ export default function RestaurantOrders() {
                           : '-'}
                       </td>
                       <td>${(order.total / 100).toFixed(2)}</td>
+                      <td className="text-sm">
+                        {order.scheduled_time ? (
+                          <div className="flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-dim" />
+                            <span>{new Date(order.scheduled_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          </div>
+                        ) : (
+                          <span className="text-dim">ASAP</span>
+                        )}
+                      </td>
                       <td>
                         {order.status === 'completed' || order.status === 'cancelled' ? (
                           <span className={`badge ${STATUS_CONFIG[order.status as OrderStatus]?.badgeClass || 'badge-secondary'}`}>

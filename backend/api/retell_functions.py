@@ -137,10 +137,14 @@ def get_unique_cart_key(call_id: Optional[str], agent_id: Optional[str], restaur
 # We need to handle both the nested `args` format from Retell and direct parameters for testing
 
 class RetellCallInfo(BaseModel):
-    """Call information from Retell."""
+    """Call information from Retell. Retell sends the full call object with function calls."""
     call_id: Optional[str] = None
     call_type: Optional[str] = None
     agent_id: Optional[str] = None
+    from_number: Optional[str] = None
+    to_number: Optional[str] = None
+    direction: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
 
 
 class GetMenuArgs(BaseModel):
@@ -1608,11 +1612,16 @@ async def create_order(
         # If no separate location row, use the account id as restaurant_id
         location_id = restaurant["id"] if restaurant else restaurant_id
 
-        # Get customer phone — try cart first, then active_calls as fallback
-        # Note: cart.get() returns None (not "") when key exists with null value
-        customer_phone = cart.get("customer_phone") or ""
+        # Get customer phone — Retell sends from_number in the call object with every function call
+        # Priority: 1) call.from_number (most reliable, direct from Retell)
+        #           2) cart customer_phone (set by call_started webhook)
+        #           3) active_calls (in-memory, set by call_started webhook)
+        customer_phone = ""
+        if request.call and request.call.from_number:
+            customer_phone = request.call.from_number
         if not customer_phone:
-            # Fallback: check active_calls (set by call_started webhook)
+            customer_phone = cart.get("customer_phone") or ""
+        if not customer_phone:
             from backend.api.retell_voice import active_calls
             call_context = active_calls.get(call_id, {})
             customer_phone = call_context.get("from_number") or ""

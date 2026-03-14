@@ -286,38 +286,19 @@ async def retell_webhook(request: Request, db: SupabaseDB = Depends(get_db)):
                     pass
 
             if restaurant_id:
-                # Save transcript in background — DO NOT block the webhook response.
-                # Retell has a short webhook timeout (~5s). If we block here, the webhook
-                # times out and Retell may not fire call_analyzed either.
-                # The background task waits 3s for Retell to finalize, then fetches + saves.
-                async def _save_transcript_bg(cid, rid, from_num, to_num):
-                    """Background transcript save with delay and retry."""
-                    from backend.database import SupabaseDB
-                    try:
-                        await asyncio.sleep(3)
-                        bg_db = SupabaseDB()
-                        saved = await fetch_and_save_retell_transcript(
-                            call_id=cid, restaurant_id=rid,
-                            customer_phone=from_num, restaurant_phone=to_num,
-                            db=bg_db
-                        )
-                        if not saved:
-                            logger.info(f"call_ended bg: {cid}, first fetch empty, retrying in 5s")
-                            await asyncio.sleep(5)
-                            saved = await fetch_and_save_retell_transcript(
-                                call_id=cid, restaurant_id=rid,
-                                customer_phone=from_num, restaurant_phone=to_num,
-                                db=bg_db
-                            )
-                        logger.info(f"call_ended bg: {cid}, transcript={'OK' if saved else 'FAILED'}")
-                    except Exception as e:
-                        logger.error(f"call_ended bg: {cid}, transcript error: {e}")
-
-                asyncio.create_task(_save_transcript_bg(
-                    call_id, restaurant_id,
-                    call_data.get("from_number", ""),
-                    call_data.get("to_number", "")
-                ))
+                # The call_ended webhook already contains the full call object including
+                # transcript — pass it directly, no need for a separate API call or delay.
+                try:
+                    saved = await fetch_and_save_retell_transcript(
+                        call_id=call_id, restaurant_id=restaurant_id,
+                        customer_phone=call_data.get("from_number", ""),
+                        restaurant_phone=call_data.get("to_number", ""),
+                        db=db,
+                        call_data=call_data  # Use webhook data directly
+                    )
+                    logger.info(f"Call ended: {call_id}, transcript save={'OK' if saved else 'FAILED (no transcript in webhook)'}")
+                except Exception as e:
+                    logger.error(f"Call ended: {call_id}, transcript save error: {e}")
             else:
                 logger.warning(f"Call ended: {call_id}, could not resolve restaurant_id for transcript save")
 

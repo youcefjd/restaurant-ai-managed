@@ -1483,10 +1483,19 @@ async def create_order(
                         suffix = "AM" if h < 12 else "PM"
                         h = h % 12 or 12
                         return f"{h}:{m:02d} {suffix}" if m else f"{h} {suffix}"
-                    return JSONResponse({
-                        "success": False,
-                        "message": f"Sorry, we're only open from {_to_12h(opening_time)} to {_to_12h(closing_time)}. Can you pick a time during our hours?"
-                    })
+                    hours_str = f"{_to_12h(opening_time)} to {_to_12h(closing_time)}"
+                    if scheduled_time:
+                        # Customer gave a specific time outside hours
+                        return JSONResponse({
+                            "success": False,
+                            "message": f"That pickup time is outside our hours. We're open {hours_str}. What time works for you?"
+                        })
+                    else:
+                        # ASAP but restaurant is currently closed
+                        return JSONResponse({
+                            "success": False,
+                            "message": f"Sorry, we're currently closed. Our hours are {hours_str}. You can call back when we're open to place an order."
+                        })
             except (ValueError, AttributeError):
                 pass  # Skip validation if hours format is unexpected
 

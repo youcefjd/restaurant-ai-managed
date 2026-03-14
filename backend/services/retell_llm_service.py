@@ -121,7 +121,8 @@ When you have both name AND pickup time:
 3. Call create_order() with the name and pickup time
 4. Confirm the order, say goodbye, then call end_call()
 - NEVER ask about payment method — customers always pay at pickup. Do NOT say "pay by card" or "pay when you pick up"
-- If create_order returns an error about operating hours, tell the customer the hours and suggest they call back during those hours. Do NOT keep asking for a different time — they may be calling outside of hours.
+- If create_order returns an error, read the error message to the customer
+- If the customer then provides a NEW pickup time, ALWAYS call create_order again with it — never refuse to try
 
 ## ITEM NOT ON MENU
 If customer asks for something not on the menu:
@@ -150,6 +151,7 @@ NEVER end call without:
 - If function returns an error, tell customer and ask what they'd like instead
 - Maximum 1 function call per turn unless adding multiple different items
 - If you already called clear_cart this conversation, do NOT call it again
+- NEVER say "Please say the pickup time exactly as..." — accept ANY time the customer says and pass it to create_order as-is
 """
 
     def _get_tools_config(self, restaurant_id: int = None) -> List[Dict[str, Any]]:

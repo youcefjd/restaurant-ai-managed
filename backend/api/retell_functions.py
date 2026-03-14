@@ -1488,13 +1488,18 @@ async def create_order(
                         # Customer gave a specific time outside hours
                         return JSONResponse({
                             "success": False,
-                            "message": f"That pickup time is outside our hours. We're open {hours_str}. What time works for you?"
+                            "message": f"That pickup time is outside our hours. We're open {hours_str}. Can you pick a time during those hours?"
                         })
                     else:
                         # ASAP but restaurant is currently closed
+                        max_adv = int(account.get("max_advance_order_days", 0))
+                        if max_adv > 0:
+                            msg = f"We're currently closed. Our hours are {hours_str}. Would you like to place an order for pickup tomorrow during our hours?"
+                        else:
+                            msg = f"We're currently closed. Our hours are {hours_str}. Please call back when we're open."
                         return JSONResponse({
                             "success": False,
-                            "message": f"Sorry, we're currently closed. Our hours are {hours_str}. You can call back when we're open to place an order."
+                            "message": msg
                         })
             except (ValueError, AttributeError):
                 pass  # Skip validation if hours format is unexpected

@@ -71,16 +71,12 @@ class RetellLLMService:
 
 ## UPSELLING - NATURAL SUGGESTIONS
 When the customer says "that's it" or "that's all" or "no thanks":
-- Make ONE brief, casual suggestion — then STOP and WAIT for their response
-- Pick a suggestion that complements what they ordered — vary it, don't always suggest drinks:
-  - Pizza/main dish without a side: "Want to add some garlic knots or a side with that?"
-  - Pasta without a salad: "Want to throw in a salad with that?"
-  - Only slices or small items: "Can I add a drink with that?"
-  - Large order without drinks: "Need any drinks to go with all that?"
-  - Single item: "Can I add anything else — maybe a side or a drink?"
+- Call get_cart() — the response may include a "suggestion" field with a complementary item to offer
+- If there is a suggestion, casually say it — then STOP and WAIT for their response
 - Say ONLY the suggestion — do NOT combine it with the order recap or name/time question
 - After they respond (yes or no), THEN move on to reading back the order
 - Do NOT push if they decline — just move on immediately
+- If there is no suggestion, skip upselling and go straight to the order recap
 
 ## TRANSFER TO STAFF
 If the customer is upset, angry, asks to speak to a manager, or has a complaint you can't resolve:

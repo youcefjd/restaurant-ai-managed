@@ -1252,6 +1252,62 @@ async def remove_from_cart(
         })
 
 
+def _generate_upsell_suggestion(cart_items: list, menu_data: Optional[Dict], db, restaurant_id: int) -> Optional[str]:
+    """Generate a contextual upsell suggestion based on cart contents and full menu."""
+    if not cart_items:
+        return None
+
+    # Fetch menu if not provided
+    if not menu_data and restaurant_id:
+        menu_data = fetch_menu_data(db, restaurant_id)
+    if not menu_data:
+        return None
+
+    # Categorize cart items and collect all menu categories
+    cart_names = {item["name"].lower() for item in cart_items}
+    cart_categories = set()
+    menu_categories = {}  # category_name -> [item_names]
+
+    for menu in menu_data.get("menus", []):
+        for category in menu.get("categories", []):
+            cat_name = category.get("name", "").lower()
+            cat_items = []
+            for item in category.get("items", []):
+                if not item.get("is_available", True):
+                    continue
+                item_lower = item.get("name", "").lower()
+                cat_items.append(item["name"])
+                if item_lower in cart_names or any(item_lower in cn for cn in cart_names):
+                    cart_categories.add(cat_name)
+            if cat_items:
+                menu_categories[cat_name] = cat_items
+
+    # Find categories NOT in the cart
+    missing_categories = set(menu_categories.keys()) - cart_categories
+
+    # Pick a complementary suggestion
+    has_drinks = "drinks" in cart_categories
+    has_sides = any(c in cart_categories for c in ["sides & salads", "sides", "salads"])
+
+    # Prioritize sides for pizza/slice/main orders, drinks if they have sides already
+    if not has_sides and any(c in missing_categories for c in ["sides & salads", "sides", "salads"]):
+        # Pick a popular side from the menu
+        for cat_key in ["sides & salads", "sides", "salads"]:
+            if cat_key in menu_categories:
+                side_item = menu_categories[cat_key][0]
+                return f"Want to add some {side_item} with that?"
+
+    if not has_drinks and "drinks" in missing_categories and "drinks" in menu_categories:
+        return "Want to add a drink with that?"
+
+    # Suggest from any missing category
+    for cat_name, cat_items in menu_categories.items():
+        if cat_name in missing_categories and cat_items:
+            return f"Want to add some {cat_items[0]} with that?"
+
+    return None
+
+
 @router.post("/get_cart")
 async def get_cart(
     request: GetCartRequest,
@@ -1307,13 +1363,20 @@ async def get_cart(
         ])
         message = f"You have {items_text}. Total is ${total / 100:.2f}. Anything else?"
 
-        return JSONResponse({
+        # Generate upsell suggestion based on cart contents and menu
+        suggestion = _generate_upsell_suggestion(items, menu_data if restaurant_id else None, db, restaurant_id)
+
+        response = {
             "success": True,
             "message": message,
             "items": items_summary,
             "cart_total": f"${total / 100:.2f}",
             "cart_item_count": sum(item["quantity"] for item in items)
-        })
+        }
+        if suggestion:
+            response["suggestion"] = suggestion
+
+        return JSONResponse(response)
 
     except Exception as e:
         logger.error(f"Error in get_cart: {e}", exc_info=True)

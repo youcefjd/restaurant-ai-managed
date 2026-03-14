@@ -1392,6 +1392,36 @@ async def create_order(
                 "message": "That pickup time has already passed. What time works for you today?"
             })
 
+        # Validate pickup time falls within operating hours
+        opening_time = account.get("opening_time", "")
+        closing_time = account.get("closing_time", "")
+        if opening_time and closing_time:
+            try:
+                open_h, open_m = map(int, opening_time.split(":"))
+                close_h, close_m = map(int, closing_time.split(":"))
+                open_minutes = open_h * 60 + open_m
+                close_minutes = close_h * 60 + close_m
+
+                if scheduled_time:
+                    pickup_minutes = scheduled_time.hour * 60 + scheduled_time.minute
+                else:
+                    # ASAP — check if restaurant is currently open
+                    now = datetime.now()
+                    pickup_minutes = now.hour * 60 + now.minute
+
+                if pickup_minutes < open_minutes or pickup_minutes >= close_minutes:
+                    def _to_12h(t):
+                        h, m = map(int, t.split(":"))
+                        suffix = "AM" if h < 12 else "PM"
+                        h = h % 12 or 12
+                        return f"{h}:{m:02d} {suffix}" if m else f"{h} {suffix}"
+                    return JSONResponse({
+                        "success": False,
+                        "message": f"Sorry, we're only open from {_to_12h(opening_time)} to {_to_12h(closing_time)}. Can you pick a time during our hours?"
+                    })
+            except (ValueError, AttributeError):
+                pass  # Skip validation if hours format is unexpected
+
         # Validate advance order days
         max_advance_days = int(account.get("max_advance_order_days", 0))
         if scheduled_time:

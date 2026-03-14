@@ -677,6 +677,16 @@ def parse_pickup_time(time_str: str) -> tuple[Optional[datetime], str]:
     if time_lower in ["asap", "now", "as soon as possible", "right now"]:
         return None, "ASAP"
 
+    # Handle "half hour" / "half an hour" (check before minutes/hours patterns)
+    if 'half' in time_lower and 'hour' in time_lower:
+        scheduled = now + timedelta(minutes=30)
+        return scheduled, "in 30 minutes"
+
+    # Handle "an hour" / "a hour" / "about an hour" (no digit)
+    if re.search(r'\b(an?|one)\s+hour\b', time_lower):
+        scheduled = now + timedelta(hours=1)
+        return scheduled, "in 1 hour"
+
     # Handle "in X minutes"
     minutes_match = re.search(r'(\d+)\s*min', time_lower)
     if minutes_match:
@@ -690,11 +700,6 @@ def parse_pickup_time(time_str: str) -> tuple[Optional[datetime], str]:
         hours = int(hours_match.group(1))
         scheduled = now + timedelta(hours=hours)
         return scheduled, f"in {hours} hour{'s' if hours > 1 else ''}"
-
-    # Handle "half hour" / "30 minutes"
-    if 'half' in time_lower and 'hour' in time_lower:
-        scheduled = now + timedelta(minutes=30)
-        return scheduled, "in 30 minutes"
 
     # Handle "noon" and "midnight"
     if 'noon' in time_lower:

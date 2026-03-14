@@ -287,25 +287,17 @@ async def retell_webhook(request: Request, db: SupabaseDB = Depends(get_db)):
                     pass
 
             if restaurant_id:
-                # Schedule delayed fetch — Retell needs a few seconds to finalize transcript
-                async def _delayed_save(cid, rid, cphone, rphone):
-                    await asyncio.sleep(5)
-                    try:
-                        save_db = get_db()
-                        await fetch_and_save_retell_transcript(
-                            call_id=cid, restaurant_id=rid,
-                            customer_phone=cphone, restaurant_phone=rphone, db=save_db
-                        )
-                    except Exception as e:
-                        logger.error(f"Delayed transcript save failed for {cid}: {e}")
-
-                import asyncio
-                asyncio.create_task(_delayed_save(
-                    call_id, restaurant_id,
-                    call_data.get("from_number", ""),
-                    call_data.get("to_number", "")
-                ))
-                logger.info(f"Call ended: {call_id}, duration: {call_data.get('duration_ms')}ms, transcript save scheduled")
+                # Save transcript directly (don't rely on background task which can get lost)
+                try:
+                    saved = await fetch_and_save_retell_transcript(
+                        call_id=call_id, restaurant_id=restaurant_id,
+                        customer_phone=call_data.get("from_number", ""),
+                        restaurant_phone=call_data.get("to_number", ""),
+                        db=db
+                    )
+                    logger.info(f"Call ended: {call_id}, transcript save={'OK' if saved else 'FAILED (no transcript yet)'}")
+                except Exception as e:
+                    logger.error(f"Call ended: {call_id}, transcript save error: {e}")
             else:
                 logger.warning(f"Call ended: {call_id}, could not resolve restaurant_id for transcript save")
 

@@ -1,0 +1,56 @@
+{
+  "business_name": "Joe's Tacos",
+  "owner_name": "Joe Martinez",
+  "owner_email": "joe@joestacos.com",
+  "owner_phone": "+15551234567",
+  "address": "456 Main St, Dallas, TX 75201",
+  "opening_time": "11:00",
+  "closing_time": "22:00",
+  "operating_days": [0, 1, 2, 3, 4, 5, 6],
+  "timezone": "America/Chicago",
+  "tax_rate": 8.25,
+  "area_code": 214,
+  "voice_id": "11labs-Myra",
+  "menu": {
+    "categories": [
+      {
+        "name": "Tacos",
+        "items": [
+          {"name": "Carne Asada Taco", "description": "Grilled steak with onion and cilantro", "price_cents": 450},
+          {"name": "Chicken Taco", "description": "Seasoned grilled chicken", "price_cents": 400},
+          {"name": "Al Pastor Taco", "description": "Marinated pork with pineapple", "price_cents": 450},
+          {"name": "Carnitas Taco", "description": "Slow-cooked pulled pork", "price_cents": 450},
+          {"name": "Fish Taco", "description": "Beer-battered fish with slaw and chipotle mayo", "price_cents": 500},
+          {"name": "Veggie Taco", "description": "Grilled peppers, onions, and black beans", "price_cents": 375}
+        ]
+      },
+      {
+        "name": "Burritos",
+        "items": [
+          {"name": "Carne Asada Burrito", "description": "Steak, rice, beans, cheese, sour cream, guac", "price_cents": 1200},
+          {"name": "Chicken Burrito", "description": "Chicken, rice, beans, cheese, pico de gallo", "price_cents": 1100},
+          {"name": "Veggie Burrito", "description": "Rice, beans, grilled veggies, cheese, guac", "price_cents": 1000}
+        ]
+      },
+      {
+        "name": "Sides",
+        "items": [
+          {"name": "Chips and Guacamole", "description": "Fresh-made guacamole with tortilla chips", "price_cents": 700},
+          {"name": "Chips and Salsa", "description": "Tortilla chips with house salsa", "price_cents": 400},
+          {"name": "Mexican Rice", "description": "Seasoned rice", "price_cents": 300},
+          {"name": "Refried Beans", "description": "With cheese", "price_cents": 300},
+          {"name": "Elote", "description": "Mexican street corn with mayo, cotija, chili", "price_cents": 500}
+        ]
+      },
+      {
+        "name": "Drinks",
+        "items": [
+          {"name": "Horchata", "description": "Sweet cinnamon rice drink", "price_cents": 400},
+          {"name": "Jamaica", "description": "Hibiscus iced tea", "price_cents": 400},
+          {"name": "Mexican Coke", "description": "Glass bottle", "price_cents": 350},
+          {"name": "Bottled Water", "description": "16oz", "price_cents": 200}
+        ]
+      }
+    ]
+  }
+}

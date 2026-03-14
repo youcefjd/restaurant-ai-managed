@@ -677,31 +677,62 @@ def parse_pickup_time(time_str: str) -> tuple[Optional[datetime], str]:
     if time_lower in ["asap", "now", "as soon as possible", "right now"]:
         return None, "ASAP"
 
-    # Handle "half hour" / "half an hour" (check before minutes/hours patterns)
+    # ---- Word-to-number conversion (do this FIRST so all later checks see digits) ----
+    word_to_num = {
+        'one': '1', 'two': '2', 'three': '3', 'four': '4', 'five': '5',
+        'six': '6', 'seven': '7', 'eight': '8', 'nine': '9', 'ten': '10',
+        'eleven': '11', 'twelve': '12', 'thirteen': '13', 'fourteen': '14',
+        'fifteen': '15', 'sixteen': '16', 'seventeen': '17', 'eighteen': '18',
+        'nineteen': '19', 'twenty': '20', 'thirty': '30', 'forty': '40',
+        'forty five': '45', 'forty-five': '45', 'twenty five': '25',
+        'twenty-five': '25', 'fifty': '50',
+    }
+    # Replace multi-word numbers first (e.g., "forty five" before "five")
+    for word, digit in sorted(word_to_num.items(), key=lambda x: -len(x[0])):
+        time_lower = re.sub(rf'\b{re.escape(word)}\b', digit, time_lower)
+
+    # Handle "couple" and "few" (approximate)
+    time_lower = re.sub(r'\ba?\s*couple\s*(of\s*)?', '2 ', time_lower)
+    time_lower = re.sub(r'\ba?\s*few\s*', '3 ', time_lower)
+
+    # ---- Duration patterns (relative times) ----
+
+    # "quarter hour" = 15 min
+    if 'quarter' in time_lower and 'hour' in time_lower:
+        scheduled = now + timedelta(minutes=15)
+        return scheduled, "in 15 minutes"
+
+    # "hour and a half" / "an hour and a half" = 90 min (check BEFORE "half hour")
+    if 'hour' in time_lower and 'half' in time_lower and 'and' in time_lower:
+        scheduled = now + timedelta(minutes=90)
+        return scheduled, "in 1 hour 30 minutes"
+
+    # "half hour" / "half an hour"
     if 'half' in time_lower and 'hour' in time_lower:
         scheduled = now + timedelta(minutes=30)
         return scheduled, "in 30 minutes"
 
-    # Handle "an hour" / "a hour" / "about an hour" (no digit)
-    if re.search(r'\b(an?|one)\s+hour\b', time_lower):
+    # "an hour" / "a hour" / "about an hour" (no digit before hour)
+    if re.search(r'\b(an?)\s+hour\b', time_lower):
         scheduled = now + timedelta(hours=1)
         return scheduled, "in 1 hour"
 
-    # Handle "in X minutes"
+    # "X minutes" / "in X min"
     minutes_match = re.search(r'(\d+)\s*min', time_lower)
     if minutes_match:
         minutes = int(minutes_match.group(1))
         scheduled = now + timedelta(minutes=minutes)
         return scheduled, f"in {minutes} minutes"
 
-    # Handle "in X hours" or "X hours"
+    # "X hours" / "in X hour"
     hours_match = re.search(r'(\d+)\s*hour', time_lower)
     if hours_match:
         hours = int(hours_match.group(1))
         scheduled = now + timedelta(hours=hours)
         return scheduled, f"in {hours} hour{'s' if hours > 1 else ''}"
 
-    # Handle "noon" and "midnight"
+    # ---- Named times ----
+
     if 'noon' in time_lower:
         scheduled = now.replace(hour=12, minute=0, second=0, microsecond=0)
         if is_tomorrow:
@@ -715,40 +746,37 @@ def parse_pickup_time(time_str: str) -> tuple[Optional[datetime], str]:
         display = "12:00 AM tomorrow" if scheduled.date() != now.date() else "12:00 AM today"
         return scheduled, display
 
-    # Convert word numbers to digits (e.g., "eleven AM" → "11 AM")
-    word_to_num = {
-        'one': '1', 'two': '2', 'three': '3', 'four': '4', 'five': '5',
-        'six': '6', 'seven': '7', 'eight': '8', 'nine': '9', 'ten': '10',
-        'eleven': '11', 'twelve': '12',
-    }
-    for word, digit in word_to_num.items():
-        time_lower = re.sub(rf'\b{word}\b', digit, time_lower)
+    # ---- Specific clock times ----
+    # Match "H:MM am/pm", "H am/pm", "H MM am/pm" (for "two thirty pm" → "2 30 pm")
+    time_match = re.search(r'(\d{1,2})(?::|\s+)(\d{2})\s*(am|pm)', time_lower)
+    if not time_match:
+        # Try without minutes: "6pm", "6 pm"
+        time_match = re.search(r'(\d{1,2})(?::(\d{2}))?\s*(am|pm)', time_lower)
+    if not time_match:
+        # Try bare number (no am/pm): "lets say 7", "13:00"
+        time_match = re.search(r'(\d{1,2})(?::(\d{2}))?(?!\d)', time_lower)
 
-    # Handle specific time (e.g., "6pm", "6:30 PM", "tomorrow 5pm")
-    time_match = re.search(r'(\d{1,2})(?::(\d{2}))?\s*(am|pm)?', time_lower)
     if time_match:
         hour = int(time_match.group(1))
         minute = int(time_match.group(2)) if time_match.group(2) else 0
-        am_pm = time_match.group(3)
+        am_pm = time_match.group(3) if time_match.lastindex >= 3 else None
 
         if am_pm == 'pm' and hour < 12:
             hour += 12
         elif am_pm == 'am' and hour == 12:
             hour = 0
-        elif am_pm is None and hour < 12:
-            # No am/pm specified: assume PM for typical restaurant hours (12-11 PM)
+        elif am_pm is None and hour < 12 and hour != 0:
+            # No am/pm: assume PM for typical restaurant hours
             hour += 12
+
+        if hour > 23:
+            return None, time_str
 
         scheduled = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
-        # Only bump to tomorrow if explicitly mentioned
         if is_tomorrow:
             scheduled += timedelta(days=1)
-        # If time is in the past today and NOT explicitly "tomorrow",
-        # keep it as today — let the caller handle "time already passed"
-        # instead of silently bumping to tomorrow (which triggers advance-order rejection)
 
-        # Include date in display if not today
         time_display = scheduled.strftime("%I:%M %p").lstrip("0")
         if scheduled.date() == now.date():
             display = f"{time_display} today"

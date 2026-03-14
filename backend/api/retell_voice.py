@@ -221,11 +221,28 @@ async def retell_webhook(request: Request, db: SupabaseDB = Depends(get_db)):
 
             # Initialize call context for WebSocket LLM mode
             import time
+            # Look up restaurant by phone number or agent_id
+            from backend.services.cart_service import cart_service
+            to_number = call_data.get("to_number")
+            from_number = call_data.get("from_number")
+            agent_id_from_call = call_data.get("agent_id")
+
+            restaurant_id = None
+            if to_number:
+                restaurant = db.query_one("restaurant_accounts", {"twilio_phone_number": to_number})
+                if restaurant:
+                    restaurant_id = restaurant["id"]
+            if not restaurant_id and agent_id_from_call:
+                restaurant = db.query_one("restaurant_accounts", {"retell_agent_id": agent_id_from_call})
+                if restaurant:
+                    restaurant_id = restaurant["id"]
+
             active_calls[call_id] = {
                 "call_id": call_id,
-                "from_number": call_data.get("from_number"),
-                "to_number": call_data.get("to_number"),
+                "from_number": from_number,
+                "to_number": to_number,
                 "agent_id": call_data.get("agent_id"),
+                "restaurant_id": restaurant_id,
                 "start_time": datetime.now(),
                 "conversation_history": [],
                 "context": {},
@@ -233,28 +250,14 @@ async def retell_webhook(request: Request, db: SupabaseDB = Depends(get_db)):
             }
             _call_timestamps[call_id] = time.time()
 
-            # Also initialize cart for Native LLM function calling mode
-            # This ensures the restaurant context is available when functions are called
-            from backend.services.cart_service import cart_service
-            to_number = call_data.get("to_number")
-            from_number = call_data.get("from_number")
-
-            # Look up restaurant by phone number
-            restaurant_id = None
-            if to_number:
-                restaurant = db.query_one("restaurant_accounts", {"twilio_phone_number": to_number})
-                if restaurant:
-                    restaurant_id = restaurant["id"]
-                    logger.info(f"Initialized call {call_id} for restaurant {restaurant['business_name']} (native LLM mode)")
-
             # Create cart with restaurant context in Supabase
             cart_service.get_or_create_cart(call_id, restaurant_id, db, from_number)
+
+            logger.info(f"Call started: {call_id} from {from_number} to {to_number}, restaurant_id={restaurant_id}")
 
             logger.info(f"Call started: {call_id} from {from_number} to {to_number}")
 
         elif event_type == "call_ended":
-            # Don't delete call context yet - wait for call_analyzed to fetch transcript
-            # But store the call data for later use
             if call_id in active_calls:
                 active_calls[call_id]["ended"] = True
                 active_calls[call_id]["duration_ms"] = call_data.get("duration_ms")
@@ -263,7 +266,50 @@ async def retell_webhook(request: Request, db: SupabaseDB = Depends(get_db)):
             from backend.services.cart_service import cart_service
             cart_service.delete_cart(call_id, db)
 
-            logger.info(f"Call ended: {call_id}, duration: {call_data.get('duration_ms')}ms, cart cleaned up")
+            # Save transcript immediately on call_ended (don't wait for call_analyzed)
+            # Retell includes transcript in call_ended event data
+            call_context = active_calls.get(call_id, {})
+            restaurant_id = call_context.get("restaurant_id")
+
+            if not restaurant_id and call_data.get("to_number"):
+                try:
+                    restaurant = db.query_one("restaurant_accounts", {"twilio_phone_number": call_data.get("to_number")})
+                    if restaurant:
+                        restaurant_id = restaurant["id"]
+                except Exception:
+                    pass
+            if not restaurant_id and call_data.get("agent_id"):
+                try:
+                    restaurant = db.query_one("restaurant_accounts", {"retell_agent_id": call_data.get("agent_id")})
+                    if restaurant:
+                        restaurant_id = restaurant["id"]
+                except Exception:
+                    pass
+
+            if restaurant_id:
+                # Schedule delayed fetch — Retell needs a few seconds to finalize transcript
+                async def _delayed_save(cid, rid, cphone, rphone):
+                    await asyncio.sleep(5)
+                    try:
+                        save_db = get_db()
+                        await fetch_and_save_retell_transcript(
+                            call_id=cid, restaurant_id=rid,
+                            customer_phone=cphone, restaurant_phone=rphone, db=save_db
+                        )
+                    except Exception as e:
+                        logger.error(f"Delayed transcript save failed for {cid}: {e}")
+
+                import asyncio
+                asyncio.create_task(_delayed_save(
+                    call_id, restaurant_id,
+                    call_data.get("from_number", ""),
+                    call_data.get("to_number", "")
+                ))
+                logger.info(f"Call ended: {call_id}, duration: {call_data.get('duration_ms')}ms, transcript save scheduled")
+            else:
+                logger.warning(f"Call ended: {call_id}, could not resolve restaurant_id for transcript save")
+
+            logger.info(f"Call ended: {call_id}, cart cleaned up")
 
         elif event_type == "call_analyzed":
             # Post-call analysis - this is the best time to fetch the transcript

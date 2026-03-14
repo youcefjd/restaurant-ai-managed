@@ -16,6 +16,20 @@ import logging
 import uuid
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
+# Default timezone for restaurants (Central Time)
+DEFAULT_TZ = ZoneInfo("America/Chicago")
+
+
+def _restaurant_now(account: dict = None) -> datetime:
+    """Get current time in the restaurant's timezone."""
+    tz_name = account.get("timezone", "America/Chicago") if account else "America/Chicago"
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = DEFAULT_TZ
+    return datetime.now(tz)
 
 from fastapi import APIRouter, Request, HTTPException, Depends, Header
 from fastapi.responses import JSONResponse
@@ -665,12 +679,14 @@ def fetch_menu_data(db: SupabaseDB, restaurant_id: int) -> Dict[str, Any]:
     return menu_data
 
 
-def parse_pickup_time(time_str: str) -> tuple[Optional[datetime], str]:
+def parse_pickup_time(time_str: str, local_now: datetime = None) -> tuple[Optional[datetime], str]:
     """Parse pickup time string into datetime and display string."""
     import re
 
     time_lower = time_str.lower().strip()
-    now = datetime.now()
+    now_raw = local_now or _restaurant_now()
+    # Work with naive datetimes internally (strip tzinfo)
+    now = now_raw.replace(tzinfo=None) if now_raw.tzinfo else now_raw
     is_tomorrow = 'tomorrow' in time_lower
 
     # Handle ASAP
@@ -822,8 +838,8 @@ async def check_customer(
                     close_h, close_m = map(int, closing_time.split(":"))
                     open_minutes = open_h * 60 + open_m
                     close_minutes = close_h * 60 + close_m
-                    now = datetime.now()
-                    now_minutes = now.hour * 60 + now.minute
+                    local_now = _restaurant_now(account)
+                    now_minutes = local_now.hour * 60 + local_now.minute
                     if now_minutes < open_minutes or now_minutes >= close_minutes:
                         is_open = False
                     def _to_12h(t):
@@ -1610,11 +1626,12 @@ async def create_order(
         tax = int(subtotal * tax_rate)
         total = subtotal + tax
 
-        # Parse pickup time
-        scheduled_time, pickup_display = parse_pickup_time(pickup_time)
+        # Parse pickup time using restaurant's local timezone
+        local_now = _restaurant_now(account)
+        scheduled_time, pickup_display = parse_pickup_time(pickup_time, local_now)
 
         # Validate pickup time is not in the past
-        if scheduled_time and scheduled_time < datetime.now():
+        if scheduled_time and scheduled_time < local_now.replace(tzinfo=None):
             return JSONResponse({
                 "success": False,
                 "message": "That pickup time has already passed. What time works for you today?"
@@ -1633,9 +1650,8 @@ async def create_order(
                 if scheduled_time:
                     pickup_minutes = scheduled_time.hour * 60 + scheduled_time.minute
                 else:
-                    # ASAP — check if restaurant is currently open
-                    now = datetime.now()
-                    pickup_minutes = now.hour * 60 + now.minute
+                    # ASAP — check if restaurant is currently open (local time)
+                    pickup_minutes = local_now.hour * 60 + local_now.minute
 
                 if pickup_minutes < open_minutes or pickup_minutes >= close_minutes:
                     def _to_12h(t):
@@ -1645,13 +1661,11 @@ async def create_order(
                         return f"{h}:{m:02d} {suffix}" if m else f"{h} {suffix}"
                     hours_str = f"{_to_12h(opening_time)} to {_to_12h(closing_time)}"
                     if scheduled_time:
-                        # Customer gave a specific time outside hours
                         return JSONResponse({
                             "success": False,
                             "message": f"That pickup time is outside our hours. We're open {hours_str}. Can you pick a time during those hours?"
                         })
                     else:
-                        # ASAP but restaurant is currently closed
                         max_adv = int(account.get("max_advance_order_days", 0))
                         if max_adv > 0:
                             msg = f"We're currently closed. Our hours are {hours_str}. Would you like to place an order for pickup tomorrow during our hours?"
@@ -1667,7 +1681,7 @@ async def create_order(
         # Validate advance order days
         max_advance_days = int(account.get("max_advance_order_days", 0))
         if scheduled_time:
-            days_ahead = (scheduled_time.date() - datetime.now().date()).days
+            days_ahead = (scheduled_time.date() - local_now.date()).days
             if days_ahead > max_advance_days:
                 if max_advance_days == 0:
                     return JSONResponse({

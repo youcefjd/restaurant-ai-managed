@@ -1364,7 +1364,7 @@ async def get_cart(
         message = f"You have {items_text}. Total is ${total / 100:.2f}. Anything else?"
 
         # Generate upsell suggestion based on cart contents and menu
-        suggestion = _generate_upsell_suggestion(items, menu_data if restaurant_id else None, db, restaurant_id)
+        suggestion = _generate_upsell_suggestion(items, None, db, restaurant_id)
 
         response = {
             "success": True,

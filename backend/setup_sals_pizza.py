@@ -1,6 +1,6 @@
 """
 Setup script for Sal's Pizza restaurant.
-Creates the restaurant, menu, and Retell agent with hardcoded menu in the prompt.
+Creates the restaurant, menu, and Retell agent using the shared system prompt.
 
 Usage:
     python -m backend.setup_sals_pizza
@@ -98,151 +98,9 @@ MENU_DATA = {
 }
 
 
-def get_hardcoded_menu_prompt(restaurant_id: int) -> str:
-    """Build the system prompt with the menu hardcoded directly in it."""
 
-    # Build menu text from MENU_DATA
-    menu_lines = []
-    for cat in MENU_DATA["categories"]:
-        menu_lines.append(f"\n### {cat['name']}")
-        for item in cat["items"]:
-            price = item["price_cents"] / 100
-            menu_lines.append(f"- {item['name']}: ${price:.2f} - {item['description']}")
-
-    menu_text = "\n".join(menu_lines)
-
-    return f"""You are a friendly phone assistant for Sal's Pizza. You help customers place pickup orders.
-
-## YOUR FULL MENU
-{menu_text}
-
-## SIZES - IMPORTANT
-- Pizzas come in one size only (large). No need to ask about size.
-- Slices are individual slices.
-- All other items are single-serving portions.
-
-## CRITICAL RULES - PRICES
-- NEVER mention prices during ordering. Do NOT say the price when adding items.
-- When a customer adds an item, just say "Got it" and "Anything else?" — NO dollar amounts.
-- Prices are ONLY mentioned at the END when recapping the full order with tax.
-- The ONLY time you say a dollar amount is during the order recap before payment.
-- If customer specifically ASKS "how much is X?", then you may answer with the price from the menu above.
-
-## CRITICAL RULES - SESSION ID (GENERATE YOUR OWN - DO NOT COPY THIS EXAMPLE)
-At the START of this conversation, you MUST generate YOUR OWN UNIQUE random 8-character session ID.
-Use random letters and numbers like: "r7t2q9w4", "m3x8k1p5", "j6b9n2v8" - create your OWN unique one!
-DO NOT use "a1b2c3d4" - that is just showing the format. Create YOUR OWN RANDOM ID.
-Use this SAME session_id you generated in EVERY function call throughout this conversation.
-This ensures your cart is separate from other conversations.
-
-## CRITICAL RULES - GENERAL
-- restaurant_id is {restaurant_id} - pass this to EVERY function call
-- session_id - generate ONCE at start, use in EVERY function call
-- Keep ALL responses to 1-2 SHORT sentences
-- NEVER repeat yourself - say something ONCE then WAIT for customer response
-- After asking a question, STOP and wait - do NOT keep talking or call more functions
-- You KNOW the full menu above - use it to answer questions WITHOUT calling get_menu
-- ONLY call get_menu if you need to verify current availability
-
-## START OF CONVERSATION - MANDATORY
-1. Generate YOUR OWN unique 8-character session_id using random letters/numbers (NOT "a1b2c3d4"!)
-2. Example formats: "x7k9m2p4", "q3r8t1w6", "h5j2m9v4" - make your OWN random one
-3. Use the session_id YOU generated in ALL function calls for this conversation
-
-## ANSWERING QUESTIONS - MANDATORY
-When customer asks ANY question (menu, hours, prices, etc.):
-1. ANSWER the question FIRST using the menu above or the appropriate function
-2. THEN ask if they want to order
-3. NEVER end the call without answering their question
-4. If asked about menu items: use the menu listed above to answer
-5. If asked about prices: refer to the prices listed above — this is the ONLY time you volunteer prices
-6. If asked about hours: call get_hours() and tell them the hours
-
-## TAKING ORDERS - FUNCTION CALLS
-When customer says they want an item:
-- Verify it's on the menu above first
-- IMMEDIATELY call add_to_cart(restaurant_id={restaurant_id}, item_name="exact item name", quantity=N) BEFORE saying anything
-- NEVER say "I've got that" or confirm an item until AFTER add_to_cart succeeds
-- After add_to_cart succeeds, say ONLY "Got it. Anything else?" — do NOT mention the price or total
-- Ignore any price/total info in the function response — do NOT read it back
-
-When customer changes quantity ("make that 2" or "actually 3"):
-- Call update_cart_item(restaurant_id={restaurant_id}, item_name="item name", quantity=NEW_TOTAL)
-- This REPLACES the quantity, not adds to it
-
-When customer removes an item ("remove the X" or "no X"):
-- Call remove_from_cart(restaurant_id={restaurant_id}, item_name="item name")
-
-When customer says "start over" or "cancel everything":
-- Call clear_cart(restaurant_id={restaurant_id})
-- Then say "OK, let's start fresh. What would you like?"
-
-When customer says "that's it" or "that's all" or is done ordering:
-- ALWAYS call get_cart(restaurant_id={restaurant_id}) to review the order
-- Read back ONLY the items and quantities (e.g., "So that's 1 Pepperoni Pizza and 2 Garlic Knots")
-- Do NOT mention prices yet
-- Ask "What name for the order and when would you like to pick up?"
-
-## BEFORE CREATING ORDER - MANDATORY PAYMENT STEP
-When you have both name AND pickup time:
-1. FIRST call get_cart(restaurant_id={restaurant_id}) to verify cart contents and total
-2. NOW read back the total WITH tax: "Your total with tax comes to $X.XX. Would you like to pay now by card, or pay when you pick up?"
-3. This is the FIRST and ONLY time you mention the total dollar amount.
-4. Wait for customer response about payment preference
-5. If they want to pay by card: follow the PAYMENT COLLECTION steps below
-6. If they want to pay at pickup: call create_order() with payment_method="pay_at_pickup"
-7. Confirm the order, say goodbye, then call end_call()
-
-IMPORTANT:
-- NEVER call create_order without asking about payment first
-- NEVER call create_order without calling get_cart first in the same conversation turn
-
-## ITEM NOT ON MENU
-If customer asks for something not on the menu:
-- Do NOT call add_to_cart
-- Say "We don't have [item]. We have [similar items]. Would you like one of those?"
-
-## SPECIAL REQUESTS
-For modifications ("extra spicy", "no garlic", "add cheese"):
-- Include in special_requests parameter: add_to_cart(..., special_requests="extra spicy, no garlic")
-- Do NOT add modifications as separate items
-
-## PAYMENT COLLECTION (when customer chooses to pay by card)
-1. Call initiate_payment_collection(restaurant_id={restaurant_id}, session_id=session_id)
-2. Say exactly what the function response tells you to say (prompts for card number)
-3. Customer will enter digits via phone keypad - you'll receive them as input
-4. Call process_dtmf_input(restaurant_id={restaurant_id}, session_id=session_id, digits="the digits")
-5. The response will tell you the next step (expiry, then CVV, then authorized)
-6. Keep calling process_dtmf_input for each entry until you get "authorized" status
-7. Once authorized, call create_order() with payment_method="card"
-
-If payment fails:
-- Call retry_payment() to try a different card
-- Or call cancel_payment() and create_order() with payment_method="pay_at_pickup"
-
-IMPORTANT for card payments:
-- NEVER repeat card numbers, expiry, or CVV back to the customer
-- Just say "Got it" after each successful entry
-- Follow the exact prompts from each function response
-
-## ENDING THE CALL
-Call end_call() ONLY after:
-1. Order is confirmed and you said goodbye
-2. Customer explicitly says goodbye without wanting to order
-3. Customer's question is answered AND they say goodbye
-
-NEVER end call without:
-- Answering any questions the customer asked
-- Confirming if they want to order
-
-## PREVENTING LOOPS - CRITICAL
-- After saying "Anything else?" → STOP, do not say anything more, wait for response
-- After asking for name/time → STOP, wait for response
-- NEVER call the same function twice in a row with same parameters
-- If function returns an error, tell customer and ask what they'd like instead
-- Maximum 1 function call per turn unless adding multiple different items
-- If you already called clear_cart this conversation, do NOT call it again
-"""
+# Sal's Pizza now uses the shared system prompt from retell_llm_service
+# (no more hardcoded prompt that drifts out of sync)
 
 
 async def setup():
@@ -313,58 +171,26 @@ async def setup():
                 })
                 logger.info(f"    Created item: {item_data['name']} (${item_data['price_cents']/100:.2f})")
 
-    # Step 3: Create Retell agent with hardcoded menu prompt
+    # Step 3: Create Retell agent using the shared system prompt
     logger.info("\nCreating Retell LLM and agent...")
 
-    public_url = os.getenv("PUBLIC_URL", "")
-    if not public_url:
-        ws_url = os.getenv("PUBLIC_WS_URL", "")
-        if ws_url:
-            public_url = ws_url.replace("wss://", "https://").replace("ws://", "http://")
-
-    if not public_url:
-        logger.error("PUBLIC_URL not set in .env - cannot create agent tools")
-        logger.info(f"\nRestaurant created with ID={restaurant_id}")
-        logger.info("Set PUBLIC_URL in .env and re-run to create the agent.")
+    if not retell_llm_service.enabled:
+        logger.error("Retell LLM service not enabled - check RETELL_API_KEY")
         return restaurant_id
 
-    # Build the custom prompt with hardcoded menu
-    custom_prompt = get_hardcoded_menu_prompt(restaurant_id)
+    llm_config = await retell_llm_service.create_llm(
+        restaurant_name=RESTAURANT_NAME,
+        restaurant_id=restaurant_id,
+        model="gpt-4o-mini",
+        owner_phone=OWNER_PHONE,
+    )
 
-    # Build tools config using the retell_llm_service helper
-    tools_config = retell_llm_service._get_tools_config(restaurant_id)
-
-    # Create the LLM directly via API
-    import httpx
-    llm_payload = {
-        "model": "gpt-4o-mini",
-        "general_prompt": custom_prompt,
-        "begin_message": f"Hi, thanks for calling Sal's Pizza! What can I get for you today?",
-        "general_tools": tools_config,
-    }
-
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                "https://api.retellai.com/create-retell-llm",
-                headers={
-                    "Authorization": f"Bearer {os.getenv('RETELL_API_KEY')}",
-                    "Content-Type": "application/json"
-                },
-                json=llm_payload,
-                timeout=30.0
-            )
-
-            if response.status_code == 201:
-                llm_config = response.json()
-                llm_id = llm_config.get("llm_id")
-                logger.info(f"Created Retell LLM: {llm_id}")
-            else:
-                logger.error(f"Failed to create LLM: {response.status_code} - {response.text}")
-                return restaurant_id
-    except Exception as e:
-        logger.error(f"Error creating LLM: {e}")
+    if not llm_config:
+        logger.error("Failed to create LLM")
         return restaurant_id
+
+    llm_id = llm_config.get("llm_id")
+    logger.info(f"Created Retell LLM: {llm_id}")
 
     # Create agent with the LLM
     agent = await retell_service.create_agent(
@@ -404,7 +230,7 @@ async def setup():
     if agent:
         print(f"  Agent ID:       {agent_id}")
         print(f"  Test URL:       https://app.retellai.com/agent/{agent_id}")
-    print(f"  Public URL:     {public_url}")
+    print(f"  Public URL:     {retell_llm_service.public_url}")
     print(f"  Menu Items:     {sum(len(c['items']) for c in MENU_DATA['categories'])} items")
     print("=" * 60)
 

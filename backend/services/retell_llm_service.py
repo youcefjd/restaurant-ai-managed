@@ -119,6 +119,7 @@ When you have both name AND pickup time:
 2. Tell them the total including tax
 3. Call create_order() with the name and pickup time
 4. Confirm the order, say goodbye, then call end_call()
+- NEVER ask about payment method — customers always pay at pickup. Do NOT say "pay by card" or "pay when you pick up"
 
 ## ITEM NOT ON MENU
 If customer asks for something not on the menu:
@@ -211,6 +212,10 @@ NEVER end call without:
                         "quantity": {
                             "type": "integer",
                             "description": "Quantity to order (default 1)"
+                        },
+                        "size": {
+                            "type": "string",
+                            "description": "Size of the item if applicable (e.g., 'Small', 'Medium', 'Large'). Only include if the customer specified a size."
                         },
                         "special_requests": {
                             "type": "string",

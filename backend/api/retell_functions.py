@@ -1033,7 +1033,7 @@ async def add_to_cart(
         item_price = item_price_cents / 100
         quantity_text = f"{quantity} " if quantity > 1 else ""
         special_text = f" with {special_requests}" if special_requests else ""
-        message = f"Got it, {quantity_text}{cart_item_name}{special_text} for ${item_price:.2f}. Your total is ${total / 100:.2f}. Anything else?"
+        message = f"Got it, {quantity_text}{cart_item_name}{special_text}. Anything else?"
 
         return JSONResponse({
             "success": True,
@@ -1112,7 +1112,7 @@ async def update_cart_item(
         tax = int(subtotal * tax_rate)
         total = subtotal + tax
 
-        message = f"Updated to {new_quantity} {item_name}. Your total is ${total / 100:.2f}. Anything else?"
+        message = f"Updated to {new_quantity} {item_name}. Anything else?"
 
         return JSONResponse({
             "success": True,
@@ -1227,7 +1227,7 @@ async def remove_from_cart(
         total = subtotal + tax
 
         if new_items:
-            message = f"Done, I removed the {item_name}. Your new total is ${total / 100:.2f}. Anything else?"
+            message = f"Done, I removed the {item_name}. Anything else?"
         else:
             message = f"Done, I removed the {item_name}. Your cart is now empty. What would you like to order?"
 

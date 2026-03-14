@@ -287,6 +287,10 @@ async def retell_webhook(request: Request, db: SupabaseDB = Depends(get_db)):
                     pass
 
             if restaurant_id:
+                # Wait briefly for Retell to finalize the transcript
+                # call_ended fires immediately but transcript may not be ready yet
+                await asyncio.sleep(3)
+
                 # Save transcript directly (don't rely on background task which can get lost)
                 try:
                     saved = await fetch_and_save_retell_transcript(
@@ -295,7 +299,17 @@ async def retell_webhook(request: Request, db: SupabaseDB = Depends(get_db)):
                         restaurant_phone=call_data.get("to_number", ""),
                         db=db
                     )
-                    logger.info(f"Call ended: {call_id}, transcript save={'OK' if saved else 'FAILED (no transcript yet)'}")
+                    if not saved:
+                        # Retry once after a longer delay — transcript may still be processing
+                        logger.info(f"Call ended: {call_id}, first transcript fetch returned empty, retrying in 5s")
+                        await asyncio.sleep(5)
+                        saved = await fetch_and_save_retell_transcript(
+                            call_id=call_id, restaurant_id=restaurant_id,
+                            customer_phone=call_data.get("from_number", ""),
+                            restaurant_phone=call_data.get("to_number", ""),
+                            db=db
+                        )
+                    logger.info(f"Call ended: {call_id}, transcript save={'OK' if saved else 'FAILED'}")
                 except Exception as e:
                     logger.error(f"Call ended: {call_id}, transcript save error: {e}")
             else:

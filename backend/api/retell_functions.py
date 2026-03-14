@@ -1608,8 +1608,14 @@ async def create_order(
         # If no separate location row, use the account id as restaurant_id
         location_id = restaurant["id"] if restaurant else restaurant_id
 
-        # Get or create customer by phone using upsert (atomic, no race condition)
-        customer_phone = cart.get("customer_phone", "")
+        # Get customer phone — try cart first, then active_calls as fallback
+        # Note: cart.get() returns None (not "") when key exists with null value
+        customer_phone = cart.get("customer_phone") or ""
+        if not customer_phone:
+            # Fallback: check active_calls (set by call_started webhook)
+            from backend.api.retell_voice import active_calls
+            call_context = active_calls.get(call_id, {})
+            customer_phone = call_context.get("from_number") or ""
         if not customer_phone:
             customer_phone = "unknown"
 
@@ -1630,8 +1636,17 @@ async def create_order(
         local_now = _restaurant_now(account)
         scheduled_time, pickup_display = parse_pickup_time(pickup_time, local_now)
 
+        # Make scheduled_time timezone-aware (parse_pickup_time returns naive local times)
+        if scheduled_time:
+            tz_name = account.get("timezone", "America/Chicago") if account else "America/Chicago"
+            try:
+                local_tz = ZoneInfo(tz_name)
+            except Exception:
+                local_tz = DEFAULT_TZ
+            scheduled_time = scheduled_time.replace(tzinfo=local_tz)
+
         # Validate pickup time is not in the past
-        if scheduled_time and scheduled_time < local_now.replace(tzinfo=None):
+        if scheduled_time and scheduled_time < local_now:
             return JSONResponse({
                 "success": False,
                 "message": "That pickup time has already passed. What time works for you today?"
@@ -1734,7 +1749,7 @@ async def create_order(
                     toast_order_payload = toast_service.build_toast_order(
                         items=items,
                         customer_name=customer_name,
-                        customer_phone=cart.get("customer_phone", ""),
+                        customer_phone=customer_phone,
                         scheduled_time=scheduled_time,
                         menu_item_mappings=menu_item_mappings,
                         restaurant_guid=toast_config["restaurant_guid"]
@@ -1802,9 +1817,9 @@ async def create_order(
             "restaurant_id": location_id,
             "customer_id": customer["id"],
             "customer_name": customer_name,
-            "customer_phone": cart.get("customer_phone", ""),
-            "order_date": datetime.now().isoformat(),
-            "scheduled_time": scheduled_time.isoformat() if scheduled_time else None,
+            "customer_phone": customer_phone,
+            "order_date": _restaurant_now(account).isoformat(),
+            "scheduled_time": scheduled_time.astimezone(ZoneInfo("UTC")).isoformat() if scheduled_time else None,
             "delivery_address": "Pickup",
             "order_items": json.dumps([
                 {

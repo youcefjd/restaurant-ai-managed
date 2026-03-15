@@ -1,0 +1,148 @@
+{
+  "business_name": "Marco's Pizza",
+  "owner_name": "Store Manager",
+  "owner_email": "marcos.research@belltab.com",
+  "owner_phone": "+15125025600",
+  "address": "11011 Research Blvd, Austin, TX 78759",
+  "opening_time": "10:00",
+  "closing_time": "02:00",
+  "operating_days": [0, 1, 2, 3, 4, 5, 6],
+  "timezone": "America/Chicago",
+  "tax_rate": 8.25,
+  "area_code": 512,
+  "voice_id": "11labs-Myra",
+  "menu": {
+    "categories": [
+      {
+        "name": "Magnifico Pizzas",
+        "items": [
+          {"name": "Triple Pepperoni Magnifico", "description": "Shredded pepperoni, classic pepperoni, Old World Pepperoni, romesan seasoning, garlic sauce crust", "price_cents": 1679},
+          {"name": "Hot Honey Magnifico", "description": "Traditional pepperoni, crispy Old World Pepperoni, romesan seasoning, Mike's Hot Honey drizzle", "price_cents": 1679},
+          {"name": "Pepperoni Magnifico", "description": "Pepperoni, Old World Pepperoni, romesan seasoning, garlic sauce crust", "price_cents": 1299},
+          {"name": "Sausage Magnifico", "description": "Bold Old World Sausage, Italian sausage, romesan seasoning, garlic crust", "price_cents": 1679},
+          {"name": "Ultimate Magnifico", "description": "Pepperoni, Old World Pepperoni, bold Old World Sausage, Italian sausage", "price_cents": 1679}
+        ]
+      },
+      {
+        "name": "Specialty Pizzas",
+        "items": [
+          {"name": "All Meat Pizza", "description": "Pepperoni, ham, Italian sausage, bacon", "price_cents": 1679},
+          {"name": "Deluxe Pizza", "description": "Pepperoni, Italian sausage, mushrooms, green peppers, onions", "price_cents": 1499},
+          {"name": "Garden Pizza", "description": "Mushrooms, black olives, onions, sliced Roma tomatoes, feta cheese", "price_cents": 1499},
+          {"name": "Hawaiian Chicken Pizza", "description": "Ham, grilled chicken, bacon, pineapple", "price_cents": 1679},
+          {"name": "The Philly Pizza", "description": "White cheese sauce, shaved steak, mushrooms, green peppers, onions", "price_cents": 1679},
+          {"name": "White Cheezy Pizza", "description": "White sauce, bacon, onions, sliced Roma tomatoes", "price_cents": 1679},
+          {"name": "The Big Cheese Pizza", "description": "Three signature cheeses plus cheddar, shaved Parmesan, grated Parmesan", "price_cents": 1499},
+          {"name": "Chicken Fresco Pizza", "description": "Grilled chicken, bacon, onions, tomatoes, three fresh cheeses plus cheddar", "price_cents": 1679},
+          {"name": "The Works Pizza", "description": "Pepperoni, ham, green peppers, Italian sausage, mushrooms, bacon, onions", "price_cents": 1679},
+          {"name": "Pepperoni Melt Pizza", "description": "Extra cheese, extra pepperoni", "price_cents": 1499},
+          {"name": "Grilled Chicken Florentine Pizza", "description": "White sauce, grilled chicken, spinach, red onions, tomatoes, feta cheese", "price_cents": 1679},
+          {"name": "BBQ Chicken Pizza", "description": "Grilled chicken, bacon, onions, tangy BBQ sauce", "price_cents": 1679}
+        ]
+      },
+      {
+        "name": "Build Your Own Pizza",
+        "items": [
+          {"name": "Medium 1-Topping Pizza", "description": "Medium pizza with your choice of 1 topping", "price_cents": 899},
+          {"name": "Large 1-Topping Pizza", "description": "Large pizza with your choice of 1 topping", "price_cents": 1099},
+          {"name": "XL 1-Topping Pizza", "description": "Extra-large pizza with your choice of 1 topping", "price_cents": 1399}
+        ]
+      },
+      {
+        "name": "Pizzoli",
+        "items": [
+          {"name": "Pepperoni Pizzoli", "description": "House-made dough stuffed with pepperoni and 4 cheeses, served with original sauce", "price_cents": 899},
+          {"name": "Pepperoni & Sausage Pizzoli", "description": "Stuffed with pepperoni, Italian sausage and 4 cheeses, served with original sauce", "price_cents": 899},
+          {"name": "Buffalo Chicken Pizzoli", "description": "Stuffed with grilled chicken, buffalo sauce and 4 cheeses, served with ranch", "price_cents": 899},
+          {"name": "Chicken Bacon Ranch Pizzoli", "description": "Stuffed with grilled chicken, bacon and 4 cheeses, served with ranch", "price_cents": 899}
+        ]
+      },
+      {
+        "name": "Pizza Bowls",
+        "items": [
+          {"name": "Build Your Own Bowl", "description": "Crustless pizza baked in a bowl with your choice of 4 toppings", "price_cents": 899},
+          {"name": "All Meat Bowl", "description": "Pepperoni, ham, Italian sausage, bacon, romesan seasoning", "price_cents": 899},
+          {"name": "Deluxe Bowl", "description": "Pepperoni, Italian sausage, mushrooms, green peppers, onions", "price_cents": 899},
+          {"name": "Philly Bowl", "description": "White cheese sauce, shaved steak, mushrooms, green peppers, onions", "price_cents": 899},
+          {"name": "Meatball Bake", "description": "Meatballs and sausage baked with original sauce and three signature cheeses", "price_cents": 899}
+        ]
+      },
+      {
+        "name": "Calzones",
+        "items": [
+          {"name": "Build Your Own Calzone", "description": "House-made dough stuffed with up to five toppings of your choice", "price_cents": 999},
+          {"name": "Pepperoni Calzone", "description": "Stuffed with pepperoni and three fresh signature cheeses", "price_cents": 999},
+          {"name": "Deluxe Calzone", "description": "Stuffed with pepperoni, Italian sausage, mushrooms, green peppers, onions", "price_cents": 999},
+          {"name": "Chicken Classico Calzone", "description": "Stuffed with chicken, bacon, and onions, served with ranch", "price_cents": 999},
+          {"name": "All Meat Calzone", "description": "Stuffed with pepperoni, ham, Italian sausage, and bacon", "price_cents": 999}
+        ]
+      },
+      {
+        "name": "Subs",
+        "items": [
+          {"name": "Chicken Club Sub", "description": "Grilled chicken, bacon, Roma tomatoes, mayo and three signature cheeses", "price_cents": 1049},
+          {"name": "Steak & Cheese Sub", "description": "Steak, mushrooms, mayo and three signature cheeses", "price_cents": 1049},
+          {"name": "Ham & Cheese Sub", "description": "Ham, provolone, Roma tomatoes, red onions and mayo", "price_cents": 1049},
+          {"name": "Meatball Sub", "description": "Meatballs, provolone cheese and original sauce", "price_cents": 1049},
+          {"name": "Veggie Sub", "description": "Mushrooms, green peppers, red onions, olives, tomatoes, cheddar", "price_cents": 1049},
+          {"name": "Pizza Melt Sub", "description": "Pepperoni, mushrooms, original sauce and three signature cheeses", "price_cents": 1049},
+          {"name": "Italiano Sub", "description": "Ham, salami, provolone, banana peppers, Roma tomatoes, red onions", "price_cents": 1049}
+        ]
+      },
+      {
+        "name": "Wings",
+        "items": [
+          {"name": "Boneless Wings 10pc", "description": "All-white meat breaded chicken, oven-baked with your choice of sauce", "price_cents": 999},
+          {"name": "Boneless Wings 20pc", "description": "All-white meat breaded chicken, oven-baked with your choice of sauce", "price_cents": 1699},
+          {"name": "Buffalo Wings 10pc", "description": "Traditional wings with classic buffalo sauce", "price_cents": 1099},
+          {"name": "Buffalo Wings 20pc", "description": "Traditional wings with classic buffalo sauce", "price_cents": 1899},
+          {"name": "BBQ Wings 10pc", "description": "Traditional wings with sweet and smoky BBQ sauce", "price_cents": 1099},
+          {"name": "BBQ Wings 20pc", "description": "Traditional wings with sweet and smoky BBQ sauce", "price_cents": 1899},
+          {"name": "Garlic Parmesan Wings 10pc", "description": "Traditional wings with roasted garlic parmesan sauce", "price_cents": 1099},
+          {"name": "Sweet Red Chili Wings 10pc", "description": "Traditional wings with sweet red chili sauce", "price_cents": 1099},
+          {"name": "Plain Wings 10pc", "description": "Traditional wings with your choice of sauce on the side", "price_cents": 1099}
+        ]
+      },
+      {
+        "name": "Breads & Sides",
+        "items": [
+          {"name": "CheezyBread", "description": "Hand-made dough with three signature cheeses and garlic sauce, with pizza sauce and ranch", "price_cents": 599},
+          {"name": "Pepperoni Bread", "description": "House-made dough topped with shredded pepperoni and cheese, 16 pieces", "price_cents": 699},
+          {"name": "Breadsticks", "description": "House-made dough with garlic sauce and romesan seasoning, 5 sticks", "price_cents": 499}
+        ]
+      },
+      {
+        "name": "Salads",
+        "items": [
+          {"name": "Italian Chef Salad", "description": "Ham, salami, provolone, tomatoes, red onions, croutons, Italian dressing", "price_cents": 1049},
+          {"name": "Garden Salad", "description": "Cheddar, olives, red onions, green peppers, tomatoes, croutons, ranch", "price_cents": 1049},
+          {"name": "Greek Salad", "description": "Feta cheese, black olives, tomatoes, red onions, banana peppers, Greek dressing", "price_cents": 1049},
+          {"name": "Chicken Caesar Salad", "description": "Grilled chicken, parmesan cheese, croutons, caesar dressing", "price_cents": 1049}
+        ]
+      },
+      {
+        "name": "Desserts",
+        "items": [
+          {"name": "CinnaSquares", "description": "Fresh-baked buttery pastry with cinnamon sugar, served with vanilla icing, 16 pieces", "price_cents": 599},
+          {"name": "Double Chocolate Brownie", "description": "Made with Ghirardelli chocolate, topped with Ghirardelli chocolate sauce", "price_cents": 699},
+          {"name": "Chocolate CinnaSquares", "description": "House-made dough with cinnamon-sugar and Ghirardelli chocolate sauce, 16 pieces", "price_cents": 699}
+        ]
+      },
+      {
+        "name": "Beverages",
+        "items": [
+          {"name": "Pepsi", "description": "20oz bottle", "price_cents": 249},
+          {"name": "Diet Pepsi", "description": "20oz bottle", "price_cents": 249},
+          {"name": "Mountain Dew", "description": "20oz bottle", "price_cents": 249},
+          {"name": "Dr Pepper", "description": "20oz bottle", "price_cents": 249},
+          {"name": "Starry", "description": "20oz bottle", "price_cents": 249},
+          {"name": "Dole Lemonade", "description": "20oz bottle", "price_cents": 249},
+          {"name": "Pure Leaf Sweet Tea", "description": "18.5oz bottle", "price_cents": 249},
+          {"name": "Pure Leaf Unsweet Tea", "description": "18.5oz bottle", "price_cents": 249},
+          {"name": "Aquafina Water", "description": "20oz bottle", "price_cents": 199},
+          {"name": "Pepsi 4-Pack", "description": "4 assorted 20oz Pepsi drinks of your choice", "price_cents": 799}
+        ]
+      }
+    ]
+  }
+}

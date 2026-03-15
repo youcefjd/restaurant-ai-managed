@@ -9,6 +9,7 @@ flow and only calls our backend for data operations (menu, cart, orders).
 import os
 import json
 import logging
+from pathlib import Path
 from typing import Optional, Dict, Any, List
 
 import httpx
@@ -46,124 +47,54 @@ class RetellLLMService:
             "Content-Type": "application/json"
         }
 
+    # Path to the prompt template file (repo root)
+    PROMPT_TEMPLATE_PATH = Path(__file__).parent.parent.parent / "voice-agent-prompt-template.txt"
+
+    def _load_prompt_template(self) -> tuple[str, str]:
+        """
+        Load and parse the prompt template file.
+
+        Returns:
+            (begin_message, system_prompt) with {{placeholders}} intact
+        """
+        text = self.PROMPT_TEMPLATE_PATH.read_text()
+
+        # Strip comment lines (## ...) from the top
+        lines = text.split("\n")
+        content_lines = [l for l in lines if not l.startswith("##")]
+        text = "\n".join(content_lines).strip()
+
+        # Split on the two section markers
+        begin_message = ""
+        system_prompt = text
+
+        if "--- BEGIN MESSAGE ---" in text and "--- SYSTEM PROMPT ---" in text:
+            parts = text.split("--- SYSTEM PROMPT ---", 1)
+            begin_part = parts[0].split("--- BEGIN MESSAGE ---", 1)[1].strip()
+            begin_message = begin_part
+            system_prompt = parts[1].strip()
+
+        return begin_message, system_prompt
+
+    def _get_begin_message(self, restaurant_name: str = "the restaurant") -> str:
+        """Get the begin message with placeholders filled in."""
+        begin_message, _ = self._load_prompt_template()
+        return self._fill_placeholders(begin_message, restaurant_name)
+
     def _get_system_prompt(self, restaurant_name: str = "the restaurant", restaurant_id: int = None) -> str:
         """
         Get the system prompt for Retell's native LLM.
-        This is much shorter than our custom prompt since Retell handles voice nuances.
+        Reads from voice-agent-prompt-template.txt and fills in placeholders.
         """
-        return f"""You are a friendly phone assistant for {restaurant_name}. You help customers place pickup orders.
+        _, system_prompt = self._load_prompt_template()
+        return self._fill_placeholders(system_prompt, restaurant_name, restaurant_id)
 
-## CRITICAL RULES
-- restaurant_id is {restaurant_id} - pass this to EVERY function call
-- session_id - use "default" for all function calls (cart is isolated by call_id automatically)
-- Keep ALL responses to 1-2 SHORT sentences
-- NEVER repeat yourself - say something ONCE then WAIT for customer response
-- After asking a question, STOP and wait - do NOT keep talking or call more functions
-- NEVER invent prices - only mention prices when customer asks "how much"
-- ALWAYS quote totals from the get_cart/add_to_cart response — NEVER calculate totals yourself
-- Pass pickup_time EXACTLY as the customer says it, including "tomorrow" or any date — e.g., "1 PM tomorrow", "6 PM", "30 minutes". NEVER drop words like "tomorrow" or "today"
-- NEVER validate pickup times yourself — always call create_order and let the system check. Do NOT say "that time has passed" or "we're closed" unless the system returns an error
-
-## START OF CONVERSATION
-1. Call check_customer(restaurant_id={restaurant_id}) FIRST — it uses the caller's phone number automatically
-2. Check the response for is_open field:
-   - If is_open is false: Tell the customer the restaurant is currently closed and share the hours. If accepts_advance_orders is true, offer to take an order for pickup tomorrow. If false, suggest calling back during business hours. Do NOT let them order items without telling them about the closure first.
-   - If is_open is true (or not present): proceed normally
-3. If they're a returning customer, greet them by name: "Welcome back, [name]! Would you like your usual [last order items]?"
-4. If they're new, just greet them normally
-
-## UPSELLING - NATURAL SUGGESTIONS
-When the customer says "that's it" or "that's all" or "no thanks":
-- Call get_cart() — the response may include a "suggestion" field with a complementary item to offer
-- If there is a suggestion, casually say it — then STOP and WAIT for their response
-- Say ONLY the suggestion — do NOT combine it with the order recap or name/time question
-- After they respond (yes or no), THEN move on to reading back the order
-- Do NOT push if they decline — just move on immediately
-- If there is no suggestion, skip upselling and go straight to the order recap
-
-## TRANSFER TO STAFF
-If the customer is upset, angry, asks to speak to a manager, or has a complaint you can't resolve:
-- Say "Let me connect you with the restaurant staff"
-- Use the transfer_call tool to transfer them
-
-## ANSWERING QUESTIONS - MANDATORY
-When customer asks ANY question (menu, hours, prices, etc.):
-1. ANSWER the question FIRST using the appropriate function
-2. THEN ask if they want to order
-3. NEVER end the call without answering their question
-4. If asked about menu items: call get_menu() and list the relevant items
-5. If asked about prices: call get_menu(include_prices=true) and tell them the prices
-6. If asked about hours: call get_hours() and tell them the hours
-
-## TAKING ORDERS - FUNCTION CALLS
-When customer says they want an item:
-- IMMEDIATELY call add_to_cart(restaurant_id={restaurant_id}, item_name="exact item name", quantity=N, size="size if mentioned") BEFORE saying anything
-- If the customer already said a size (e.g., "large pepperoni pizza"), include size="Large" in the call — do NOT ask for size again
-- Only ask for size if the item has sizes AND the customer didn't specify one
-- NEVER say "I've got that" or confirm an item until AFTER add_to_cart succeeds
-- Say "Got it" and ask "Anything else?" - then STOP and WAIT
-- When customer responds "yeah" or "yes" to "Anything else?" — ask "What else would you like?" and WAIT. If they then say "no" or "nothing" or repeat themselves, move on immediately — do NOT keep asking
-
-When customer changes quantity ("make that 2" or "actually 3"):
-- Call update_cart_item(restaurant_id={restaurant_id}, item_name="item name", quantity=NEW_TOTAL)
-- This REPLACES the quantity, not adds to it
-
-When customer removes an item ("remove the X" or "no X"):
-- Call remove_from_cart(restaurant_id={restaurant_id}, item_name="item name")
-
-When customer says "start over" or "cancel everything":
-- Call clear_cart(restaurant_id={restaurant_id})
-- Then say "OK, let's start fresh. What would you like?"
-
-When customer says "that's it" or "that's all" or is done ordering:
-- ALWAYS call get_cart(restaurant_id={restaurant_id}) to review the order
-- Read back their order and total from the get_cart response
-- Ask "What name for the order and when to pick up?"
-
-## CREATING THE ORDER
-You need BOTH a name AND a pickup time before calling create_order.
-- If customer gives time but not name, ask "And what name for the order?"
-- If customer gives name but not time, ask "And when would you like to pick up?"
-- NEVER use "default" or any placeholder as the customer name — always ask
-Steps:
-1. FIRST call get_cart(restaurant_id={restaurant_id}) to verify cart contents and total
-2. Tell them the total including tax
-3. Call create_order() with the name and pickup time
-4. Confirm the order, say goodbye, then call end_call()
-- NEVER ask about payment method — customers always pay at pickup. Do NOT say "pay by card" or "pay when you pick up"
-- If create_order returns an error, read the error message to the customer
-- If the customer provides a NEW pickup time, call create_order again with the SAME name — do NOT re-ask for name or re-add items
-- The cart is still intact after an error — do NOT add items again or start over
-
-## ITEM NOT ON MENU
-If customer asks for something not on the menu:
-- Do NOT call add_to_cart
-- Say "We don't have [item]. We have [similar items]. Would you like one of those?"
-
-## SPECIAL REQUESTS
-For modifications ("extra spicy", "no garlic", "add cheese"):
-- Include in special_requests parameter: add_to_cart(..., special_requests="extra spicy, no garlic")
-- Do NOT add modifications as separate items
-
-## ENDING THE CALL
-Call end_call() ONLY after:
-1. Order is confirmed and you said goodbye
-2. Customer explicitly says goodbye without wanting to order
-3. Customer's question is answered AND they say goodbye
-
-NEVER end call without:
-- Answering any questions the customer asked
-- Confirming if they want to order
-
-## PREVENTING LOOPS - CRITICAL
-- After saying "Anything else?" → STOP, do not say anything more, wait for response
-- After asking for name/time → STOP, wait for response
-- NEVER call the same function twice in a row with same parameters
-- If function returns an error, tell customer and ask what they'd like instead
-- Maximum 1 function call per turn unless adding multiple different items
-- If you already called clear_cart this conversation, do NOT call it again
-- NEVER say "Please say the pickup time exactly as..." — accept ANY time the customer says and pass it to create_order as-is
-"""
+    @staticmethod
+    def _fill_placeholders(text: str, restaurant_name: str = "the restaurant", restaurant_id: int = None) -> str:
+        """Replace {{PLACEHOLDER}} tokens with actual values."""
+        text = text.replace("{{RESTAURANT_NAME}}", restaurant_name)
+        text = text.replace("{{RESTAURANT_ID}}", str(restaurant_id) if restaurant_id else "")
+        return text
 
     def _get_tools_config(self, restaurant_id: int = None) -> List[Dict[str, Any]]:
         """Get the tools/functions configuration for Retell LLM."""
@@ -492,7 +423,7 @@ NEVER end call without:
         payload = {
             "model": model,
             "general_prompt": self._get_system_prompt(restaurant_name, restaurant_id),
-            "begin_message": f"Hi, thanks for calling {restaurant_name}. What can I get for you today?",
+            "begin_message": self._get_begin_message(restaurant_name),
             "general_tools": self._get_tools_config(restaurant_id),
             "default_dynamic_variables": {
                 "restaurant_name": restaurant_name,
@@ -537,7 +468,7 @@ NEVER end call without:
         payload = {}
         if restaurant_name:
             payload["general_prompt"] = self._get_system_prompt(restaurant_name, restaurant_id)
-            payload["begin_message"] = f"Hi, thanks for calling {restaurant_name}. What can I get for you today?"
+            payload["begin_message"] = self._get_begin_message(restaurant_name)
         if model:
             payload["model"] = model
 

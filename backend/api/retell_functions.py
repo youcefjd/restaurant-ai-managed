@@ -844,8 +844,15 @@ async def check_customer(
                     close_minutes = close_h * 60 + close_m
                     local_now = _restaurant_now(account)
                     now_minutes = local_now.hour * 60 + local_now.minute
-                    if now_minutes < open_minutes or now_minutes >= close_minutes:
-                        is_open = False
+                    # Handle overnight hours (e.g., 10:00 AM to 2:00 AM)
+                    if close_minutes <= open_minutes:
+                        # Overnight: open if now >= open OR now < close
+                        if now_minutes < open_minutes and now_minutes >= close_minutes:
+                            is_open = False
+                    else:
+                        # Same-day: open if open <= now < close
+                        if now_minutes < open_minutes or now_minutes >= close_minutes:
+                            is_open = False
                     def _to_12h(t):
                         h, m = map(int, t.split(":"))
                         suffix = "AM" if h < 12 else "PM"
@@ -1677,7 +1684,15 @@ async def create_order(
                     # ASAP — check if restaurant is currently open (local time)
                     pickup_minutes = local_now.hour * 60 + local_now.minute
 
-                if pickup_minutes < open_minutes or pickup_minutes >= close_minutes:
+                # Handle overnight hours (e.g., 10:00 AM to 2:00 AM)
+                if close_minutes <= open_minutes:
+                    # Overnight: valid if pickup >= open OR pickup < close
+                    outside_hours = pickup_minutes < open_minutes and pickup_minutes >= close_minutes
+                else:
+                    # Same-day: valid if open <= pickup < close
+                    outside_hours = pickup_minutes < open_minutes or pickup_minutes >= close_minutes
+
+                if outside_hours:
                     def _to_12h(t):
                         h, m = map(int, t.split(":"))
                         suffix = "AM" if h < 12 else "PM"

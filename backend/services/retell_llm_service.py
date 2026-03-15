@@ -59,9 +59,9 @@ class RetellLLMService:
         """
         text = self.PROMPT_TEMPLATE_PATH.read_text()
 
-        # Strip comment lines (## ...) from the top
+        # Strip file header comments (### ...) but keep prompt section headers (## ...)
         lines = text.split("\n")
-        content_lines = [l for l in lines if not l.startswith("##")]
+        content_lines = [l for l in lines if not l.startswith("###")]
         text = "\n".join(content_lines).strip()
 
         # Split on the two section markers

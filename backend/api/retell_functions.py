@@ -1721,6 +1721,19 @@ async def create_order(
         max_advance_days = int(account.get("max_advance_order_days", 0))
         if scheduled_time:
             days_ahead = (scheduled_time.date() - local_now.date()).days
+            # For overnight hours (e.g., 10 AM - 2 AM), a pickup time after midnight
+            # but before closing is still part of the current business day
+            if days_ahead == 1 and opening_time and closing_time:
+                try:
+                    open_h, open_m = map(int, opening_time.split(":"))
+                    close_h, close_m = map(int, closing_time.split(":"))
+                    close_mins = close_h * 60 + close_m
+                    open_mins = open_h * 60 + open_m
+                    pickup_mins = scheduled_time.hour * 60 + scheduled_time.minute
+                    if close_mins <= open_mins and pickup_mins < close_mins:
+                        days_ahead = 0  # Treat as same business day
+                except (ValueError, AttributeError):
+                    pass
             if days_ahead > max_advance_days:
                 if max_advance_days == 0:
                     return JSONResponse({

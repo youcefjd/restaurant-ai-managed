@@ -197,7 +197,7 @@ export default function LandingPage() {
           <div className="relative w-full rounded-2xl overflow-hidden border border-[--border]" style={{ paddingBottom: '56.25%' }}>
             <iframe
               className="absolute inset-0 w-full h-full"
-              src="https://www.youtube.com/embed/JEBXIFSeI14"
+              src="https://www.youtube.com/embed/T2pwK4cUC7s"
               title="Belltab AI Demo"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
               allowFullScreen

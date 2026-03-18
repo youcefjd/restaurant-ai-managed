@@ -704,6 +704,10 @@ def parse_pickup_time(time_str: str, local_now: datetime = None) -> tuple[Option
     if time_lower in ["asap", "now", "as soon as possible", "right now"]:
         return None, "ASAP"
 
+    # Handle bare "tomorrow" with no time — reject, need a specific time
+    if time_lower in ["tomorrow", "tmrw", "tmr"] or time_lower.strip() == "tomorrow":
+        return "NEED_TIME", "tomorrow"
+
     # ---- Word-to-number conversion (do this FIRST so all later checks see digits) ----
     word_to_num = {
         'one': '1', 'two': '2', 'three': '3', 'four': '4', 'five': '5',
@@ -1724,6 +1728,13 @@ async def create_order(
         # Parse pickup time using restaurant's local timezone
         local_now = _restaurant_now(account)
         scheduled_time, pickup_display = parse_pickup_time(pickup_time, local_now)
+
+        # Handle "tomorrow" without a specific time
+        if scheduled_time == "NEED_TIME":
+            return JSONResponse({
+                "success": False,
+                "message": "What time tomorrow would you like to pick up?"
+            })
 
         # Make scheduled_time timezone-aware (parse_pickup_time returns naive local times)
         if scheduled_time:

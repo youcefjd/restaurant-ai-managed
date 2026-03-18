@@ -262,7 +262,8 @@ class UpdateCartItemArgs(BaseModel):
     restaurant_id: Optional[int] = None
     session_id: Optional[str] = Field(default=None, max_length=20)
     item_name: Optional[str] = None
-    quantity: Optional[int] = Field(default=1, ge=1, le=99)
+    quantity: Optional[int] = Field(default=None, ge=1, le=99)
+    special_requests: Optional[str] = None
 
 
 class UpdateCartItemRequest(BaseModel):
@@ -274,7 +275,8 @@ class UpdateCartItemRequest(BaseModel):
     restaurant_id: Optional[int] = None
     session_id: Optional[str] = Field(default=None, max_length=20)
     item_name: Optional[str] = None
-    quantity: int = Field(default=1, ge=1, le=99)
+    quantity: Optional[int] = Field(default=None, ge=1, le=99)
+    special_requests: Optional[str] = None
 
     def get_restaurant_id(self) -> Optional[int]:
         if self.args and self.args.restaurant_id:
@@ -301,10 +303,15 @@ class UpdateCartItemRequest(BaseModel):
             return self.args.item_name
         return self.item_name
 
-    def get_quantity(self) -> int:
-        if self.args and self.args.quantity:
+    def get_quantity(self) -> Optional[int]:
+        if self.args and self.args.quantity is not None:
             return self.args.quantity
         return self.quantity
+
+    def get_special_requests(self) -> Optional[str]:
+        if self.args and self.args.special_requests is not None:
+            return self.args.special_requests
+        return self.special_requests
 
 
 class RemoveFromCartArgs(BaseModel):
@@ -1288,8 +1295,9 @@ async def update_cart_item(
     _verified: bool = Depends(verify_retell_request)
 ):
     """
-    Update the quantity of an item in the cart.
-    This REPLACES the quantity, not adds to it.
+    Update an item in the cart: quantity, special requests, or both.
+    Quantity REPLACES the old value (does not add).
+    Special requests REPLACES the old value.
     """
     try:
         restaurant_id = request.get_restaurant_id()
@@ -1298,6 +1306,7 @@ async def update_cart_item(
         session_id = request.get_session_id()
         item_name = request.get_item_name()
         new_quantity = request.get_quantity()
+        new_special_requests = request.get_special_requests()
 
         cart_key = get_unique_cart_key(call_id, agent_id, restaurant_id, session_id)
         cart = cart_service.get_cart(cart_key, db)
@@ -1312,19 +1321,33 @@ async def update_cart_item(
 
         # Find the item
         item_name_lower = item_name.lower()
-        found = False
+        found_item = None
         for item in items:
             if item.get("name", "").lower() == item_name_lower or item_name_lower in item.get("name", "").lower():
-                item["quantity"] = new_quantity
-                found = True
-                logger.info(f"Updated cart item: {item['name']} to quantity {new_quantity}")
+                found_item = item
                 break
 
-        if not found:
+        if not found_item:
             return JSONResponse({
                 "success": False,
                 "message": f"I don't see {item_name} in your order. Would you like to add it?"
             })
+
+        # Apply updates
+        changes = []
+        if new_quantity is not None:
+            found_item["quantity"] = new_quantity
+            changes.append(f"quantity to {new_quantity}")
+        if new_special_requests is not None:
+            old_sr = found_item.get("special_requests", "")
+            if old_sr:
+                # Append to existing special requests
+                found_item["special_requests"] = f"{old_sr}; {new_special_requests}"
+            else:
+                found_item["special_requests"] = new_special_requests
+            changes.append(f"special requests")
+
+        logger.info(f"Updated cart item: {found_item['name']} — {', '.join(changes)}")
 
         # Save updated cart
         cart_service.save_cart(cart_key, items, db)
@@ -1338,13 +1361,19 @@ async def update_cart_item(
         tax = int(subtotal * tax_rate)
         total = subtotal + tax
 
-        message = f"Updated to {new_quantity} {item_name}. Anything else?"
+        if new_special_requests and new_quantity is not None:
+            message = f"Updated {found_item['name']} to {new_quantity} with {found_item['special_requests']}. Anything else?"
+        elif new_special_requests:
+            message = f"Added {new_special_requests} to your {found_item['name']}. Anything else?"
+        else:
+            message = f"Updated to {new_quantity} {found_item['name']}. Anything else?"
 
         return JSONResponse({
             "success": True,
             "message": message,
-            "updated_item": item_name,
-            "new_quantity": new_quantity,
+            "updated_item": found_item["name"],
+            "new_quantity": found_item["quantity"],
+            "special_requests": found_item.get("special_requests", ""),
             "cart_total": f"${total / 100:.2f}",
             "cart_item_count": sum(item["quantity"] for item in items)
         })

@@ -177,7 +177,7 @@ class RetellLLMService:
             {
                 "type": "custom",
                 "name": "update_cart_item",
-                "description": "Update the quantity of an item already in the cart. Call when customer says 'make that 2' or 'actually 3 of those'. This REPLACES the quantity.",
+                "description": "Update an item already in the cart. Use this to change quantity OR add/modify special requests (e.g. 'add extra cheese to the pizza', 'make that 2', 'no onions on the burger'). Do NOT call add_to_cart to modify an existing item — use this instead.",
                 "url": f"{base_url}/update_cart_item",
                 "method": "POST",
                 "parameters": {
@@ -193,14 +193,18 @@ class RetellLLMService:
                         },
                         "item_name": {
                             "type": "string",
-                            "description": "Name of the item to update"
+                            "description": "Name of the item to update (must match an item in the cart)"
                         },
                         "quantity": {
                             "type": "integer",
-                            "description": "New quantity (replaces old quantity, does not add)"
+                            "description": "New quantity (replaces old quantity). Omit if only changing special requests."
+                        },
+                        "special_requests": {
+                            "type": "string",
+                            "description": "Special requests to add (e.g. 'extra cheese', 'no onions'). Appended to any existing special requests."
                         }
                     },
-                    "required": ["restaurant_id", "session_id", "item_name", "quantity"]
+                    "required": ["restaurant_id", "session_id", "item_name"]
                 },
                 "speak_during_execution": False,
                 "speak_after_execution": True,

@@ -69,6 +69,10 @@ When customer changes quantity ("make that 2" or "actually 3"):
 - Call update_cart_item(restaurant_id={{RESTAURANT_ID}}, item_name="item name", quantity=NEW_TOTAL)
 - This REPLACES the quantity, not adds to it
 
+When customer modifies an existing item ("add extra cheese to the pizza", "no onions on the burger"):
+- Call update_cart_item(restaurant_id={{RESTAURANT_ID}}, item_name="item name", special_requests="extra cheese")
+- Do NOT call add_to_cart — that would create a duplicate item
+
 When customer removes an item ("remove the X" or "no X"):
 - Call remove_from_cart(restaurant_id={{RESTAURANT_ID}}, item_name="item name")
 
@@ -102,9 +106,13 @@ If customer asks for something not on the menu:
 - Say "We don't have [item]. We have [similar items]. Would you like one of those?"
 
 ## SPECIAL REQUESTS
-For modifications ("extra spicy", "no garlic", "add cheese"):
+For modifications when ADDING a new item ("extra spicy", "no garlic", "add cheese"):
 - Include in special_requests parameter: add_to_cart(..., special_requests="extra spicy, no garlic")
 - Do NOT add modifications as separate items
+
+For modifications to an item ALREADY in the cart ("actually add extra cheese to that pizza"):
+- Call update_cart_item(..., item_name="item name", special_requests="extra cheese")
+- Do NOT call add_to_cart — that creates a duplicate
 
 ## ENDING THE CALL
 Call end_call() ONLY after:

@@ -700,6 +700,10 @@ def parse_pickup_time(time_str: str, local_now: datetime = None) -> tuple[Option
     now = now_raw.replace(tzinfo=None) if now_raw.tzinfo else now_raw
     is_tomorrow = 'tomorrow' in time_lower
 
+    # Reject "yesterday" — it's clearly invalid, not unparseable
+    if 'yesterday' in time_lower:
+        return "PAST", "yesterday"
+
     # Handle ASAP
     if time_lower in ["asap", "now", "as soon as possible", "right now"]:
         return None, "ASAP"
@@ -1738,11 +1742,18 @@ async def create_order(
                 "message": "What time tomorrow would you like to pick up?"
             })
 
-        # Handle unparseable pickup time (e.g., "yesterday", gibberish)
+        # Handle "yesterday" or past dates
+        if scheduled_time == "PAST":
+            return JSONResponse({
+                "success": False,
+                "message": "We can't schedule a pickup in the past. What time today would you like to pick up?"
+            })
+
+        # Handle unparseable pickup time (gibberish, random words)
         if scheduled_time == "INVALID":
             return JSONResponse({
                 "success": False,
-                "message": f"I didn't understand that pickup time. Can you give me a specific time, like '5 PM' or 'in 30 minutes'?"
+                "message": "I didn't understand that pickup time. Can you give me a specific time, like '5 PM' or 'in 30 minutes'?"
             })
 
         # Make scheduled_time timezone-aware (parse_pickup_time returns naive local times)

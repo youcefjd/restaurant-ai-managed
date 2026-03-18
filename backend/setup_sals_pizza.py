@@ -123,6 +123,7 @@ async def setup():
             "opening_time": OPENING_TIME,
             "closing_time": CLOSING_TIME,
             "operating_days": OPERATING_DAYS,
+            "max_advance_order_days": 1,
             "subscription_tier": "free",
             "subscription_status": "trial",
             "platform_commission_rate": 15.0,

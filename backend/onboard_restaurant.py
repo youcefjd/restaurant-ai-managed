@@ -198,6 +198,7 @@ async def onboard(config: dict, purchase_phone: bool = True):
             "operating_days": config.get("operating_days", [0,1,2,3,4,5,6]),
             "timezone": config.get("timezone", "America/Chicago"),
             "tax_rate": config.get("tax_rate", 8.25) / 100,
+            "max_advance_order_days": config.get("max_advance_order_days", 0),
             "is_active": True,
         })
     else:
@@ -211,6 +212,7 @@ async def onboard(config: dict, purchase_phone: bool = True):
             "operating_days": config.get("operating_days", [0,1,2,3,4,5,6]),
             "timezone": config.get("timezone", "America/Chicago"),
             "tax_rate": config.get("tax_rate", 8.25) / 100,
+            "max_advance_order_days": config.get("max_advance_order_days", 0),
             "subscription_tier": "starter",
             "subscription_status": "trial",
             "platform_commission_rate": 15.0,

@@ -516,6 +516,16 @@ def get_or_create_cart(call_id: str, restaurant_id: int, db: SupabaseDB, custome
     return cart_service.get_or_create_cart(call_id, restaurant_id, db, customer_phone)
 
 
+    # Generic food words that alone shouldn't match a specific item
+_GENERIC_FOOD_WORDS = {
+    "pizza", "salad", "sandwich", "burger", "taco", "burrito", "wrap",
+    "roll", "bowl", "plate", "combo", "meal", "sub", "grinder", "calzone",
+    "pasta", "noodle", "rice", "soup", "dessert", "drink", "soda", "water",
+    "juice", "tea", "coffee", "side", "appetizer", "entree", "special",
+    "chicken", "beef", "pork", "fish", "shrimp", "tofu", "veggie",
+    "small", "medium", "large", "inch",
+}
+
 def lookup_menu_item(item_name: str, menu_data: Dict) -> Optional[Dict]:
     """Look up a menu item by name using word-level matching."""
     if not menu_data or not menu_data.get("menus"):
@@ -541,6 +551,12 @@ def lookup_menu_item(item_name: str, menu_data: Dict) -> Optional[Dict]:
                     # Word overlap: how many menu item words appear in input?
                     overlap = input_words & menu_words
                     if overlap:
+                        # Reject if only generic words overlap (e.g., "pizza" alone)
+                        non_generic_overlap = overlap - _GENERIC_FOOD_WORDS
+                        if not non_generic_overlap and not (menu_words <= input_words):
+                            # Only generic words matched and input doesn't fully cover menu item
+                            continue
+
                         # Score = fraction of menu item words matched × fraction of input words matched
                         menu_coverage = len(overlap) / len(menu_words)   # all menu words found?
                         input_coverage = len(overlap) / len(input_words)  # how much of input is explained?
@@ -575,8 +591,12 @@ def lookup_menu_item(item_name: str, menu_data: Dict) -> Optional[Dict]:
     if not candidates:
         return None
 
+    # Require minimum score to avoid weak matches
     candidates.sort(key=lambda x: x[0], reverse=True)
-    return candidates[0][1]
+    best_score, best_item = candidates[0]
+    if best_score < 35:
+        return None
+    return best_item
 
 
 def fetch_menu_data(db: SupabaseDB, restaurant_id: int) -> Dict[str, Any]:

@@ -557,6 +557,7 @@ def lookup_menu_item(item_name: str, menu_data: Dict) -> Optional[Dict]:
                             # Only generic words matched and input doesn't fully cover menu item
                             continue
 
+
                         # Score = fraction of menu item words matched × fraction of input words matched
                         menu_coverage = len(overlap) / len(menu_words)   # all menu words found?
                         input_coverage = len(overlap) / len(input_words)  # how much of input is explained?

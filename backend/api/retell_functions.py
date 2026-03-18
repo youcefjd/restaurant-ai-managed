@@ -1756,8 +1756,14 @@ async def create_order(
         scheduled_time, pickup_display = parse_pickup_time(pickup_time, local_now)
         logger.info(f"create_order: pickup_time='{pickup_time}' → scheduled_time={scheduled_time}, display='{pickup_display}', local_now={local_now}")
 
-        # Handle "tomorrow" without a specific time
+        # Handle bare "tomorrow" without a specific time
         if scheduled_time == "NEED_TIME":
+            max_adv = int(account.get("max_advance_order_days", 0))
+            if max_adv == 0:
+                return JSONResponse({
+                    "success": False,
+                    "message": "Sorry, we only accept same-day orders. What time today works for you?"
+                })
             return JSONResponse({
                 "success": False,
                 "message": "What time tomorrow would you like to pick up?"

@@ -1151,24 +1151,68 @@ async def add_to_cart(
 
         if has_sizes:
             size_mods = menu_item["modifier_groups"]["Size"]
+
+            # Helper: format sizes with prices for error messages
+            def _sizes_with_prices(mods, base_price):
+                parts = []
+                for s in sorted(mods, key=lambda x: x["price_adjustment_cents"]):
+                    total = (base_price + s["price_adjustment_cents"]) / 100
+                    parts.append(f"{s['name']} (${total:.2f})")
+                return ", ".join(parts)
+
             if size:
-                # Find the matching size modifier
+                # 1) Exact match
                 size_mod = next((s for s in size_mods if s["name"].lower() == size.lower()), None)
+
+                # 2) Fuzzy match — map generic words (small/medium/large) to actual sizes
+                if not size_mod:
+                    sorted_mods = sorted(size_mods, key=lambda x: x["price_adjustment_cents"])
+                    size_lower = size.lower().strip()
+
+                    # Alias groups: each list maps to a position in the sorted sizes
+                    SIZE_ALIASES = {
+                        "smallest": 0, "personal": 0, "small": 0, "mini": 0,
+                        "medium": None, "regular": None, "standard": None,  # None = middle
+                        "large": None, "big": None, "lg": None,  # None = second largest or largest
+                        "extra large": -1, "xl": -1, "extra-large": -1, "jumbo": -1,
+                        "party": -1, "family": -1,
+                    }
+
+                    if size_lower in SIZE_ALIASES:
+                        pos = SIZE_ALIASES[size_lower]
+                        n = len(sorted_mods)
+                        if pos == 0:
+                            idx = 0
+                        elif pos == -1:
+                            idx = n - 1
+                        elif size_lower in ("large", "big", "lg"):
+                            # "large" = last if <=3 sizes, second-to-last if 4+
+                            idx = n - 1 if n <= 3 else n - 2
+                        else:
+                            # "medium/regular" = second smallest (index 1) for 3+ sizes
+                            idx = 1 if n >= 3 else 0
+                        size_mod = sorted_mods[idx]
+
+                    # 3) Partial/substring match (e.g. "14" matches "14 inch")
+                    if not size_mod:
+                        for s in size_mods:
+                            if size_lower in s["name"].lower() or s["name"].lower() in size_lower:
+                                size_mod = s
+                                break
+
                 if size_mod:
                     item_price_cents += size_mod["price_adjustment_cents"]
                     size_label = size_mod["name"]
                 else:
-                    valid_sizes = ", ".join([s["name"] for s in size_mods])
                     return JSONResponse({
                         "success": False,
-                        "message": f"We don't have that size. Available sizes are: {valid_sizes}."
+                        "message": f"We don't have that size. Available sizes: {_sizes_with_prices(size_mods, menu_item['price_cents'])}."
                     })
             else:
                 # No size specified but item has sizes — ask the customer
-                valid_sizes = ", ".join([s["name"] for s in size_mods])
                 return JSONResponse({
                     "success": False,
-                    "message": f"What size would you like? We have {valid_sizes}."
+                    "message": f"What size would you like? We have {_sizes_with_prices(size_mods, menu_item['price_cents'])}."
                 })
 
         # Add item using cart service

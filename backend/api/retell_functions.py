@@ -1728,6 +1728,7 @@ async def create_order(
         # Parse pickup time using restaurant's local timezone
         local_now = _restaurant_now(account)
         scheduled_time, pickup_display = parse_pickup_time(pickup_time, local_now)
+        logger.info(f"create_order: pickup_time='{pickup_time}' → scheduled_time={scheduled_time}, display='{pickup_display}', local_now={local_now}")
 
         # Handle "tomorrow" without a specific time
         if scheduled_time == "NEED_TIME":
@@ -1745,14 +1746,8 @@ async def create_order(
                 local_tz = DEFAULT_TZ
             scheduled_time = scheduled_time.replace(tzinfo=local_tz)
 
-        # Validate pickup time is not in the past
-        if scheduled_time and scheduled_time < local_now:
-            return JSONResponse({
-                "success": False,
-                "message": "That pickup time has already passed. What time works for you today?"
-            })
-
-        # Validate pickup time falls within operating hours
+        # Validate pickup time falls within operating hours (check BEFORE past-time check
+        # so "midnight" gets "outside our hours" not "already passed")
         opening_time = account.get("opening_time", "")
         closing_time = account.get("closing_time", "")
         if opening_time and closing_time:
@@ -1800,6 +1795,13 @@ async def create_order(
                         })
             except (ValueError, AttributeError):
                 pass  # Skip validation if hours format is unexpected
+
+        # Validate pickup time is not in the past
+        if scheduled_time and scheduled_time < local_now:
+            return JSONResponse({
+                "success": False,
+                "message": "That pickup time has already passed. What time works for you today?"
+            })
 
         # Validate advance order days
         max_advance_days = int(account.get("max_advance_order_days", 0))

@@ -801,7 +801,7 @@ def parse_pickup_time(time_str: str, local_now: datetime = None) -> tuple[Option
             hour += 12
 
         if hour > 23:
-            return None, time_str
+            return "INVALID", time_str
 
         scheduled = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
@@ -817,7 +817,8 @@ def parse_pickup_time(time_str: str, local_now: datetime = None) -> tuple[Option
             display = scheduled.strftime("%I:%M %p on %b %d").lstrip("0")
         return scheduled, display
 
-    return None, time_str
+    # Could not parse any time from the input
+    return "INVALID", time_str
 
 
 # ==================== Function Endpoints ====================
@@ -1735,6 +1736,13 @@ async def create_order(
             return JSONResponse({
                 "success": False,
                 "message": "What time tomorrow would you like to pick up?"
+            })
+
+        # Handle unparseable pickup time (e.g., "yesterday", gibberish)
+        if scheduled_time == "INVALID":
+            return JSONResponse({
+                "success": False,
+                "message": f"I didn't understand that pickup time. Can you give me a specific time, like '5 PM' or 'in 30 minutes'?"
             })
 
         # Make scheduled_time timezone-aware (parse_pickup_time returns naive local times)

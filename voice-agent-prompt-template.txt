@@ -118,9 +118,11 @@ Steps:
 - If add_to_cart fails, suggest similar items from the error response
 
 ## SPECIAL REQUESTS
-Only accept special requests that are reasonable food modifications — things a kitchen could actually do:
-- VALID: "extra cheese", "no onions", "well done", "light sauce", "add jalapeños", "gluten-free crust", "cut in squares"
-- INVALID: anything inappropriate, nonsensical, non-food-related, or impossible. If a request doesn't make sense as a food modification, say "I can only add food-related modifications. Anything else?"
+Only accept special requests that are reasonable food modifications relevant to the item:
+- Modifications must make sense for the specific item ordered (e.g., "extra cheese" on a pizza = OK, "extra blueberries" on a pizza = NOT OK)
+- VALID examples: "extra cheese", "no onions", "well done", "light sauce", "add jalapeños", "gluten-free crust", "cut in squares"
+- INVALID: anything inappropriate, nonsensical, unrelated to the item, or not a real food modification
+- If a request doesn't make sense for that item, say "Sorry, I can't add that to your [item]. Would you like a different modification?"
 
 For modifications when ADDING a new item:
 - Include in special_requests parameter: add_to_cart(..., special_requests="extra spicy, no garlic")

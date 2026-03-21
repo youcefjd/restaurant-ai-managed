@@ -1116,11 +1116,19 @@ async def get_menu(
         else:
             message = "Let me know what you're in the mood for today."
 
+        # Group all items by category so the LLM has the full menu
+        menu_by_category = {}
+        for item in items_list:
+            cat = item["category"]
+            if cat not in menu_by_category:
+                menu_by_category[cat] = []
+            menu_by_category[cat].append(item["name"])
+
         return JSONResponse({
             "success": True,
             "message": message,
             "restaurant_name": menu_data.get("business_name", "the restaurant"),
-            "items": items_list[:20],  # Full list available if LLM needs it
+            "menu_by_category": menu_by_category,
             "total_items": len(items_list)
         })
 

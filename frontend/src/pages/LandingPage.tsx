@@ -19,7 +19,7 @@ export default function LandingPage() {
     {
       icon: Bot,
       title: 'AI Voice Agent',
-      color: 'var(--accent-cyan)',
+      color: '#D94F1A',
       features: [
         { icon: Phone, text: '24/7 phone answering — never miss a call' },
         { icon: UtensilsCrossed, text: 'Menu-aware conversations with dietary info' },
@@ -31,7 +31,7 @@ export default function LandingPage() {
     {
       icon: Zap,
       title: 'Smart Automation',
-      color: 'var(--accent-yellow, #facc15)',
+      color: '#B8860B',
       features: [
         { icon: MessageSquare, text: 'Voice-to-order pipeline — calls become orders' },
         { icon: CreditCard, text: 'Stripe + Toast POS payment collection' },
@@ -42,7 +42,7 @@ export default function LandingPage() {
     {
       icon: BarChart3,
       title: 'Analytics & Insights',
-      color: 'var(--accent-purple, #a78bfa)',
+      color: '#C44518',
       features: [
         { icon: TrendingUp, text: 'Real-time revenue & order dashboards' },
         { icon: BarChart3, text: 'Popular items & menu performance' },
@@ -53,7 +53,7 @@ export default function LandingPage() {
     {
       icon: Store,
       title: 'Restaurant Management',
-      color: 'var(--accent-green, #4ade80)',
+      color: '#8B4513',
       features: [
         { icon: UtensilsCrossed, text: 'Menu builder with categories, modifiers & tags' },
         { icon: Clock, text: 'Operating hours & advance ordering' },
@@ -112,13 +112,13 @@ export default function LandingPage() {
   }
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen" style={{ fontFamily: "'Poppins', system-ui, sans-serif" }}>
       {/* Header */}
-      <header className="sticky top-0 z-50 border-b border-[--border] backdrop-blur-md" style={{ background: 'rgba(var(--bg-card-rgb, 15, 15, 15), 0.85)' }}>
+      <header className="sticky top-0 z-50 border-b border-[--border] backdrop-blur-md" style={{ background: 'rgba(var(--bg-card-rgb), 0.9)' }}>
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Bell className="w-5 h-5 text-accent" />
-            <h1 className="text-lg font-semibold">Belltab AI</h1>
+            <h1 className="text-lg font-bold">Belltab AI</h1>
           </div>
           <nav className="hidden md:flex items-center gap-6">
             <button onClick={() => scrollTo('features')} className="text-sm text-dim hover:text-white transition-colors">Features</button>
@@ -142,18 +142,18 @@ export default function LandingPage() {
       <section className="relative py-24 px-4 overflow-hidden">
         {/* Gradient glow background */}
         <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[600px] rounded-full opacity-15"
-            style={{ background: 'radial-gradient(ellipse, var(--accent-cyan) 0%, transparent 70%)' }} />
-          <div className="absolute top-1/3 right-1/4 w-[400px] h-[400px] rounded-full opacity-10"
-            style={{ background: 'radial-gradient(ellipse, var(--accent-purple, #a78bfa) 0%, transparent 70%)' }} />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[600px] rounded-full opacity-20"
+            style={{ background: 'radial-gradient(ellipse, #D94F1A 0%, transparent 70%)' }} />
+          <div className="absolute top-1/3 right-1/4 w-[400px] h-[400px] rounded-full opacity-15"
+            style={{ background: 'radial-gradient(ellipse, #E8B878 0%, transparent 70%)' }} />
         </div>
 
         <div className="max-w-3xl mx-auto text-center relative z-10">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm mb-8" style={{ background: 'rgba(var(--accent-cyan-rgb, 34, 211, 238), 0.1)', border: '1px solid rgba(var(--accent-cyan-rgb, 34, 211, 238), 0.2)' }}>
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm mb-8" style={{ background: 'rgba(217, 79, 26, 0.1)', border: '1px solid rgba(217, 79, 26, 0.25)' }}>
             <Bell className="w-4 h-4 text-accent" />
-            <span className="text-accent">AI-powered restaurant phone system</span>
+            <span className="text-accent uppercase" style={{ letterSpacing: '0.15em', fontSize: '0.75rem' }}>AI-powered restaurant phone system</span>
           </div>
-          <h2 className="text-4xl md:text-6xl font-bold mb-6 leading-tight">
+          <h2 className="text-4xl md:text-6xl font-extrabold mb-6 leading-tight">
             Your Restaurant's{' '}
             <span className="text-accent">AI Front Desk</span>
           </h2>
@@ -192,7 +192,7 @@ export default function LandingPage() {
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-10">
             <h3 className="text-3xl md:text-4xl font-bold mb-4">See It In Action</h3>
-            <p className="text-dim text-lg">Watch our AI voice agent take a real restaurant order</p>
+            <p className="text-dim text-lg uppercase" style={{ letterSpacing: '0.1em', fontSize: '0.875rem' }}>Watch our AI voice agent take a real restaurant order</p>
           </div>
           <div className="relative w-full rounded-2xl overflow-hidden border border-[--border]" style={{ paddingBottom: '56.25%' }}>
             <iframe
@@ -246,7 +246,7 @@ export default function LandingPage() {
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-16">
             <h3 className="text-3xl md:text-4xl font-bold mb-4">Up and Running in Minutes</h3>
-            <p className="text-dim text-lg">Three simple steps to automate your restaurant's phone</p>
+            <p className="text-dim text-lg uppercase" style={{ letterSpacing: '0.1em', fontSize: '0.875rem' }}>Three simple steps to automate your restaurant's phone</p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {[
@@ -270,7 +270,7 @@ export default function LandingPage() {
               },
             ].map((item) => (
               <div key={item.step} className="card text-center relative">
-                <div className="w-12 h-12 rounded-full bg-accent flex items-center justify-center text-lg font-bold mx-auto mb-4" style={{ color: 'var(--bg-primary, #000)' }}>
+                <div className="w-12 h-12 rounded-full bg-accent flex items-center justify-center text-lg font-bold mx-auto mb-4" style={{ color: '#FDE8C8' }}>
                   {item.step}
                 </div>
                 <item.icon className="w-6 h-6 text-accent mx-auto mb-3" />
@@ -287,14 +287,14 @@ export default function LandingPage() {
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-16">
             <h3 className="text-3xl md:text-4xl font-bold mb-4">Simple, Transparent Pricing</h3>
-            <p className="text-dim text-lg">Start free. Upgrade when you're ready.</p>
+            <p className="text-dim text-lg uppercase" style={{ letterSpacing: '0.1em', fontSize: '0.875rem' }}>Start free. Upgrade when you're ready.</p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {plans.map((plan) => (
               <div
                 key={plan.name}
                 className={`card relative ${plan.highlight ? 'border-accent' : ''}`}
-                style={plan.highlight ? { boxShadow: '0 0 40px rgba(var(--accent-cyan-rgb, 34, 211, 238), 0.1)' } : undefined}
+                style={plan.highlight ? { boxShadow: '0 0 40px rgba(217, 79, 26, 0.15)' } : undefined}
               >
                 {plan.highlight && (
                   <span className="badge badge-info mb-4">Most Popular</span>
@@ -329,8 +329,8 @@ export default function LandingPage() {
       {/* Final CTA */}
       <section className="py-20 px-4 relative overflow-hidden">
         <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] rounded-full opacity-10"
-            style={{ background: 'radial-gradient(ellipse, var(--accent-cyan) 0%, transparent 70%)' }} />
+          <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] rounded-full opacity-15"
+            style={{ background: 'radial-gradient(ellipse, #D94F1A 0%, transparent 70%)' }} />
         </div>
         <div className="max-w-2xl mx-auto text-center relative z-10">
           <h3 className="text-3xl md:text-4xl font-bold mb-4">Ready to Never Miss Another Order?</h3>

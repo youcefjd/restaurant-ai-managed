@@ -332,7 +332,7 @@ async def onboard(config: dict, purchase_phone: bool = True):
         if public_url:
             await retell_service.update_agent(
                 agent_id,
-                webhook_url=f"https://{public_url}/api/retell/webhook"
+                webhook_url=f"{public_url}/api/retell/webhook"
             )
     else:
         agent = await retell_service.create_agent(
@@ -362,9 +362,9 @@ async def onboard(config: dict, purchase_phone: bool = True):
         if public_url:
             await retell_service.update_agent(
                 agent_id,
-                webhook_url=f"https://{public_url}/api/retell/webhook"
+                webhook_url=f"{public_url}/api/retell/webhook"
             )
-            logger.info(f"  Webhook: https://{public_url}/api/retell/webhook")
+            logger.info(f"  Webhook: {public_url}/api/retell/webhook")
 
     # Store IDs
     db.update("restaurant_accounts", restaurant_id, {

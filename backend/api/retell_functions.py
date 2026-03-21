@@ -1122,7 +1122,10 @@ async def get_menu(
             cat = item["category"]
             if cat not in menu_by_category:
                 menu_by_category[cat] = []
-            menu_by_category[cat].append(item["name"])
+            entry = item["name"]
+            if item.get("description"):
+                entry += f" — {item['description']}"
+            menu_by_category[cat].append(entry)
 
         return JSONResponse({
             "success": True,

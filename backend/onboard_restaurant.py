@@ -33,7 +33,12 @@ Config JSON format:
                     "name": "Tacos",
                     "items": [
                         {"name": "Carne Asada Taco", "description": "Grilled steak taco", "price_cents": 450},
-                        {"name": "Chicken Taco", "description": "Seasoned chicken taco", "price_cents": 400}
+                        {"name": "Chicken Taco", "description": "Seasoned chicken taco", "price_cents": 400,
+                         "modifiers": [
+                             {"name": "Small", "group": "Size", "price_adjustment_cents": -100, "is_default": false},
+                             {"name": "Regular", "group": "Size", "price_adjustment_cents": 0, "is_default": true},
+                             {"name": "Large", "group": "Size", "price_adjustment_cents": 150, "is_default": false}
+                         ]}
                     ]
                 }
             ]
@@ -261,7 +266,7 @@ async def onboard(config: dict, purchase_phone: bool = True):
             })
 
             for item_idx, item_data in enumerate(cat_data["items"]):
-                db.insert("menu_items", {
+                item = db.insert("menu_items", {
                     "category_id": category["id"],
                     "name": item_data["name"],
                     "description": item_data.get("description", ""),
@@ -270,6 +275,16 @@ async def onboard(config: dict, purchase_phone: bool = True):
                     "display_order": item_idx,
                 })
                 total_items += 1
+
+                # Create modifiers (e.g., sizes, crust types)
+                for mod in item_data.get("modifiers", []):
+                    db.insert("menu_modifiers", {
+                        "item_id": item["id"],
+                        "name": mod["name"],
+                        "price_adjustment_cents": mod.get("price_adjustment_cents", 0),
+                        "is_default": mod.get("is_default", False),
+                        "modifier_group": mod.get("group", "Options"),
+                    })
 
             logger.info(f"  {cat_data['name']}: {len(cat_data['items'])} items")
 

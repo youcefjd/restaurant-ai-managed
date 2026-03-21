@@ -26,14 +26,12 @@ class RetellLLMService:
         """Initialize Retell LLM service."""
         self.api_key = os.getenv("RETELL_API_KEY")
         self.enabled = bool(self.api_key)
-        # Get public URL from env - try PUBLIC_URL first, then derive from PUBLIC_WS_URL
-        public_url = os.getenv("PUBLIC_URL", "")
-        if not public_url:
-            ws_url = os.getenv("PUBLIC_WS_URL", "")
-            if ws_url:
-                # Convert wss://example.com to https://example.com
-                public_url = ws_url.replace("wss://", "https://").replace("ws://", "http://")
-        self.public_url = public_url.rstrip("/")
+        # URL used for Retell agent function callbacks (deploy/onboarding).
+        # Defaults to production Railway backend so agents never point at ngrok.
+        self.public_url = os.getenv(
+            "RETELL_FUNCTION_URL",
+            "https://restaurant-ai-backend-production-b1df.up.railway.app"
+        )
 
         if self.enabled:
             logger.info("Retell LLM service initialized")

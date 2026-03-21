@@ -9,7 +9,6 @@ because Retell's LLM handles the conversation flow natively.
 """
 
 import os
-import re
 import json
 import hmac
 import hashlib
@@ -1009,33 +1008,6 @@ async def check_customer(
         })
 
 
-def _category_matches(query: str, category_name: str) -> bool:
-    """Check if a user's category query matches a menu category name.
-
-    Handles restaurant-specific category names like "Grinder Sandwiches",
-    "Specialty Pizza", "Gourmet Burgers" by checking if any word in
-    either side matches (after stripping plurals).
-    """
-    def normalize_words(text: str) -> set[str]:
-        words = set(re.split(r'\s+', text.lower().strip()))
-        # Add singularized/pluralized variants
-        expanded = set()
-        for w in words:
-            expanded.add(w)
-            if w.endswith("es") and len(w) > 3:
-                expanded.add(w[:-2])  # sandwiches -> sandwich
-                expanded.add(w[:-1])  # pizzas -> pizza (via "es" on "pizzas" won't hit, but "s" will)
-            if w.endswith("s") and not w.endswith("ss") and len(w) > 2:
-                expanded.add(w[:-1])  # pizzas -> pizza, burgers -> burger
-            if not w.endswith("s"):
-                expanded.add(w + "s")  # pizza -> pizzas
-        return expanded
-
-    query_words = normalize_words(query)
-    cat_words = normalize_words(category_name)
-    return bool(query_words & cat_words)
-
-
 @router.post("/get_menu")
 async def get_menu(
     request: GetMenuRequest,
@@ -1072,11 +1044,8 @@ async def get_menu(
         for menu in menu_data.get("menus", []):
             for cat in menu.get("categories", []):
                 # Filter by category if specified
-                # Fuzzy match: normalize both sides by stripping common
-                # prefixes/suffixes so generic terms like "pizza" match
-                # restaurant-specific names like "Specialty Pizza"
                 if category:
-                    if not _category_matches(category, cat["name"]):
+                    if category.lower() not in cat["name"].lower():
                         continue
 
                 categories_found.add(cat["name"])

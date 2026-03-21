@@ -1117,14 +1117,17 @@ async def get_menu(
             message = "Let me know what you're in the mood for today."
 
         # Group all items by category so the LLM has the full menu
+        # Always include prices and sizes so the agent never needs to call get_menu again
         menu_by_category = {}
         for item in items_list:
             cat = item["category"]
             if cat not in menu_by_category:
                 menu_by_category[cat] = []
-            entry = item["name"]
+            entry = {"name": item["name"], "price": item["price"]}
             if item.get("description"):
-                entry += f" — {item['description']}"
+                entry["description"] = item["description"]
+            if item.get("sizes"):
+                entry["sizes"] = item["sizes"]
             menu_by_category[cat].append(entry)
 
         return JSONResponse({

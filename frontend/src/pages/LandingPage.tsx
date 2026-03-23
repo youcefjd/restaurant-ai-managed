@@ -291,7 +291,7 @@ export default function LandingPage() {
             {plans.map((plan) => (
               <div
                 key={plan.name}
-                className={`card relative ${plan.highlight ? 'border-accent' : ''}`}
+                className={`card relative flex flex-col ${plan.highlight ? 'border-accent' : ''}`}
                 style={plan.highlight ? { boxShadow: '0 0 40px rgba(var(--accent-cyan-rgb, 34, 211, 238), 0.1)' } : undefined}
               >
                 {plan.highlight && (
@@ -304,7 +304,7 @@ export default function LandingPage() {
                   </span>
                   <span className="text-sm text-dim"> /{plan.period}</span>
                 </div>
-                <ul className="space-y-3 mb-8">
+                <ul className="space-y-3 mb-8 flex-grow">
                   {plan.features.map((feature) => (
                     <li key={feature} className="flex items-start gap-2 text-sm">
                       <CheckCircle className="w-4 h-4 text-success flex-shrink-0 mt-0.5" />

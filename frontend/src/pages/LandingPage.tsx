@@ -289,14 +289,16 @@ export default function LandingPage() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {plans.map((plan) => (
-              <div
-                key={plan.name}
-                className={`card relative flex flex-col ${plan.highlight ? 'border-accent' : ''}`}
-                style={plan.highlight ? { boxShadow: '0 0 40px rgba(var(--accent-cyan-rgb, 34, 211, 238), 0.1)' } : undefined}
-              >
-                {plan.highlight && (
-                  <span className="badge badge-info mb-4">Most Popular</span>
+              <div key={plan.name} className="flex flex-col">
+                {plan.highlight ? (
+                  <span className="badge badge-info mb-2 self-start">Most Popular</span>
+                ) : (
+                  <div className="mb-2 h-[22px]" />
                 )}
+                <div
+                  className={`card relative flex flex-col flex-grow ${plan.highlight ? 'border-accent' : ''}`}
+                  style={plan.highlight ? { boxShadow: '0 0 40px rgba(var(--accent-cyan-rgb, 34, 211, 238), 0.1)' } : undefined}
+                >
                 <h4 className="text-xl font-bold mb-2">{plan.name}</h4>
                 <div className="mb-6">
                   <span className={`text-4xl font-bold ${plan.highlight ? 'text-accent' : ''}`}>
@@ -318,6 +320,7 @@ export default function LandingPage() {
                 >
                   {plan.price === '$0' ? 'Start Free Trial' : 'Get Started'}
                 </button>
+                </div>
               </div>
             ))}
           </div>

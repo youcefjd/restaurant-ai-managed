@@ -70,7 +70,6 @@ export default function LandingPage() {
       period: '2-week trial',
       features: [
         '2-week free trial',
-        'Up to 50 orders/month',
         'Basic menu management',
         'Call transcripts',
         'Email support',

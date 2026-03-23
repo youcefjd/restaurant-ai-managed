@@ -67,9 +67,9 @@ export default function LandingPage() {
     {
       name: 'Free',
       price: '$0',
-      period: 'forever',
+      period: '2-week trial',
       features: [
-        '30-day full trial',
+        '2-week free trial',
         'Up to 50 orders/month',
         'Basic menu management',
         'Call transcripts',
@@ -86,7 +86,7 @@ export default function LandingPage() {
         'AI phone answering 24/7',
         'Menu-aware AI conversations',
         'Analytics dashboard',
-        'SMS confirmations',
+        'Toast POS integration',
         'Priority support',
       ],
       highlight: true,
@@ -97,9 +97,8 @@ export default function LandingPage() {
       period: 'per month',
       features: [
         'Everything in Starter',
-        'Multi-location support',
+        'SMS order confirmations',
         'Advanced analytics & reporting',
-        'Toast POS integration',
         'Custom AI voice & branding',
         'Multi-language support (Spanish, Chinese, etc.)',
       ],

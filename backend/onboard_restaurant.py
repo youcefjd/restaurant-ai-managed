@@ -346,7 +346,7 @@ async def onboard(config: dict, purchase_phone: bool = True):
             boosted_keywords=boosted_keywords[:50],  # Retell has a limit
             reminder_trigger_ms=10000,
             reminder_max_count=2,
-            end_call_after_silence_ms=30000,
+            end_call_after_silence_ms=15000,
         )
 
         if not agent:

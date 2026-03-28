@@ -994,7 +994,7 @@ async def create_agent(
         boosted_keywords=[restaurant["business_name"]],  # Improve recognition
         reminder_trigger_ms=8000,  # Remind after 8s silence
         reminder_max_count=2,
-        end_call_after_silence_ms=30000,  # End after 30s silence
+        end_call_after_silence_ms=15000,  # End after 15s silence
     )
 
     if not agent:
@@ -1102,7 +1102,7 @@ async def create_native_llm_agent(
         boosted_keywords=[restaurant_name],
         reminder_trigger_ms=10000,
         reminder_max_count=2,
-        end_call_after_silence_ms=30000,
+        end_call_after_silence_ms=15000,
     )
 
     if not agent:

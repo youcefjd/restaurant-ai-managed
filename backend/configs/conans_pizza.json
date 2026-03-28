@@ -1,0 +1,77 @@
+{
+  "business_name": "Conan's Pizza",
+  "owner_name": "Demo Owner",
+  "owner_email": "demo@conanspizza.com",
+  "owner_phone": "+15124416754",
+  "address": "2018 W Stassney Ln, Austin, TX 78745",
+  "opening_time": "11:00",
+  "closing_time": "23:00",
+  "operating_days": [0, 1, 2, 3, 4, 5, 6],
+  "timezone": "America/Chicago",
+  "tax_rate": 8.25,
+  "voice_id": "11labs-Myra",
+  "max_advance_order_days": 0,
+  "menu": {
+    "categories": [
+      {
+        "name": "Pizzas",
+        "items": [
+          {"name": "Pesto Pizza", "description": "Sliced tomatoes, pesto sauce, mozzarella cheese", "price_cents": 1299},
+          {"name": "Meaters Pizza", "description": "Sausage, hamburger spiced in-house, pepperoni, Canadian bacon", "price_cents": 1799},
+          {"name": "Classic Veggie Pizza", "description": "Mushrooms, black olives, green peppers, onions", "price_cents": 1599},
+          {"name": "The Artichoke Veggie", "description": "Fresh spinach, sliced tomatoes, artichoke heart, minced garlic", "price_cents": 1599},
+          {"name": "The Savage Pizza", "description": "Sausage, hamburger, pepperoni, mushrooms, black olives, green peppers, onions, jalapeños, anchovies", "price_cents": 1699},
+          {"name": "Supreme Veggie Pizza", "description": "Mushrooms, black olives, green peppers, onions, sliced tomatoes, pineapple, jalapeños, garlic", "price_cents": 1599},
+          {"name": "Garden Veggie Pizza", "description": "Choose any four veggie toppings", "price_cents": 1599},
+          {"name": "Bacon Cheddar Burger Pizza", "description": "Hamburger, bacon, cheddar-mozzarella mix", "price_cents": 1599},
+          {"name": "BBQ Chicken Pizza", "description": "Fajita chicken strips with BBQ pizza sauce", "price_cents": 1599},
+          {"name": "The Spicy Hawaiian Pizza", "description": "Canadian bacon, jalapeños, pineapple", "price_cents": 1699},
+          {"name": "The Hawaiian Pizza", "description": "Canadian bacon, pineapple", "price_cents": 1599}
+        ]
+      },
+      {
+        "name": "Calzones",
+        "items": [
+          {"name": "Calzo +2", "description": "Small thin crust calzone, choose any 2 toppings, served with dipping sauce", "price_cents": 1500},
+          {"name": "Spicy Hawaii Calzone", "description": "Canadian bacon, jalapeños, mozzarella, pineapple, ricotta, served with dipping sauce", "price_cents": 1200},
+          {"name": "Spinach Calzone", "description": "Spinach, mushrooms, sliced tomatoes, served with dipping sauce", "price_cents": 1500}
+        ]
+      },
+      {
+        "name": "Appetizers",
+        "items": [
+          {"name": "Garlic Bread", "description": "Fresh garlic bread", "price_cents": 400},
+          {"name": "Cheese Bread", "description": "Garlic bread topped with mozzarella", "price_cents": 500},
+          {"name": "Cheese Stix", "description": "Crispy thin garlic cheese stix, party-sliced", "price_cents": 700},
+          {"name": "LG Cheese Stix", "description": "Large crispy thin garlic cheese stix, party-sliced", "price_cents": 1050},
+          {"name": "Pepperoni Sticks", "description": "Pepperoni on cheesy garlic sticks with dipping sauce", "price_cents": 1200}
+        ]
+      },
+      {
+        "name": "Salads",
+        "items": [
+          {"name": "Cosmic Salad", "description": "Romaine, iceberg lettuce, green peppers, onions, black olives, mozzarella", "price_cents": 600},
+          {"name": "Caesar Salad", "description": "Romaine lettuce, shredded parmesan, croutons, house caesar", "price_cents": 625},
+          {"name": "Large Salad", "description": "2.5x bigger than the Cosmic Salad with same toppings", "price_cents": 950},
+          {"name": "Chicken Caesar Salad", "description": "Fajita chicken strips, romaine, shredded parmesan, croutons, house caesar, garlic bread", "price_cents": 1000}
+        ]
+      },
+      {
+        "name": "Wings",
+        "items": [
+          {"name": "Wings (4)", "description": "4 wings with 1 dipping sauce (BBQ, Ranch, Bleu Cheese, or Hot)", "price_cents": 700},
+          {"name": "Wings (8)", "description": "8 wings with 2 dipping sauces (BBQ, Ranch, Bleu Cheese, or Hot)", "price_cents": 1500},
+          {"name": "Wings (16)", "description": "16 wings with 3 dipping sauces (BBQ, Ranch, Bleu Cheese, or Hot)", "price_cents": 2700},
+          {"name": "Wings (32)", "description": "32 wings with 4 dipping sauces (BBQ, Ranch, Bleu Cheese, or Hot)", "price_cents": 4800},
+          {"name": "Wings (50)", "description": "50 wings with 5 dipping sauces (BBQ, Ranch, Bleu Cheese, or Hot)", "price_cents": 8500}
+        ]
+      },
+      {
+        "name": "Desserts",
+        "items": [
+          {"name": "Cosmic Chocolate Cake", "description": "A thick, delicious slice of chocolate cake", "price_cents": 400}
+        ]
+      }
+    ]
+  }
+}

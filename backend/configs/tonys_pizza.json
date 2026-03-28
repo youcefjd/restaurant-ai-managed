@@ -1,0 +1,85 @@
+{
+  "business_name": "Tony C's Pizza & Beer Garden",
+  "owner_name": "Demo Owner",
+  "owner_email": "demo@tonycs.com",
+  "owner_phone": "+15125957151",
+  "address": "2900 W Anderson Ln., Bldg B, Austin, TX 78757",
+  "opening_time": "11:00",
+  "closing_time": "22:00",
+  "operating_days": [0, 1, 2, 3, 4, 5, 6],
+  "timezone": "America/Chicago",
+  "tax_rate": 8.25,
+  "voice_id": "11labs-Myra",
+  "max_advance_order_days": 0,
+  "menu": {
+    "categories": [
+      {
+        "name": "Appetizers",
+        "items": [
+          {"name": "Garlic Knots", "description": "Garlic butter, marinara", "price_cents": 599},
+          {"name": "Toasted Ravioli", "description": "Cheese ravioli, Italian breadcrumbs, marinara", "price_cents": 1399},
+          {"name": "Mozzarella Sticks", "description": "Buffalo mozzarella, Italian breadcrumbs, marinara", "price_cents": 1199},
+          {"name": "Pepperoni Rolls", "description": "Pepperoni, provolone, garlic butter, parmesan, marinara", "price_cents": 1299},
+          {"name": "Zucchini Sticks", "description": "Italian breadcrumbs, parmesan, lemon aioli", "price_cents": 999},
+          {"name": "Meatballs", "description": "Grandma Ciola's recipe, marinara", "price_cents": 1399},
+          {"name": "Fried Calamari", "description": "Lemon aioli, marinara", "price_cents": 1599},
+          {"name": "Garlic Fries", "description": "Garlic butter, parmesan, garlic aioli", "price_cents": 999}
+        ]
+      },
+      {
+        "name": "Wings",
+        "items": [
+          {"name": "Wings", "description": "Choose a flavor: Buffalo, Lemon Pepper, or Garlic Parm. Served with ranch.", "price_cents": 1299}
+        ]
+      },
+      {
+        "name": "Salads",
+        "items": [
+          {"name": "House Salad", "description": "Cherry tomatoes, roasted peppers, cucumbers, garbanzo beans, red onions, mozzarella, pepperoncini, red wine vinaigrette", "price_cents": 599},
+          {"name": "Caesar Salad", "description": "Homemade caesar dressing, croutons, parmesan", "price_cents": 599},
+          {"name": "Italian Chopped Salad", "description": "Cured Italian meats, garbanzo beans, egg, cheese, roasted peppers, pepperoncini, red onions, artichokes, tomatoes, kalamata olives, red wine vinaigrette", "price_cents": 1399}
+        ]
+      },
+      {
+        "name": "Specialty Pizzas",
+        "items": [
+          {"name": "Pizza of the Month", "description": "Neapolitan: marinara, fresh mozzarella, basil, olive oil", "price_cents": 1799},
+          {"name": "Margherita", "description": "Tomatoes, basil, fresh mozzarella, olive oil", "price_cents": 1599},
+          {"name": "Eggplant", "description": "Parmesan crusted eggplant, pizza sauce, basil, ricotta", "price_cents": 1599},
+          {"name": "Bianco", "description": "Cream, olive oil, fresh mozzarella, ricotta, roasted garlic, basil", "price_cents": 1699},
+          {"name": "Prosciutto & Goat Cheese", "description": "Roasted garlic, prosciutto, arugula, fresh mozzarella, goat cheese, olive oil", "price_cents": 1899},
+          {"name": "Truffle Shuffle", "description": "Fresh mozzarella, gorgonzola, fontina, parmesan, mushrooms, truffle oil", "price_cents": 1899},
+          {"name": "Chicken Parmesan Pizza", "description": "Chicken parmesan, marinara, mozzarella, basil", "price_cents": 1899},
+          {"name": "Mama Mia", "description": "Pepperoni, pizza sauce, Italian sausage, extra cheese", "price_cents": 1699},
+          {"name": "The Donato", "description": "Italian sausage, pizza sauce, coal fired peppers, black olives, fresh mozzarella", "price_cents": 1599},
+          {"name": "Carnivore", "description": "Salami, pepperoni, sausage, meatballs, pizza sauce, mozzarella, Calabrian peppers", "price_cents": 1799},
+          {"name": "Primo", "description": "Pepperoni, Italian sausage, pizza sauce, roasted red peppers, sauteed mushrooms, caramelized onions, black olives", "price_cents": 1899},
+          {"name": "Vegetarian", "description": "Sauteed spinach, mushrooms, roasted zucchini, ricotta, mozzarella, pizza sauce", "price_cents": 1799},
+          {"name": "Slice Specials", "description": "A slice of cheese, pepperoni, or slice-of-the-day plus your choice of salad and a drink, or two slices with a drink", "price_cents": 1099}
+        ]
+      },
+      {
+        "name": "Sandwiches",
+        "items": [
+          {"name": "Meatball Sub", "description": "Marinara, mozzarella, served with garlic fries", "price_cents": 1599},
+          {"name": "Chicken Parmesan Sandwich", "description": "Marinara, mozzarella, served with garlic fries", "price_cents": 1599}
+        ]
+      },
+      {
+        "name": "Lasagna",
+        "items": [
+          {"name": "Homemade Lasagna", "description": "Italian sausage, ground beef, marinara, ricotta, mozzarella, parmesan", "price_cents": 1599}
+        ]
+      },
+      {
+        "name": "Bambinos",
+        "items": [
+          {"name": "Buttered Noodles", "description": "Kids meal, includes kid drink and gelato", "price_cents": 899},
+          {"name": "Spaghetti & Meatballs", "description": "Kids meal, includes kid drink and gelato", "price_cents": 899},
+          {"name": "Cheese or Pepperoni Slice", "description": "Kids meal, includes kid drink and gelato", "price_cents": 899},
+          {"name": "Chicken Parmesan Sticks", "description": "Kids meal, includes kid drink and gelato", "price_cents": 899}
+        ]
+      }
+    ]
+  }
+}

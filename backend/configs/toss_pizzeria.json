@@ -1,0 +1,84 @@
+{
+  "business_name": "Toss Pizzeria & Pub",
+  "owner_name": "Demo Owner",
+  "owner_email": "demo@tosspizzeria.com",
+  "owner_phone": "+15129531718",
+  "address": "2901 S 1st St, Austin, TX 78704",
+  "opening_time": "11:00",
+  "closing_time": "23:00",
+  "operating_days": [0, 1, 2, 3, 4, 5, 6],
+  "timezone": "America/Chicago",
+  "tax_rate": 8.25,
+  "voice_id": "11labs-Myra",
+  "max_advance_order_days": 0,
+  "menu": {
+    "categories": [
+      {
+        "name": "Appetizers",
+        "items": [
+          {"name": "Garlic Bread", "description": "Garlic butter, parmesan, fresh bread, marinara", "price_cents": 800},
+          {"name": "Cheese Bread", "description": "Baguette, butter, garlic, herbs, mozzarella, parmesan, marinara", "price_cents": 1200},
+          {"name": "Stuffed Pretzel", "description": "Pepperoni, cheese, served with ranch, garlic butter, or honey mustard", "price_cents": 900},
+          {"name": "Meatballs", "description": "House-ground beef and pork, marinara, toasted bread", "price_cents": 1200},
+          {"name": "Classic Chips and Queso", "description": "House-made chile con queso, fresh tortilla chips", "price_cents": 800}
+        ]
+      },
+      {
+        "name": "Salads",
+        "items": [
+          {"name": "Farm Salad", "description": "Seasonal greens, onions, carrots, olives, feta, cherry tomatoes, red wine vinaigrette", "price_cents": 800},
+          {"name": "Caesar Salad", "description": "Romaine, cherry tomatoes, parmesan, croutons, creamy caesar", "price_cents": 700},
+          {"name": "Wedge BLT Salad", "description": "Romaine wedge, bacon, cherry tomatoes, gorgonzola, bleu cheese dressing", "price_cents": 700},
+          {"name": "Warm Brussels Sprout Salad", "description": "Brussels sprouts, beets, goat cheese, candied walnuts, balsamic reduction", "price_cents": 800},
+          {"name": "Italian Chopped Salad", "description": "Ham, capicola, salami, sopressata, provolone, romaine, cherry tomatoes, pepperoncini, garlic aioli vinaigrette", "price_cents": 1500},
+          {"name": "Buffalo Chicken Salad", "description": "Grilled chicken in buffalo sauce, romaine, blue cheese crumbles, carrots, cherry tomatoes, ranch", "price_cents": 1400}
+        ]
+      },
+      {
+        "name": "Wings",
+        "items": [
+          {"name": "Hand Tossed Wings", "description": "Choose a sauce: Sambal Glaze, Texas BBQ, Sesame, Basil Pesto, TOSS Sauce, Spicy Toss, Garlic Parmesan, Lemon Pepper, Bacon Ranch, Cajun Dry Rub, Curry Dry Rub, or Chili Lime", "price_cents": 1200}
+        ]
+      },
+      {
+        "name": "Sides",
+        "items": [
+          {"name": "Waffle Fries", "description": "Crispy waffle fries with ranch or bleu cheese", "price_cents": 600}
+        ]
+      },
+      {
+        "name": "Specialty Pies",
+        "items": [
+          {"name": "Classic Pepperoni", "description": "Cup and char pepperoni, romano herb blend, mozzarella, marinara", "price_cents": 1200},
+          {"name": "Hot Honey Farmhouse", "description": "Pepperoni, mozzarella, red onion, goat cheese, crushed tomato, arugula, hot honey drizzle", "price_cents": 1500},
+          {"name": "Terry Blacks BBQ Brisket", "description": "Terry Black's brisket, pickles, onions, mozzarella, BBQ sauce", "price_cents": 2000},
+          {"name": "South 1st Supreme", "description": "Pepperoni, sausage, roasted red peppers, green peppers, red onions, mushrooms, olives, mozzarella, marinara", "price_cents": 1700},
+          {"name": "Carnivore", "description": "Pepperoni, sausage, bacon, mozzarella, marinara", "price_cents": 1400},
+          {"name": "Margherita", "description": "Sliced tomatoes, mozzarella, roasted garlic, basil, crushed tomatoes", "price_cents": 1400},
+          {"name": "Roasted Veggie", "description": "Artichoke, red bell peppers, mushrooms, goat cheese, mozzarella, marinara", "price_cents": 1500},
+          {"name": "Buffalo Chicken Pie", "description": "Chicken breast in Toss Sauce, mozzarella, gorgonzola, ranch drizzle", "price_cents": 1400},
+          {"name": "Chicken Spinach Artichoke", "description": "Chicken, bacon, spinach, artichoke, mozzarella, romano cream sauce", "price_cents": 1500},
+          {"name": "Quattro Formaggi", "description": "Herb ricotta, mozzarella, gorgonzola, romano, basil, extra virgin olive oil", "price_cents": 1400},
+          {"name": "Chicken Pesto", "description": "Grilled chicken, sliced tomatoes, house-made basil pesto, fresh mozzarella", "price_cents": 1500},
+          {"name": "Hawaiian", "description": "Boar's Head ham, pineapple, bacon, mozzarella, crushed tomato sauce", "price_cents": 1500}
+        ]
+      },
+      {
+        "name": "Calzones",
+        "items": [
+          {"name": "Classic Calzone", "description": "Traditional calzone with mozzarella and marinara", "price_cents": 1500},
+          {"name": "Roasted Veggie Calzone", "description": "Artichoke, red bell peppers, mushrooms, goat cheese, mozzarella", "price_cents": 1500},
+          {"name": "Chicken Pesto Calzone", "description": "Grilled chicken, basil pesto, fresh mozzarella", "price_cents": 1500},
+          {"name": "Terry Blacks BBQ Calzone", "description": "Terry Black's brisket, pickles, onions, mozzarella, BBQ sauce", "price_cents": 2000}
+        ]
+      },
+      {
+        "name": "Desserts",
+        "items": [
+          {"name": "Smores", "description": "6 toasted, open-faced traditional smores", "price_cents": 600},
+          {"name": "Cinnamon Donut Holes", "description": "Fried pizza dough tossed in cinnamon and sugar, house-made icing", "price_cents": 600}
+        ]
+      }
+    ]
+  }
+}

@@ -10,55 +10,58 @@ Add a new restaurant with a working AI phone agent, menu, and dashboard login in
 
 ## Quick Start
 
-### 1. Add the restaurant definition to `backend/setup_demo_restaurants.py`
+### 1. Create a config JSON file
 
-Add a new entry to the `RESTAURANTS` list. Copy this template and fill in your values:
+Create a file in `backend/configs/` (e.g., `backend/configs/my_restaurant.json`):
 
-```python
+```json
 {
-    "name": "Restaurant Name",                    # Business name (shown in dashboard + voice greeting)
-    "cuisine": "cuisine_type",                     # For reference only
-    "owner_name": "Owner Full Name",
-    "owner_email": "owner@restaurant.com",         # Used for login (must be unique)
-    "owner_phone": "+15551234567",
-    "address": "123 Main St, City, ST 10001",      # Physical address
-    "opening_time": "11:00",                       # 24hr format
-    "closing_time": "22:00",                       # 24hr format
-    "operating_days": [0, 1, 2, 3, 4, 5, 6],      # 0=Mon, 6=Sun
-    "voice_id": "11labs-Myra",                     # See Voice Options below
-    "boosted_keywords": ["Restaurant Name", "key", "menu", "items"],
-    "begin_message": "Hi, thanks for calling Restaurant Name! What can I get for you today?",
-    "menu": {
-        "name": "Restaurant Name Menu",
-        "categories": [
-            {
-                "name": "Category Name",
-                "items": [
-                    {
-                        "name": "Item Name",
-                        "description": "Short description of the item",
-                        "price_cents": 1299      # $12.99 = 1299
-                    },
-                ]
-            },
-            # Add more categories...
+  "business_name": "Restaurant Name",
+  "owner_name": "Owner Full Name",
+  "owner_email": "owner@restaurant.com",
+  "owner_phone": "+15551234567",
+  "address": "123 Main St, City, ST 10001",
+  "opening_time": "11:00",
+  "closing_time": "22:00",
+  "operating_days": [0, 1, 2, 3, 4, 5, 6],
+  "timezone": "America/Chicago",
+  "tax_rate": 8.25,
+  "voice_id": "11labs-Myra",
+  "max_advance_order_days": 0,
+  "menu": {
+    "categories": [
+      {
+        "name": "Category Name",
+        "items": [
+          {
+            "name": "Item Name",
+            "description": "Short description of the item",
+            "price_cents": 1299
+          }
         ]
-    }
+      }
+    ]
+  }
 }
 ```
 
-### 2. Run the setup script
+### 2. Run the onboarding script
 
 ```bash
 source .venv/bin/activate
-python -m backend.setup_demo_restaurants
+
+# With a new phone number (purchases from Retell):
+python -m backend.onboard_restaurant --config backend/configs/my_restaurant.json
+
+# Without purchasing a phone number (assign one manually later):
+python -m backend.onboard_restaurant --config backend/configs/my_restaurant.json --no-phone
 ```
 
 The script is **idempotent** -- it skips restaurants that already exist (matched by `owner_email`).
 
 ### 3. Set the login password
 
-The setup script does not set a password. Run this after setup:
+The onboarding script does not set a password. Run this after setup:
 
 ```bash
 source .venv/bin/activate
@@ -81,7 +84,45 @@ else:
 "
 ```
 
-### 4. Verify
+### 4. Add modifiers (if needed)
+
+For items with size options (e.g., 12"/16" pizzas, Individual/Family appetizers), add modifiers after onboarding via the `menu_modifiers` table. Each modifier has:
+- `item_id` — the menu item
+- `name` — display name (e.g., "16 inch", "Family")
+- `price_adjustment_cents` — price difference from base (default modifier = 0)
+- `is_default` — true for the base size
+- `modifier_group` — grouping label (e.g., "Size")
+
+### 5. Reassign a phone number (if reusing from another agent)
+
+```bash
+source .venv/bin/activate
+python3 -c "
+import httpx, os
+from dotenv import load_dotenv
+load_dotenv()
+
+PHONE = '+13325551234'           # <-- phone number to reassign
+NEW_AGENT_ID = 'agent_xxx'      # <-- new agent ID
+NICKNAME = 'Restaurant Name'    # <-- display name in Retell
+
+resp = httpx.patch(
+    f'https://api.retellai.com/update-phone-number/{PHONE}',
+    headers={'Authorization': f'Bearer {os.getenv(\"RETELL_API_KEY\")}', 'Content-Type': 'application/json'},
+    json={'inbound_agent_id': NEW_AGENT_ID, 'nickname': NICKNAME}
+)
+print(f'{resp.status_code}: {resp.json()}')
+"
+```
+
+### 6. Deploy/update the agent prompt
+
+```bash
+source .venv/bin/activate
+python -m backend.deploy_all_agents --id <restaurant_id>
+```
+
+### 7. Verify
 
 ```bash
 source .venv/bin/activate
@@ -121,7 +162,7 @@ All fields should show values (not MISSING). If Location shows MISSING, orders w
 
 ---
 
-## What the Setup Script Creates
+## What the Onboarding Script Creates
 
 | Step | Table / Service | What |
 |------|----------------|------|
@@ -130,11 +171,12 @@ All fields should show values (not MISSING). If Location shows MISSING, orders w
 | 2 | `menus` + `menu_categories` + `menu_items` | Full menu with categories and items |
 | 3 | Retell API | LLM with system prompt + function tools pointing to `PUBLIC_URL` |
 | 4 | Retell API | Voice agent bound to the LLM |
-| 5 | Retell API | Phone number (332 area code) bound to the agent |
+| 5 | Retell API | Phone number (332 area code) bound to the agent (unless `--no-phone`) |
 | 6 | `restaurant_accounts` | Stores `retell_agent_id`, `retell_llm_id`, `twilio_phone_number` |
 
 **Not created by setup (must do manually):**
 - `password_hash` -- see Step 3 above
+- `menu_modifiers` -- see Step 4 above (for items with size options)
 
 ---
 
@@ -238,19 +280,3 @@ for llm in resp.json():
         print(f'LLM {llm_id}: already correct')
 "
 ```
-
----
-
-## Current Restaurants
-
-| ID | Name | Phone | Login Email |
-|----|------|-------|-------------|
-| 5 | Sal's Pizza | (832) 925-4593 | sal@salspizza.com |
-| 6 | Golden Dragon Chinese | (332) 264-7847 | wei@goldendragonct.com |
-| 7 | Cluck & Grill | (332) 248-2911 | marcus@cluckandgrill.com |
-| 8 | Casa Taqueria | (332) 249-4099 | maria@casataqueria.com |
-| 9 | Tandoor Palace | (332) 529-2891 | raj@tandoorpalace.com |
-| 10 | Stack Burger Co. | (332) 237-3037 | jake@stackburger.com |
-| 11 | Sakura Sushi | (332) 248-2378 | yuki@sakurasushi.com |
-
-All demo accounts use password: `demo123`

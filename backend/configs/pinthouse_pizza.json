@@ -1,0 +1,71 @@
+{
+  "business_name": "Pinthouse Pizza",
+  "owner_name": "Demo Owner",
+  "owner_email": "demo@pinthouse.com",
+  "owner_phone": "+15125025808",
+  "address": "4236 S. Lamar Blvd., Austin, TX 78704",
+  "opening_time": "11:00",
+  "closing_time": "22:00",
+  "operating_days": [0, 1, 2, 3, 4, 5, 6],
+  "timezone": "America/Chicago",
+  "tax_rate": 8.25,
+  "voice_id": "11labs-Myra",
+  "max_advance_order_days": 0,
+  "menu": {
+    "categories": [
+      {
+        "name": "Shareables",
+        "items": [
+          {"name": "Beer Mates", "description": "Crispy beer-battered bites", "price_cents": 700},
+          {"name": "Das Pretzel", "description": "Warm Bavarian-style pretzel with beer cheese", "price_cents": 750},
+          {"name": "Braised Meatballs", "description": "Slow-braised meatballs in marinara", "price_cents": 1150},
+          {"name": "El Queso", "description": "House-made queso dip with chips", "price_cents": 700},
+          {"name": "Pizza Roll", "description": "Crispy rolled pizza bites", "price_cents": 425}
+        ]
+      },
+      {
+        "name": "Salads",
+        "items": [
+          {"name": "Caesar Salad", "description": "Romaine, parmesan, croutons, Caesar dressing", "price_cents": 1150},
+          {"name": "Pinthouse Salad", "description": "Mixed greens, seasonal vegetables, house vinaigrette", "price_cents": 1250},
+          {"name": "Italian Chop Salad", "description": "Chopped salad with Italian meats, peppers, olives", "price_cents": 1350},
+          {"name": "Sundance Salad", "description": "Fresh greens, goat cheese, candied pecans, balsamic", "price_cents": 1250}
+        ]
+      },
+      {
+        "name": "Classic Pies",
+        "items": [
+          {"name": "Pepperoni & Basil", "description": "Classic pepperoni with fresh basil", "price_cents": 1325},
+          {"name": "Cannonball", "description": "Loaded meat pizza with sausage, pepperoni, and more", "price_cents": 1400},
+          {"name": "Texas Chicken Ranch", "description": "Grilled chicken, bacon, ranch drizzle", "price_cents": 1350},
+          {"name": "The Works", "description": "Everything on it — pepperoni, sausage, peppers, onions, mushrooms, olives", "price_cents": 1400},
+          {"name": "The Hoe Down", "description": "BBQ chicken, red onion, cilantro, jalapeño", "price_cents": 1350}
+        ]
+      },
+      {
+        "name": "Specialty Pies",
+        "items": [
+          {"name": "Ooh La La", "description": "White pizza with garlic, ricotta, and fresh herbs", "price_cents": 1325},
+          {"name": "Honey Pear", "description": "Pear, gorgonzola, honey drizzle, arugula", "price_cents": 1350},
+          {"name": "Shroomin' Goat", "description": "Wild mushrooms, goat cheese, truffle oil", "price_cents": 1400},
+          {"name": "All A'Sprout It", "description": "Brussels sprouts, bacon, balsamic glaze", "price_cents": 1350},
+          {"name": "Sgt. Peppers", "description": "Roasted peppers, sausage, hot honey", "price_cents": 1400}
+        ]
+      },
+      {
+        "name": "Sandwiches",
+        "items": [
+          {"name": "Italian Grinder", "description": "Italian meats, provolone, lettuce, tomato, Italian dressing", "price_cents": 1400},
+          {"name": "Meatball Sub", "description": "House meatballs, marinara, melted mozzarella", "price_cents": 1500}
+        ]
+      },
+      {
+        "name": "Desserts",
+        "items": [
+          {"name": "Root Beer Float", "description": "Vanilla ice cream with house-made root beer", "price_cents": 500},
+          {"name": "Brownie & Ice Cream", "description": "Warm chocolate brownie with vanilla ice cream", "price_cents": 700}
+        ]
+      }
+    ]
+  }
+}

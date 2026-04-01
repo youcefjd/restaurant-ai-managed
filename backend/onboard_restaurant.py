@@ -324,6 +324,12 @@ async def onboard(config: dict, purchase_phone: bool = True):
             # Add each item name as a boosted keyword
             boosted_keywords.append(item["name"])
 
+    # Build pronunciation dictionary from menu items
+    from backend.utils.pronunciation import build_pronunciation_dictionary
+    all_menu_items = [item for cat in config["menu"]["categories"] for item in cat["items"]]
+    pronunciation_dictionary = build_pronunciation_dictionary(all_menu_items)
+    logger.info(f"  Generated pronunciation dictionary: {len(pronunciation_dictionary)} entries")
+
     if existing_agent:
         logger.info(f"  Agent already exists: {existing_agent}")
         agent_id = existing_agent
@@ -347,6 +353,8 @@ async def onboard(config: dict, purchase_phone: bool = True):
             reminder_trigger_ms=10000,
             reminder_max_count=2,
             end_call_after_silence_ms=15000,
+            voice_model="eleven_turbo_v2",
+            pronunciation_dictionary=pronunciation_dictionary,
         )
 
         if not agent:

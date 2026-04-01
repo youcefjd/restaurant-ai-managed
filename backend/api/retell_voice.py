@@ -981,6 +981,10 @@ async def create_agent(
 
     llm_ws_url = f"wss://{public_url}/api/retell/llm-websocket"
 
+    # Build pronunciation dictionary from menu
+    from backend.utils.pronunciation import build_pronunciation_dictionary_from_db
+    pronunciation_dictionary = build_pronunciation_dictionary_from_db(db, request.restaurant_id)
+
     # Create agent
     agent = await retell_service.create_agent(
         name=f"{restaurant['business_name']} Voice Agent",
@@ -995,6 +999,8 @@ async def create_agent(
         reminder_trigger_ms=8000,  # Remind after 8s silence
         reminder_max_count=2,
         end_call_after_silence_ms=15000,  # End after 15s silence
+        voice_model="eleven_turbo_v2",
+        pronunciation_dictionary=pronunciation_dictionary,
     )
 
     if not agent:
@@ -1090,6 +1096,10 @@ async def create_native_llm_agent(
 
     llm_id = llm_config.get("llm_id")
 
+    # Build pronunciation dictionary from menu
+    from backend.utils.pronunciation import build_pronunciation_dictionary_from_db
+    pronunciation_dictionary = build_pronunciation_dictionary_from_db(db, request.restaurant_id)
+
     # Create new agent with the LLM
     agent = await retell_service.create_agent(
         name=f"{restaurant_name} Voice Agent (Native LLM)",
@@ -1103,6 +1113,8 @@ async def create_native_llm_agent(
         reminder_trigger_ms=10000,
         reminder_max_count=2,
         end_call_after_silence_ms=15000,
+        voice_model="eleven_turbo_v2",
+        pronunciation_dictionary=pronunciation_dictionary,
     )
 
     if not agent:
